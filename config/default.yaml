@@ -6,23 +6,12 @@ mamba:
 
 device: "cuda"
 lr: 1e-4
-grad_clip: 1.0
 
 T: 10
-obs_dim: 26      # robot(4) + goal(2) + 5 pedestrians * 4 = 26维
+obs_dim: 26      # robot(4) + goal(2) + 3 pedestrians * 4 = 18维
 action_dim: 2
 max_steps: 500
 
-# 训练参数优化
-episodes: 1500
-batch_size: 64
-target_update: 5
-il_epochs: 20
-il_batch_size: 256
-buffer_size: 50000
-n_action_samples: 16  # 减少动作采样数量提高速度
-
-# 环境参数
 n_peds: 5
 scene_size: 8
 robot_radius: 0.3
@@ -35,16 +24,13 @@ goal_radius: 0.5
 
 gamma: 0.99
 
-# 优化奖励设计
 reward:
-  success_reward: 20.0        # 增加成功奖励
-  collision_penalty: -5.0     # 增加碰撞惩罚
-  timeout_penalty: -2.0       # 增加超时惩罚
-  discomfort_dist: 0.8        # 增加不适距离
-  discomfort_penalty_factor: 0.5  # 增加不适惩罚
-  step_penalty: -0.02         # 轻微增加步数惩罚
-  dist_reward_factor: 0.3     # 增加距离奖励
-  progress_reward_factor: 0.1 # 新增进度奖励
-  safety_margin: 0.2          # 安全边界
+  success_reward: 10.0
+  collision_penalty: -1.0
+  timeout_penalty: -0.5
+  discomfort_dist: 0.6
+  discomfort_penalty_factor: 0.2
+  step_penalty: -0.01
+  dist_reward_factor: 0.2
 
 
