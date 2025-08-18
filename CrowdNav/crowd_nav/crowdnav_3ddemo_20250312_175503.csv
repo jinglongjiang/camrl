@@ -1,0 +1,1 @@
+type,step,episode_id,time_s,robot_x,robot_y,robot_vx,robot_vy,agent_i,agent_x,agent_y,dist,angle_deg,collisions,min_dist,episode_steps,episode_time

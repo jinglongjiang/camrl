@@ -1,0 +1,607 @@
+2025-07-17 06:23:25,278 INFO Episode 0 reset agent_ids: [0, 1, 2, 3, 4, 5]
+2025-07-17 06:23:25,295 INFO Episode 0 Step 0 action: [-0.22708271  0.22121534]
+2025-07-17 06:23:25,296 INFO Episode 0 Step 0 reward: -0.4269560988833909, done: False, info: {}
+2025-07-17 06:23:25,296 INFO Episode 0 Step 1 action: [-0.20882227  0.21570131]
+2025-07-17 06:23:25,297 INFO Episode 0 Step 1 reward: -0.4294432374748041, done: False, info: {}
+2025-07-17 06:23:25,297 INFO Episode 0 Step 2 action: [-0.2074707   0.22068228]
+2025-07-17 06:23:25,297 INFO Episode 0 Step 2 reward: -0.4319834683255834, done: False, info: {}
+2025-07-17 06:23:25,298 INFO Episode 0 Step 3 action: [-0.20789197  0.2205812 ]
+2025-07-17 06:23:25,298 INFO Episode 0 Step 3 reward: -0.43452974922956455, done: False, info: {}
+2025-07-17 06:23:25,298 INFO Episode 0 Step 4 action: [-0.2094869   0.22096613]
+2025-07-17 06:23:25,299 INFO Episode 0 Step 4 reward: -0.43708899248355204, done: False, info: {}
+2025-07-17 06:23:25,299 INFO Episode 0 Step 5 action: [-0.21115604  0.22130138]
+2025-07-17 06:23:25,299 INFO Episode 0 Step 5 reward: -0.43966088625461186, done: False, info: {}
+2025-07-17 06:23:25,299 INFO Episode 0 Step 6 action: [-0.21279728  0.22151   ]
+2025-07-17 06:23:25,300 INFO Episode 0 Step 6 reward: -0.4422442251110454, done: False, info: {}
+2025-07-17 06:23:25,300 INFO Episode 0 Step 7 action: [-0.21480295  0.22176954]
+2025-07-17 06:23:25,300 INFO Episode 0 Step 7 reward: -0.4448402686266736, done: False, info: {}
+2025-07-17 06:23:25,301 INFO Episode 0 Step 8 action: [-0.2167343   0.22192807]
+2025-07-17 06:23:25,301 INFO Episode 0 Step 8 reward: -0.4474480373157961, done: False, info: {}
+2025-07-17 06:23:25,301 INFO Episode 0 Step 9 action: [-0.2182726   0.22187077]
+2025-07-17 06:23:25,301 INFO Episode 0 Step 9 reward: -0.45006467552995266, done: False, info: {}
+2025-07-17 06:23:25,302 INFO Episode 0 Step 10 action: [-0.21934296  0.22157653]
+2025-07-17 06:23:25,302 INFO Episode 0 Step 10 reward: -0.4526869349436113, done: False, info: {}
+2025-07-17 06:23:25,302 INFO Episode 0 Step 11 action: [-0.22035189  0.22110772]
+2025-07-17 06:23:25,303 INFO Episode 0 Step 11 reward: -0.4553130233324873, done: False, info: {}
+2025-07-17 06:23:25,303 INFO Episode 0 Step 12 action: [-0.22172776  0.2205293 ]
+2025-07-17 06:23:25,303 INFO Episode 0 Step 12 reward: -0.4579426272984048, done: False, info: {}
+2025-07-17 06:23:25,303 INFO Episode 0 Step 13 action: [-0.22316292  0.21983889]
+2025-07-17 06:23:25,304 INFO Episode 0 Step 13 reward: -0.4605749094883697, done: False, info: {}
+2025-07-17 06:23:25,304 INFO Episode 0 Step 14 action: [-0.22457823  0.2191511 ]
+2025-07-17 06:23:25,304 INFO Episode 0 Step 14 reward: -0.46320984214416516, done: False, info: {}
+2025-07-17 06:23:25,305 INFO Episode 0 Step 15 action: [-0.22597533  0.21846688]
+2025-07-17 06:23:25,305 INFO Episode 0 Step 15 reward: -0.4658475396207988, done: False, info: {}
+2025-07-17 06:23:25,306 INFO Episode 0 Step 16 action: [-0.22735734  0.21778664]
+2025-07-17 06:23:25,307 INFO Episode 0 Step 16 reward: -0.4684880262458023, done: False, info: {}
+2025-07-17 06:23:25,307 INFO Episode 0 Step 17 action: [-0.22872132  0.21711227]
+2025-07-17 06:23:25,307 INFO Episode 0 Step 17 reward: -0.4711314114098773, done: False, info: {}
+2025-07-17 06:23:25,307 INFO Episode 0 Step 18 action: [-0.23007646  0.21644606]
+2025-07-17 06:23:25,308 INFO Episode 0 Step 18 reward: -0.4737777781460644, done: False, info: {}
+2025-07-17 06:23:25,308 INFO Episode 0 Step 19 action: [-0.23143186  0.21578714]
+2025-07-17 06:23:25,308 INFO Episode 0 Step 19 reward: -0.47642727469919816, done: False, info: {}
+2025-07-17 06:23:25,309 INFO Episode 0 Step 20 action: [-0.23279445  0.21513398]
+2025-07-17 06:23:25,309 INFO Episode 0 Step 20 reward: -0.47908002039983044, done: False, info: {}
+2025-07-17 06:23:25,310 INFO Episode 0 Step 21 action: [-0.2341681   0.21448602]
+2025-07-17 06:23:25,310 INFO Episode 0 Step 21 reward: -0.481736144422128, done: False, info: {}
+2025-07-17 06:23:25,310 INFO Episode 0 Step 22 action: [-0.2355528   0.21384814]
+2025-07-17 06:23:25,310 INFO Episode 0 Step 22 reward: -5.0, done: True, info: {'event': 'out_of_bounds'}
+2025-07-17 06:23:25,312 INFO Episode 1 reset agent_ids: [0, 1, 2, 3, 4, 5]
+2025-07-17 06:23:25,312 INFO Episode 1 Step 0 action: [-0.6670544   0.09246084]
+2025-07-17 06:23:25,312 INFO Episode 1 Step 0 reward: -0.2753300106369558, done: False, info: {}
+2025-07-17 06:23:25,313 INFO Episode 1 Step 1 action: [-0.638134    0.09448609]
+2025-07-17 06:23:25,313 INFO Episode 1 Step 1 reward: -0.2719997873887663, done: False, info: {}
+2025-07-17 06:23:25,313 INFO Episode 1 Step 2 action: [-0.6187825   0.09660947]
+2025-07-17 06:23:25,314 INFO Episode 1 Step 2 reward: -0.2688323975763798, done: False, info: {}
+2025-07-17 06:23:25,314 INFO Episode 1 Step 3 action: [-0.60875416  0.09975776]
+2025-07-17 06:23:25,314 INFO Episode 1 Step 3 reward: -0.26577915713872585, done: False, info: {}
+2025-07-17 06:23:25,315 INFO Episode 1 Step 4 action: [-0.6016946   0.10501641]
+2025-07-17 06:23:25,315 INFO Episode 1 Step 4 reward: -0.262807958284155, done: False, info: {}
+2025-07-17 06:23:25,315 INFO Episode 1 Step 5 action: [-0.59575546  0.11186686]
+2025-07-17 06:23:25,316 INFO Episode 1 Step 5 reward: -0.2598987942244002, done: False, info: {}
+2025-07-17 06:23:25,316 INFO Episode 1 Step 6 action: [-0.59033835  0.1197634 ]
+2025-07-17 06:23:25,316 INFO Episode 1 Step 6 reward: -0.2570390368681377, done: False, info: {}
+2025-07-17 06:23:25,317 INFO Episode 1 Step 7 action: [-0.58524144  0.12832218]
+2025-07-17 06:23:25,317 INFO Episode 1 Step 7 reward: -0.25422047598894154, done: False, info: {}
+2025-07-17 06:23:25,317 INFO Episode 1 Step 8 action: [-0.58042884  0.13731496]
+2025-07-17 06:23:25,317 INFO Episode 1 Step 8 reward: -0.2514373395957334, done: False, info: {}
+2025-07-17 06:23:25,318 INFO Episode 1 Step 9 action: [-0.57597446  0.14664853]
+2025-07-17 06:23:25,318 INFO Episode 1 Step 9 reward: -0.24868482492534882, done: False, info: {}
+2025-07-17 06:23:25,318 INFO Episode 1 Step 10 action: [-0.5720649   0.15636435]
+2025-07-17 06:23:25,318 INFO Episode 1 Step 10 reward: -0.2459576750548414, done: False, info: {}
+2025-07-17 06:23:25,319 INFO Episode 1 Step 11 action: [-0.569109   0.1667258]
+2025-07-17 06:23:25,319 INFO Episode 1 Step 11 reward: -0.2432478068669479, done: False, info: {}
+2025-07-17 06:23:25,319 INFO Episode 1 Step 12 action: [-0.5825124   0.18365465]
+2025-07-17 06:23:25,320 INFO Episode 1 Step 12 reward: -0.24046547584917782, done: False, info: {}
+2025-07-17 06:23:25,320 INFO Episode 1 Step 13 action: [-0.58598995  0.19451794]
+2025-07-17 06:23:25,320 INFO Episode 1 Step 13 reward: -0.23769521447368486, done: False, info: {}
+2025-07-17 06:23:25,321 INFO Episode 1 Step 14 action: [-0.5871315   0.20442212]
+2025-07-17 06:23:25,321 INFO Episode 1 Step 14 reward: -0.2349548179194696, done: False, info: {}
+2025-07-17 06:23:25,321 INFO Episode 1 Step 15 action: [-0.5879226   0.21408905]
+2025-07-17 06:23:25,321 INFO Episode 1 Step 15 reward: -0.23225149955090796, done: False, info: {}
+2025-07-17 06:23:25,322 INFO Episode 1 Step 16 action: [-0.5888214   0.22356293]
+2025-07-17 06:23:25,322 INFO Episode 1 Step 16 reward: -0.22959174398552784, done: False, info: {}
+2025-07-17 06:23:25,322 INFO Episode 1 Step 17 action: [-0.5898752  0.2328111]
+2025-07-17 06:23:25,323 INFO Episode 1 Step 17 reward: -0.22698277827798885, done: False, info: {}
+2025-07-17 06:23:25,323 INFO Episode 1 Step 18 action: [-0.59103906  0.2418103 ]
+2025-07-17 06:23:25,323 INFO Episode 1 Step 18 reward: -0.2244325637756195, done: False, info: {}
+2025-07-17 06:23:25,323 INFO Episode 1 Step 19 action: [-0.59225917  0.25055104]
+2025-07-17 06:23:25,324 INFO Episode 1 Step 19 reward: -0.2219495924417914, done: False, info: {}
+2025-07-17 06:23:25,324 INFO Episode 1 Step 20 action: [-0.59349215  0.2590315 ]
+2025-07-17 06:23:25,324 INFO Episode 1 Step 20 reward: -0.21954272802077202, done: False, info: {}
+2025-07-17 06:23:25,325 INFO Episode 1 Step 21 action: [-0.5947114   0.26725245]
+2025-07-17 06:23:25,325 INFO Episode 1 Step 21 reward: -0.21722111472677122, done: False, info: {}
+2025-07-17 06:23:25,325 INFO Episode 1 Step 22 action: [-0.6068829  0.2575745]
+2025-07-17 06:23:25,325 INFO Episode 1 Step 22 reward: -0.2151807323220008, done: False, info: {}
+2025-07-17 06:23:25,326 INFO Episode 1 Step 23 action: [-0.61955595  0.2561081 ]
+2025-07-17 06:23:25,326 INFO Episode 1 Step 23 reward: -0.2133557677430874, done: False, info: {}
+2025-07-17 06:23:25,326 INFO Episode 1 Step 24 action: [-0.6098571   0.28295326]
+2025-07-17 06:23:25,327 INFO Episode 1 Step 24 reward: -0.21144687034480186, done: False, info: {}
+2025-07-17 06:23:25,327 INFO Episode 1 Step 25 action: [-0.6189487   0.27747893]
+2025-07-17 06:23:25,327 INFO Episode 1 Step 25 reward: -0.20980734078179686, done: False, info: {}
+2025-07-17 06:23:25,328 INFO Episode 1 Step 26 action: [-0.6292621   0.27778155]
+2025-07-17 06:23:25,328 INFO Episode 1 Step 26 reward: -0.20839586623484432, done: False, info: {}
+2025-07-17 06:23:25,328 INFO Episode 1 Step 27 action: [-0.61860275  0.3011709 ]
+2025-07-17 06:23:25,328 INFO Episode 1 Step 27 reward: -0.20694990460202733, done: False, info: {}
+2025-07-17 06:23:25,329 INFO Episode 1 Step 28 action: [-0.62612367  0.2958687 ]
+2025-07-17 06:23:25,329 INFO Episode 1 Step 28 reward: -0.2057963294169039, done: False, info: {}
+2025-07-17 06:23:25,329 INFO Episode 1 Step 29 action: [-0.63494134  0.29620126]
+2025-07-17 06:23:25,329 INFO Episode 1 Step 29 reward: -0.20489541646951304, done: False, info: {}
+2025-07-17 06:23:25,330 INFO Episode 1 Step 30 action: [-0.6347728   0.32775876]
+2025-07-17 06:23:25,330 INFO Episode 1 Step 30 reward: -0.2039349612910773, done: False, info: {}
+2025-07-17 06:23:25,331 INFO Episode 1 Step 31 action: [-0.6457268   0.32892644]
+2025-07-17 06:23:25,331 INFO Episode 1 Step 31 reward: -0.2032525437225263, done: False, info: {}
+2025-07-17 06:23:25,331 INFO Episode 1 Step 32 action: [-0.6433828  0.3145333]
+2025-07-17 06:23:25,332 INFO Episode 1 Step 32 reward: -0.20294797168011672, done: False, info: {}
+2025-07-17 06:23:25,332 INFO Episode 1 Step 33 action: [-0.64526236  0.34843087]
+2025-07-17 06:23:25,332 INFO Episode 1 Step 33 reward: -0.20260141480463212, done: False, info: {}
+2025-07-17 06:23:25,332 INFO Episode 1 Step 34 action: [-0.639591    0.33491588]
+2025-07-17 06:23:25,333 INFO Episode 1 Step 34 reward: -0.20261117695259576, done: False, info: {}
+2025-07-17 06:23:25,333 INFO Episode 1 Step 35 action: [-0.6521474   0.33508992]
+2025-07-17 06:23:25,333 INFO Episode 1 Step 35 reward: -0.20294080297452988, done: False, info: {}
+2025-07-17 06:23:25,334 INFO Episode 1 Step 36 action: [-0.6541343  0.3688059]
+2025-07-17 06:23:25,334 INFO Episode 1 Step 36 reward: -0.20326188587381733, done: False, info: {}
+2025-07-17 06:23:25,334 INFO Episode 1 Step 37 action: [-0.64688027  0.35319775]
+2025-07-17 06:23:25,334 INFO Episode 1 Step 37 reward: -0.2039454841211651, done: False, info: {}
+2025-07-17 06:23:25,335 INFO Episode 1 Step 38 action: [-0.6574855   0.36830068]
+2025-07-17 06:23:25,335 INFO Episode 1 Step 38 reward: -0.20483548231770185, done: False, info: {}
+2025-07-17 06:23:25,335 INFO Episode 1 Step 39 action: [-0.67346036  0.3780831 ]
+2025-07-17 06:23:25,336 INFO Episode 1 Step 39 reward: -0.20602264573507637, done: False, info: {}
+2025-07-17 06:23:25,337 INFO Episode 1 Step 40 action: [-0.6548741  0.3873188]
+2025-07-17 06:23:25,337 INFO Episode 1 Step 40 reward: -0.2072986205329933, done: False, info: {}
+2025-07-17 06:23:25,338 INFO Episode 1 Step 41 action: [-0.66339755  0.38403344]
+2025-07-17 06:23:25,338 INFO Episode 1 Step 41 reward: -0.20892655531130797, done: False, info: {}
+2025-07-17 06:23:25,338 INFO Episode 1 Step 42 action: [-0.6770059   0.39846444]
+2025-07-17 06:23:25,338 INFO Episode 1 Step 42 reward: -0.2108164096637511, done: False, info: {}
+2025-07-17 06:23:25,339 INFO Episode 1 Step 43 action: [-0.6754458   0.40328312]
+2025-07-17 06:23:25,339 INFO Episode 1 Step 43 reward: -0.21293536136058255, done: False, info: {}
+2025-07-17 06:23:25,339 INFO Episode 1 Step 44 action: [-0.6739594   0.40352893]
+2025-07-17 06:23:25,340 INFO Episode 1 Step 44 reward: -0.21530815286118152, done: False, info: {}
+2025-07-17 06:23:25,340 INFO Episode 1 Step 45 action: [-0.68661416  0.41395068]
+2025-07-17 06:23:25,340 INFO Episode 1 Step 45 reward: -0.21797244085488915, done: False, info: {}
+2025-07-17 06:23:25,341 INFO Episode 1 Step 46 action: [-0.68125486  0.42012358]
+2025-07-17 06:23:25,341 INFO Episode 1 Step 46 reward: -0.22081592120586874, done: False, info: {}
+2025-07-17 06:23:25,341 INFO Episode 1 Step 47 action: [-0.68620825  0.4175168 ]
+2025-07-17 06:23:25,341 INFO Episode 1 Step 47 reward: -0.2239651085887162, done: False, info: {}
+2025-07-17 06:23:25,342 INFO Episode 1 Step 48 action: [-0.69768643  0.43812183]
+2025-07-17 06:23:25,342 INFO Episode 1 Step 48 reward: -0.22733956175164294, done: False, info: {}
+2025-07-17 06:23:25,343 INFO Episode 1 Step 49 action: [-0.6982473   0.42594442]
+2025-07-17 06:23:25,343 INFO Episode 1 Step 49 reward: -2.0, done: True, info: {'event': 'timeout'}
+2025-07-17 06:23:25,343 INFO Episode 2 reset agent_ids: [0, 1, 2, 3, 4, 5]
+2025-07-17 06:23:25,343 INFO Episode 2 Step 0 action: [-0.34395033  0.17000586]
+2025-07-17 06:23:25,344 INFO Episode 2 Step 0 reward: -0.28448200430355947, done: False, info: {}
+2025-07-17 06:23:25,502 INFO Episode 2 Step 0 batch loss: 0.15564186871051788
+2025-07-17 06:23:25,503 INFO Episode 2 Step 1 action: [-0.38277674  0.1682792 ]
+2025-07-17 06:23:25,503 INFO Episode 2 Step 1 reward: -0.28754639586791214, done: False, info: {}
+2025-07-17 06:23:25,514 INFO Episode 2 Step 1 batch loss: 0.155589297413826
+2025-07-17 06:23:25,514 INFO Episode 2 Step 2 action: [-0.40868798  0.1712338 ]
+2025-07-17 06:23:25,515 INFO Episode 2 Step 2 reward: -0.29077203112176664, done: False, info: {}
+2025-07-17 06:23:25,525 INFO Episode 2 Step 2 batch loss: 0.15553675591945648
+2025-07-17 06:23:25,525 INFO Episode 2 Step 3 action: [-0.43153054  0.18098107]
+2025-07-17 06:23:25,526 INFO Episode 2 Step 3 reward: -0.29421361545570085, done: False, info: {}
+2025-07-17 06:23:25,536 INFO Episode 2 Step 3 batch loss: 0.15548422932624817
+2025-07-17 06:23:25,537 INFO Episode 2 Step 4 action: [-0.44984636  0.1924237 ]
+2025-07-17 06:23:25,537 INFO Episode 2 Step 4 reward: -0.2978711456277925, done: False, info: {}
+2025-07-17 06:23:25,552 INFO Episode 2 Step 4 batch loss: 0.15543174743652344
+2025-07-17 06:23:25,553 INFO Episode 2 Step 5 action: [-0.46231526  0.20214152]
+2025-07-17 06:23:25,553 INFO Episode 2 Step 5 reward: -0.30170589029821093, done: False, info: {}
+2025-07-17 06:23:25,565 INFO Episode 2 Step 5 batch loss: 0.1553792506456375
+2025-07-17 06:23:25,566 INFO Episode 2 Step 6 action: [-0.4701365   0.20999974]
+2025-07-17 06:23:25,566 INFO Episode 2 Step 6 reward: -0.3056812213593359, done: False, info: {}
+2025-07-17 06:23:25,584 INFO Episode 2 Step 6 batch loss: 0.15532679855823517
+2025-07-17 06:23:25,585 INFO Episode 2 Step 7 action: [-0.47439626  0.21622452]
+2025-07-17 06:23:25,585 INFO Episode 2 Step 7 reward: -0.30976599087312207, done: False, info: {}
+2025-07-17 06:23:25,597 INFO Episode 2 Step 7 batch loss: 0.15527434647083282
+2025-07-17 06:23:25,598 INFO Episode 2 Step 8 action: [-0.4762966   0.22157073]
+2025-07-17 06:23:25,598 INFO Episode 2 Step 8 reward: -0.31394033675901173, done: False, info: {}
+2025-07-17 06:23:25,609 INFO Episode 2 Step 8 batch loss: 0.15522195398807526
+2025-07-17 06:23:25,609 INFO Episode 2 Step 9 action: [-0.47676572  0.22669566]
+2025-07-17 06:23:25,609 INFO Episode 2 Step 9 reward: -0.3181939118240351, done: False, info: {}
+2025-07-17 06:23:25,620 INFO Episode 2 Step 9 batch loss: 0.1551695466041565
+2025-07-17 06:23:25,620 INFO Episode 2 Step 10 action: [-0.4763561   0.23195651]
+2025-07-17 06:23:25,620 INFO Episode 2 Step 10 reward: -0.32252178730279213, done: False, info: {}
+2025-07-17 06:23:25,630 INFO Episode 2 Step 10 batch loss: 0.15511716902256012
+2025-07-17 06:23:25,631 INFO Episode 2 Step 11 action: [-0.47542557  0.2376402 ]
+2025-07-17 06:23:25,631 INFO Episode 2 Step 11 reward: -0.3269230646030686, done: False, info: {}
+2025-07-17 06:23:25,642 INFO Episode 2 Step 11 batch loss: 0.15506482124328613
+2025-07-17 06:23:25,642 INFO Episode 2 Step 12 action: [-0.4734967   0.24286732]
+2025-07-17 06:23:25,642 INFO Episode 2 Step 12 reward: -0.33138668064679333, done: False, info: {}
+2025-07-17 06:23:25,652 INFO Episode 2 Step 12 batch loss: 0.15501250326633453
+2025-07-17 06:23:25,653 INFO Episode 2 Step 13 action: [-0.47114584  0.24807255]
+2025-07-17 06:23:25,653 INFO Episode 2 Step 13 reward: -0.3359081309929184, done: False, info: {}
+2025-07-17 06:23:25,663 INFO Episode 2 Step 13 batch loss: 0.15496018528938293
+2025-07-17 06:23:25,664 INFO Episode 2 Step 14 action: [-0.46885532  0.25381207]
+2025-07-17 06:23:25,664 INFO Episode 2 Step 14 reward: -0.34049015612527567, done: False, info: {}
+2025-07-17 06:23:25,674 INFO Episode 2 Step 14 batch loss: 0.15490791201591492
+2025-07-17 06:23:25,675 INFO Episode 2 Step 15 action: [-0.46675354  0.26006445]
+2025-07-17 06:23:25,675 INFO Episode 2 Step 15 reward: -0.3451360420576496, done: False, info: {}
+2025-07-17 06:23:25,686 INFO Episode 2 Step 15 batch loss: 0.1548556685447693
+2025-07-17 06:23:25,686 INFO Episode 2 Step 16 action: [-0.46476653  0.26660702]
+2025-07-17 06:23:25,687 INFO Episode 2 Step 16 reward: -0.3498468616772344, done: False, info: {}
+2025-07-17 06:23:25,697 INFO Episode 2 Step 16 batch loss: 0.15480345487594604
+2025-07-17 06:23:25,698 INFO Episode 2 Step 17 action: [-0.46286222  0.27331522]
+2025-07-17 06:23:25,698 INFO Episode 2 Step 17 reward: -0.35462256655541663, done: False, info: {}
+2025-07-17 06:23:25,709 INFO Episode 2 Step 17 batch loss: 0.1547512263059616
+2025-07-17 06:23:25,709 INFO Episode 2 Step 18 action: [-0.4610147   0.28010118]
+2025-07-17 06:23:25,709 INFO Episode 2 Step 18 reward: -0.3594623389723352, done: False, info: {}
+2025-07-17 06:23:25,719 INFO Episode 2 Step 18 batch loss: 0.15469905734062195
+2025-07-17 06:23:25,721 INFO Episode 2 Step 19 action: [-0.4592221   0.28693193]
+2025-07-17 06:23:25,721 INFO Episode 2 Step 19 reward: -0.36436515129391017, done: False, info: {}
+2025-07-17 06:23:25,731 INFO Episode 2 Step 19 batch loss: 0.15464691817760468
+2025-07-17 06:23:25,731 INFO Episode 2 Step 20 action: [-0.45749238  0.2937971 ]
+2025-07-17 06:23:25,732 INFO Episode 2 Step 20 reward: -0.3693300461239646, done: False, info: {}
+2025-07-17 06:23:25,745 INFO Episode 2 Step 20 batch loss: 0.1545947939157486
+2025-07-17 06:23:25,745 INFO Episode 2 Step 21 action: [-0.45583257  0.30068755]
+2025-07-17 06:23:25,745 INFO Episode 2 Step 21 reward: -0.3743561405693701, done: False, info: {}
+2025-07-17 06:23:25,756 INFO Episode 2 Step 21 batch loss: 0.15454266965389252
+2025-07-17 06:23:25,756 INFO Episode 2 Step 22 action: [-0.45424852  0.30759457]
+2025-07-17 06:23:25,757 INFO Episode 2 Step 22 reward: -0.37944260817003156, done: False, info: {}
+2025-07-17 06:23:25,768 INFO Episode 2 Step 22 batch loss: 0.15449059009552002
+2025-07-17 06:23:25,768 INFO Episode 2 Step 23 action: [-0.45274413  0.31450915]
+2025-07-17 06:23:25,768 INFO Episode 2 Step 23 reward: -0.38458865768695594, done: False, info: {}
+2025-07-17 06:23:25,778 INFO Episode 2 Step 23 batch loss: 0.1544385552406311
+2025-07-17 06:23:25,779 INFO Episode 2 Step 24 action: [-0.4513232   0.32142168]
+2025-07-17 06:23:25,779 INFO Episode 2 Step 24 reward: -0.389793533448777, done: False, info: {}
+2025-07-17 06:23:25,790 INFO Episode 2 Step 24 batch loss: 0.15438653528690338
+2025-07-17 06:23:25,791 INFO Episode 2 Step 25 action: [-0.4659752  0.3552124]
+2025-07-17 06:23:25,791 INFO Episode 2 Step 25 reward: -0.3953685084755556, done: False, info: {}
+2025-07-17 06:23:25,802 INFO Episode 2 Step 25 batch loss: 0.15433453023433685
+2025-07-17 06:23:25,802 INFO Episode 2 Step 26 action: [-0.46033344  0.3456981 ]
+2025-07-17 06:23:25,803 INFO Episode 2 Step 26 reward: -0.40084132226658475, done: False, info: {}
+2025-07-17 06:23:25,812 INFO Episode 2 Step 26 batch loss: 0.15428254008293152
+2025-07-17 06:23:25,813 INFO Episode 2 Step 27 action: [-0.4703879   0.37315452]
+2025-07-17 06:23:25,814 INFO Episode 2 Step 27 reward: -0.40660404016419704, done: False, info: {}
+2025-07-17 06:23:25,826 INFO Episode 2 Step 27 batch loss: 0.15423059463500977
+2025-07-17 06:23:25,826 INFO Episode 2 Step 28 action: [-0.46347696  0.36208117]
+2025-07-17 06:23:25,827 INFO Episode 2 Step 28 reward: -0.4122433829854232, done: False, info: {}
+2025-07-17 06:23:25,837 INFO Episode 2 Step 28 batch loss: 0.1541786640882492
+2025-07-17 06:23:25,837 INFO Episode 2 Step 29 action: [-0.47114155  0.38798177]
+2025-07-17 06:23:25,838 INFO Episode 2 Step 29 reward: -0.41814424084037527, done: False, info: {}
+2025-07-17 06:23:25,848 INFO Episode 2 Step 29 batch loss: 0.15412679314613342
+2025-07-17 06:23:25,849 INFO Episode 2 Step 30 action: [-0.46412295  0.3769155 ]
+2025-07-17 06:23:25,849 INFO Episode 2 Step 30 reward: -0.42392005232809993, done: False, info: {}
+2025-07-17 06:23:25,859 INFO Episode 2 Step 30 batch loss: 0.15407492220401764
+2025-07-17 06:23:25,859 INFO Episode 2 Step 31 action: [-0.47008362  0.40197283]
+2025-07-17 06:23:25,860 INFO Episode 2 Step 31 reward: -0.42993874522261555, done: False, info: {}
+2025-07-17 06:23:25,870 INFO Episode 2 Step 31 batch loss: 0.15402308106422424
+2025-07-17 06:23:25,870 INFO Episode 2 Step 32 action: [-0.46353725  0.39123133]
+2025-07-17 06:23:25,871 INFO Episode 2 Step 32 reward: -0.4358368067819276, done: False, info: {}
+2025-07-17 06:23:25,881 INFO Episode 2 Step 32 batch loss: 0.15397125482559204
+2025-07-17 06:23:25,882 INFO Episode 2 Step 33 action: [-0.46807513  0.41561112]
+2025-07-17 06:23:25,882 INFO Episode 2 Step 33 reward: -0.4419621850099269, done: False, info: {}
+2025-07-17 06:23:25,892 INFO Episode 2 Step 33 batch loss: 0.15391947329044342
+2025-07-17 06:23:25,892 INFO Episode 2 Step 34 action: [-0.46227196  0.40536165]
+2025-07-17 06:23:25,893 INFO Episode 2 Step 34 reward: -0.4479744288773524, done: False, info: {}
+2025-07-17 06:23:25,903 INFO Episode 2 Step 34 batch loss: 0.1538677215576172
+2025-07-17 06:23:25,903 INFO Episode 2 Step 35 action: [-0.46533516  0.42936778]
+2025-07-17 06:23:25,904 INFO Episode 2 Step 35 reward: -0.45420065554639033, done: False, info: {}
+2025-07-17 06:23:25,914 INFO Episode 2 Step 35 batch loss: 0.15381598472595215
+2025-07-17 06:23:25,914 INFO Episode 2 Step 36 action: [-0.46155998  0.42166328]
+2025-07-17 06:23:25,915 INFO Episode 2 Step 36 reward: -0.4603455120684837, done: False, info: {}
+2025-07-17 06:23:25,925 INFO Episode 2 Step 36 batch loss: 0.1537642925977707
+2025-07-17 06:23:25,926 INFO Episode 2 Step 37 action: [-0.4633722  0.4451157]
+2025-07-17 06:23:25,926 INFO Episode 2 Step 37 reward: -0.4666910066597888, done: False, info: {}
+2025-07-17 06:23:25,936 INFO Episode 2 Step 37 batch loss: 0.15371260046958923
+2025-07-17 06:23:25,936 INFO Episode 2 Step 38 action: [-0.4606714   0.43788353]
+2025-07-17 06:23:25,936 INFO Episode 2 Step 38 reward: -0.47296476952249517, done: False, info: {}
+2025-07-17 06:23:25,948 INFO Episode 2 Step 38 batch loss: 0.15366095304489136
+2025-07-17 06:23:25,949 INFO Episode 2 Step 39 action: [-0.4319064   0.41942525]
+2025-07-17 06:23:25,949 INFO Episode 2 Step 39 reward: -0.4789193185819703, done: False, info: {}
+2025-07-17 06:23:25,959 INFO Episode 2 Step 39 batch loss: 0.15360932052135468
+2025-07-17 06:23:25,959 INFO Episode 2 Step 40 action: [-0.4402491  0.4279354]
+2025-07-17 06:23:25,960 INFO Episode 2 Step 40 reward: -0.4849937986308426, done: False, info: {}
+2025-07-17 06:23:25,970 INFO Episode 2 Step 40 batch loss: 0.15355773270130157
+2025-07-17 06:23:25,972 INFO Episode 2 Step 41 action: [-0.438041    0.44613796]
+2025-07-17 06:23:25,972 INFO Episode 2 Step 41 reward: -0.4912006267416243, done: False, info: {}
+2025-07-17 06:23:25,982 INFO Episode 2 Step 41 batch loss: 0.15350617468357086
+2025-07-17 06:23:25,983 INFO Episode 2 Step 42 action: [-0.44529673  0.4336281 ]
+2025-07-17 06:23:25,983 INFO Episode 2 Step 42 reward: -0.4973539684091362, done: False, info: {}
+2025-07-17 06:23:25,993 INFO Episode 2 Step 42 batch loss: 0.15345461666584015
+2025-07-17 06:23:25,994 INFO Episode 2 Step 43 action: [-0.4359173   0.45296133]
+2025-07-17 06:23:25,994 INFO Episode 2 Step 43 reward: -0.5036041439179747, done: False, info: {}
+2025-07-17 06:23:26,004 INFO Episode 2 Step 43 batch loss: 0.15340310335159302
+2025-07-17 06:23:26,005 INFO Episode 2 Step 44 action: [-0.45097718  0.45798874]
+2025-07-17 06:23:26,005 INFO Episode 2 Step 44 reward: -0.5099873386185422, done: False, info: {}
+2025-07-17 06:23:26,015 INFO Episode 2 Step 44 batch loss: 0.15335160493850708
+2025-07-17 06:23:26,016 INFO Episode 2 Step 45 action: [-0.43373296  0.46765757]
+2025-07-17 06:23:26,016 INFO Episode 2 Step 45 reward: -0.5163418695132945, done: False, info: {}
+2025-07-17 06:23:26,026 INFO Episode 2 Step 45 batch loss: 0.15330015122890472
+2025-07-17 06:23:26,027 INFO Episode 2 Step 46 action: [-0.45299846  0.45882732]
+2025-07-17 06:23:26,027 INFO Episode 2 Step 46 reward: -0.5227459885801263, done: False, info: {}
+2025-07-17 06:23:26,037 INFO Episode 2 Step 46 batch loss: 0.15324872732162476
+2025-07-17 06:23:26,038 INFO Episode 2 Step 47 action: [-0.46174708  0.5021843 ]
+2025-07-17 06:23:26,038 INFO Episode 2 Step 47 reward: -0.5295464233510091, done: False, info: {}
+2025-07-17 06:23:26,048 INFO Episode 2 Step 47 batch loss: 0.1531972885131836
+2025-07-17 06:23:26,049 INFO Episode 2 Step 48 action: [-0.43474874  0.4601111 ]
+2025-07-17 06:23:26,049 INFO Episode 2 Step 48 reward: -0.5358497507934715, done: False, info: {}
+2025-07-17 06:23:26,059 INFO Episode 2 Step 48 batch loss: 0.1531459242105484
+2025-07-17 06:23:26,060 INFO Episode 2 Step 49 action: [-0.45933798  0.49881214]
+2025-07-17 06:23:26,060 INFO Episode 2 Step 49 reward: -2.0, done: True, info: {'event': 'timeout'}
+2025-07-17 06:23:26,070 INFO Episode 2 Step 49 batch loss: 0.1530945748090744
+2025-07-17 06:23:26,070 INFO Episode 3 reset agent_ids: [0, 1, 2, 3, 4, 5]
+2025-07-17 06:23:26,071 INFO Episode 3 Step 0 action: [ 0.05391741 -0.01370209]
+2025-07-17 06:23:26,071 INFO Episode 3 Step 0 reward: -0.31004868504677824, done: False, info: {}
+2025-07-17 06:23:26,080 INFO Episode 3 Step 0 batch loss: 0.30072975158691406
+2025-07-17 06:23:26,081 INFO Episode 3 Step 1 action: [ 0.03735721 -0.01758751]
+2025-07-17 06:23:26,081 INFO Episode 3 Step 1 reward: -0.3104407965126882, done: False, info: {}
+2025-07-17 06:23:26,097 INFO Episode 3 Step 1 batch loss: 0.3006277084350586
+2025-07-17 06:23:26,098 INFO Episode 3 Step 2 action: [ 0.03498191 -0.0089387 ]
+2025-07-17 06:23:26,098 INFO Episode 3 Step 2 reward: -0.3107988613051312, done: False, info: {}
+2025-07-17 06:23:26,109 INFO Episode 3 Step 2 batch loss: 0.30052077770233154
+2025-07-17 06:23:26,109 INFO Episode 3 Step 3 action: [ 0.03312454 -0.00476412]
+2025-07-17 06:23:26,109 INFO Episode 3 Step 3 reward: -0.3111334289011036, done: False, info: {}
+2025-07-17 06:23:26,120 INFO Episode 3 Step 3 batch loss: 0.3004096448421478
+2025-07-17 06:23:26,120 INFO Episode 3 Step 4 action: [ 0.03339316 -0.00244093]
+2025-07-17 06:23:26,120 INFO Episode 3 Step 4 reward: -0.3114678532012363, done: False, info: {}
+2025-07-17 06:23:26,131 INFO Episode 3 Step 4 batch loss: 0.30029505491256714
+2025-07-17 06:23:26,132 INFO Episode 3 Step 5 action: [ 0.03441769 -0.00101002]
+2025-07-17 06:23:26,132 INFO Episode 3 Step 5 reward: -0.31181072063209525, done: False, info: {}
+2025-07-17 06:23:26,141 INFO Episode 3 Step 5 batch loss: 0.30017751455307007
+2025-07-17 06:23:26,142 INFO Episode 3 Step 6 action: [ 3.5708800e-02 -4.2557716e-05]
+2025-07-17 06:23:26,142 INFO Episode 3 Step 6 reward: -0.31216522279829784, done: False, info: {}
+2025-07-17 06:23:26,154 INFO Episode 3 Step 6 batch loss: 0.3000575602054596
+2025-07-17 06:23:26,154 INFO Episode 3 Step 7 action: [0.03709397 0.00064136]
+2025-07-17 06:23:26,155 INFO Episode 3 Step 7 reward: -0.3125326539604731, done: False, info: {}
+2025-07-17 06:23:26,165 INFO Episode 3 Step 7 batch loss: 0.29993557929992676
+2025-07-17 06:23:26,166 INFO Episode 3 Step 8 action: [0.03853615 0.00110899]
+2025-07-17 06:23:26,166 INFO Episode 3 Step 8 reward: -0.3129138481775832, done: False, info: {}
+2025-07-17 06:23:26,176 INFO Episode 3 Step 8 batch loss: 0.2998119592666626
+2025-07-17 06:23:26,177 INFO Episode 3 Step 9 action: [0.04004736 0.0013805 ]
+2025-07-17 06:23:26,177 INFO Episode 3 Step 9 reward: -0.31330973092370645, done: False, info: {}
+2025-07-17 06:23:26,187 INFO Episode 3 Step 9 batch loss: 0.2996869385242462
+2025-07-17 06:23:26,188 INFO Episode 3 Step 10 action: [0.04165614 0.00145441]
+2025-07-17 06:23:26,188 INFO Episode 3 Step 10 reward: -0.31372151333762965, done: False, info: {}
+2025-07-17 06:23:26,199 INFO Episode 3 Step 10 batch loss: 0.29956087470054626
+2025-07-17 06:23:26,199 INFO Episode 3 Step 11 action: [0.0432457 0.001367 ]
+2025-07-17 06:23:26,200 INFO Episode 3 Step 11 reward: -0.3141492023852557, done: False, info: {}
+2025-07-17 06:23:26,209 INFO Episode 3 Step 11 batch loss: 0.2994339168071747
+2025-07-17 06:23:26,210 INFO Episode 3 Step 12 action: [0.04679129 0.00013998]
+2025-07-17 06:23:26,210 INFO Episode 3 Step 12 reward: -0.3146135716302821, done: False, info: {}
+2025-07-17 06:23:26,220 INFO Episode 3 Step 12 batch loss: 0.29930633306503296
+2025-07-17 06:23:26,221 INFO Episode 3 Step 13 action: [ 0.05028902 -0.00087377]
+2025-07-17 06:23:26,221 INFO Episode 3 Step 13 reward: -0.3151138891391789, done: False, info: {}
+2025-07-17 06:23:26,232 INFO Episode 3 Step 13 batch loss: 0.29917818307876587
+2025-07-17 06:23:26,232 INFO Episode 3 Step 14 action: [ 0.05383866 -0.00181723]
+2025-07-17 06:23:26,233 INFO Episode 3 Step 14 reward: -0.315650590034821, done: False, info: {}
+2025-07-17 06:23:26,243 INFO Episode 3 Step 14 batch loss: 0.2990497350692749
+2025-07-17 06:23:26,243 INFO Episode 3 Step 15 action: [ 0.05742893 -0.00268799]
+2025-07-17 06:23:26,243 INFO Episode 3 Step 15 reward: -0.3162239624445211, done: False, info: {}
+2025-07-17 06:23:26,253 INFO Episode 3 Step 15 batch loss: 0.2989210784435272
+2025-07-17 06:23:26,254 INFO Episode 3 Step 16 action: [ 0.06105107 -0.00348707]
+2025-07-17 06:23:26,254 INFO Episode 3 Step 16 reward: -0.31683427714281476, done: False, info: {}
+2025-07-17 06:23:26,264 INFO Episode 3 Step 16 batch loss: 0.2987922728061676
+2025-07-17 06:23:26,265 INFO Episode 3 Step 17 action: [ 0.06469738 -0.0042142 ]
+2025-07-17 06:23:26,265 INFO Episode 3 Step 17 reward: -0.3174816576907747, done: False, info: {}
+2025-07-17 06:23:26,275 INFO Episode 3 Step 17 batch loss: 0.2986634373664856
+2025-07-17 06:23:26,276 INFO Episode 3 Step 18 action: [ 0.06836152 -0.00486885]
+2025-07-17 06:23:26,276 INFO Episode 3 Step 18 reward: -0.31816620441525334, done: False, info: {}
+2025-07-17 06:23:26,286 INFO Episode 3 Step 18 batch loss: 0.298534631729126
+2025-07-17 06:23:26,287 INFO Episode 3 Step 19 action: [ 0.07203743 -0.0054505 ]
+2025-07-17 06:23:26,287 INFO Episode 3 Step 19 reward: -0.3188879498385536, done: False, info: {}
+2025-07-17 06:23:26,297 INFO Episode 3 Step 19 batch loss: 0.2984059751033783
+2025-07-17 06:23:26,298 INFO Episode 3 Step 20 action: [ 0.07571989 -0.00595868]
+2025-07-17 06:23:26,298 INFO Episode 3 Step 20 reward: -0.3196468529459957, done: False, info: {}
+2025-07-17 06:23:26,308 INFO Episode 3 Step 20 batch loss: 0.29827746748924255
+2025-07-17 06:23:26,309 INFO Episode 3 Step 21 action: [ 0.07940415 -0.00639296]
+2025-07-17 06:23:26,309 INFO Episode 3 Step 21 reward: -0.32044287301904695, done: False, info: {}
+2025-07-17 06:23:26,320 INFO Episode 3 Step 21 batch loss: 0.2981491684913635
+2025-07-17 06:23:26,320 INFO Episode 3 Step 22 action: [ 0.08308537 -0.00675286]
+2025-07-17 06:23:26,321 INFO Episode 3 Step 22 reward: -0.3212758749327528, done: False, info: {}
+2025-07-17 06:23:26,331 INFO Episode 3 Step 22 batch loss: 0.29802119731903076
+2025-07-17 06:23:26,331 INFO Episode 3 Step 23 action: [ 0.08675939 -0.00703745]
+2025-07-17 06:23:26,332 INFO Episode 3 Step 23 reward: -0.32214570017669, done: False, info: {}
+2025-07-17 06:23:26,342 INFO Episode 3 Step 23 batch loss: 0.2978934347629547
+2025-07-17 06:23:26,342 INFO Episode 3 Step 24 action: [ 0.09042124 -0.00724803]
+2025-07-17 06:23:26,342 INFO Episode 3 Step 24 reward: -0.323052116701633, done: False, info: {}
+2025-07-17 06:23:26,354 INFO Episode 3 Step 24 batch loss: 0.2977660596370697
+2025-07-17 06:23:26,355 INFO Episode 3 Step 25 action: [ 0.09406582 -0.00738333]
+2025-07-17 06:23:26,355 INFO Episode 3 Step 25 reward: -0.32399489563549394, done: False, info: {}
+2025-07-17 06:23:26,365 INFO Episode 3 Step 25 batch loss: 0.29763901233673096
+2025-07-17 06:23:26,366 INFO Episode 3 Step 26 action: [ 0.09768748 -0.00744227]
+2025-07-17 06:23:26,366 INFO Episode 3 Step 26 reward: -0.3249737109831491, done: False, info: {}
+2025-07-17 06:23:26,377 INFO Episode 3 Step 26 batch loss: 0.29751235246658325
+2025-07-17 06:23:26,378 INFO Episode 3 Step 27 action: [ 0.10128032 -0.00742321]
+2025-07-17 06:23:26,378 INFO Episode 3 Step 27 reward: -0.325988187051083, done: False, info: {}
+2025-07-17 06:23:26,388 INFO Episode 3 Step 27 batch loss: 0.2973860502243042
+2025-07-17 06:23:26,389 INFO Episode 3 Step 28 action: [ 0.10483831 -0.0073247 ]
+2025-07-17 06:23:26,389 INFO Episode 3 Step 28 reward: -0.32703787486814534, done: False, info: {}
+2025-07-17 06:23:26,400 INFO Episode 3 Step 28 batch loss: 0.2972601354122162
+2025-07-17 06:23:26,400 INFO Episode 3 Step 29 action: [ 0.10835543 -0.00714508]
+2025-07-17 06:23:26,401 INFO Episode 3 Step 29 reward: -0.32812230526810604, done: False, info: {}
+2025-07-17 06:23:26,411 INFO Episode 3 Step 29 batch loss: 0.297134667634964
+2025-07-17 06:23:26,412 INFO Episode 3 Step 30 action: [ 0.11182514 -0.00688252]
+2025-07-17 06:23:26,412 INFO Episode 3 Step 30 reward: -0.32924088586006506, done: False, info: {}
+2025-07-17 06:23:26,423 INFO Episode 3 Step 30 batch loss: 0.29700955748558044
+2025-07-17 06:23:26,423 INFO Episode 3 Step 31 action: [ 0.11524086 -0.00653502]
+2025-07-17 06:23:26,423 INFO Episode 3 Step 31 reward: -0.3303929986960001, done: False, info: {}
+2025-07-17 06:23:26,432 INFO Episode 3 Step 31 batch loss: 0.2968848943710327
+2025-07-17 06:23:26,433 INFO Episode 3 Step 32 action: [ 0.11859593 -0.00610068]
+2025-07-17 06:23:26,433 INFO Episode 3 Step 32 reward: -0.3315779322020117, done: False, info: {}
+2025-07-17 06:23:26,443 INFO Episode 3 Step 32 batch loss: 0.296760618686676
+2025-07-17 06:23:26,444 INFO Episode 3 Step 33 action: [ 0.12188363 -0.00557736]
+2025-07-17 06:23:26,444 INFO Episode 3 Step 33 reward: -0.33279492310771325, done: False, info: {}
+2025-07-17 06:23:26,454 INFO Episode 3 Step 33 batch loss: 0.29663679003715515
+2025-07-17 06:23:26,454 INFO Episode 3 Step 34 action: [ 0.1250971  -0.00496306]
+2025-07-17 06:23:26,454 INFO Episode 3 Step 34 reward: -0.33404314134549895, done: False, info: {}
+2025-07-17 06:23:26,466 INFO Episode 3 Step 34 batch loss: 0.2965133786201477
+2025-07-17 06:23:26,466 INFO Episode 3 Step 35 action: [ 0.12822948 -0.00425552]
+2025-07-17 06:23:26,467 INFO Episode 3 Step 35 reward: -0.33532165542426523, done: False, info: {}
+2025-07-17 06:23:26,477 INFO Episode 3 Step 35 batch loss: 0.2963903546333313
+2025-07-17 06:23:26,477 INFO Episode 3 Step 36 action: [ 0.1312741  -0.00345272]
+2025-07-17 06:23:26,477 INFO Episode 3 Step 36 reward: -0.3366295120764038, done: False, info: {}
+2025-07-17 06:23:26,487 INFO Episode 3 Step 36 batch loss: 0.2962678074836731
+2025-07-17 06:23:26,487 INFO Episode 3 Step 37 action: [ 0.1342243 -0.0025529]
+2025-07-17 06:23:26,488 INFO Episode 3 Step 37 reward: -0.3379656891235998, done: False, info: {}
+2025-07-17 06:23:26,496 INFO Episode 3 Step 37 batch loss: 0.29614558815956116
+2025-07-17 06:23:26,497 INFO Episode 3 Step 38 action: [ 0.1370736  -0.00155406]
+2025-07-17 06:23:26,497 INFO Episode 3 Step 38 reward: -0.3393290665319597, done: False, info: {}
+2025-07-17 06:23:26,507 INFO Episode 3 Step 38 batch loss: 0.29602378606796265
+2025-07-17 06:23:26,508 INFO Episode 3 Step 39 action: [ 0.13981614 -0.00045465]
+2025-07-17 06:23:26,508 INFO Episode 3 Step 39 reward: -0.34071847959308754, done: False, info: {}
+2025-07-17 06:23:26,518 INFO Episode 3 Step 39 batch loss: 0.29590243101119995
+2025-07-17 06:23:26,518 INFO Episode 3 Step 40 action: [0.14244571 0.00074668]
+2025-07-17 06:23:26,518 INFO Episode 3 Step 40 reward: -0.34213271647211285, done: False, info: {}
+2025-07-17 06:23:26,527 INFO Episode 3 Step 40 batch loss: 0.2957814335823059
+2025-07-17 06:23:26,528 INFO Episode 3 Step 41 action: [0.14495721 0.00205104]
+2025-07-17 06:23:26,528 INFO Episode 3 Step 41 reward: -0.3435704975766568, done: False, info: {}
+2025-07-17 06:23:26,545 INFO Episode 3 Step 41 batch loss: 0.2956608533859253
+2025-07-17 06:23:26,545 INFO Episode 3 Step 42 action: [0.1473456 0.0034591]
+2025-07-17 06:23:26,546 INFO Episode 3 Step 42 reward: -0.34503052053112254, done: False, info: {}
+2025-07-17 06:23:26,557 INFO Episode 3 Step 42 batch loss: 0.29554063081741333
+2025-07-17 06:23:26,557 INFO Episode 3 Step 43 action: [0.14960653 0.00497118]
+2025-07-17 06:23:26,557 INFO Episode 3 Step 43 reward: -0.3465114422426532, done: False, info: {}
+2025-07-17 06:23:26,568 INFO Episode 3 Step 43 batch loss: 0.2954208254814148
+2025-07-17 06:23:26,568 INFO Episode 3 Step 44 action: [0.15173624 0.00658703]
+2025-07-17 06:23:26,569 INFO Episode 3 Step 44 reward: -0.3480118501280314, done: False, info: {}
+2025-07-17 06:23:26,579 INFO Episode 3 Step 44 batch loss: 0.29530131816864014
+2025-07-17 06:23:26,579 INFO Episode 3 Step 45 action: [0.15373194 0.00830589]
+2025-07-17 06:23:26,580 INFO Episode 3 Step 45 reward: -0.3495303388988818, done: False, info: {}
+2025-07-17 06:23:26,590 INFO Episode 3 Step 45 batch loss: 0.2951822280883789
+2025-07-17 06:23:26,590 INFO Episode 3 Step 46 action: [0.15559104 0.01012658]
+2025-07-17 06:23:26,591 INFO Episode 3 Step 46 reward: -0.3510654871414474, done: False, info: {}
+2025-07-17 06:23:26,601 INFO Episode 3 Step 46 batch loss: 0.29506346583366394
+2025-07-17 06:23:26,601 INFO Episode 3 Step 47 action: [0.1573121  0.01204723]
+2025-07-17 06:23:26,601 INFO Episode 3 Step 47 reward: -0.3526158286562942, done: False, info: {}
+2025-07-17 06:23:26,612 INFO Episode 3 Step 47 batch loss: 0.2949450612068176
+2025-07-17 06:23:26,612 INFO Episode 3 Step 48 action: [0.15889445 0.01406525]
+2025-07-17 06:23:26,612 INFO Episode 3 Step 48 reward: -0.3541799580666344, done: False, info: {}
+2025-07-17 06:23:26,623 INFO Episode 3 Step 48 batch loss: 0.2948269844055176
+2025-07-17 06:23:26,624 INFO Episode 3 Step 49 action: [0.16033831 0.01617745]
+2025-07-17 06:23:26,624 INFO Episode 3 Step 49 reward: -2.0, done: True, info: {'event': 'timeout'}
+2025-07-17 06:23:26,634 INFO Episode 3 Step 49 batch loss: 0.2947092652320862
+2025-07-17 06:23:26,635 INFO Episode 4 reset agent_ids: [0, 1, 2, 3, 4, 5]
+2025-07-17 06:23:26,635 INFO Episode 4 Step 0 action: [ 0.11632901 -0.37335223]
+2025-07-17 06:23:26,636 INFO Episode 4 Step 0 reward: -0.9476866503181814, done: False, info: {}
+2025-07-17 06:23:26,646 INFO Episode 4 Step 0 batch loss: 0.21185743808746338
+2025-07-17 06:23:26,646 INFO Episode 4 Step 1 action: [ 0.17154422 -0.39140713]
+2025-07-17 06:23:26,646 INFO Episode 4 Step 1 reward: -0.9498405746419494, done: False, info: {}
+2025-07-17 06:23:26,659 INFO Episode 4 Step 1 batch loss: 0.21176838874816895
+2025-07-17 06:23:26,659 INFO Episode 4 Step 2 action: [ 0.1756663  -0.38976943]
+2025-07-17 06:23:26,660 INFO Episode 4 Step 2 reward: -0.9519714388670346, done: False, info: {}
+2025-07-17 06:23:26,671 INFO Episode 4 Step 2 batch loss: 0.21168117225170135
+2025-07-17 06:23:26,671 INFO Episode 4 Step 3 action: [ 0.17675379 -0.39482397]
+2025-07-17 06:23:26,671 INFO Episode 4 Step 3 reward: -0.9541515276707495, done: False, info: {}
+2025-07-17 06:23:26,681 INFO Episode 4 Step 3 batch loss: 0.2115955650806427
+2025-07-17 06:23:26,682 INFO Episode 4 Step 4 action: [ 0.17576107 -0.4010951 ]
+2025-07-17 06:23:26,682 INFO Episode 4 Step 4 reward: -0.956403135372908, done: False, info: {}
+2025-07-17 06:23:26,693 INFO Episode 4 Step 4 batch loss: 0.21151143312454224
+2025-07-17 06:23:26,693 INFO Episode 4 Step 5 action: [ 0.17369741 -0.4076572 ]
+2025-07-17 06:23:26,694 INFO Episode 4 Step 5 reward: -0.9587350398018247, done: False, info: {}
+2025-07-17 06:23:26,704 INFO Episode 4 Step 5 batch loss: 0.21142861247062683
+2025-07-17 06:23:26,705 INFO Episode 4 Step 6 action: [ 0.171128  -0.4144073]
+2025-07-17 06:23:26,705 INFO Episode 4 Step 6 reward: -0.9611517966282126, done: False, info: {}
+2025-07-17 06:23:26,715 INFO Episode 4 Step 6 batch loss: 0.21134698390960693
+2025-07-17 06:23:26,716 INFO Episode 4 Step 7 action: [ 0.16825771 -0.42129976]
+2025-07-17 06:23:26,716 INFO Episode 4 Step 7 reward: -0.9636563848648463, done: False, info: {}
+2025-07-17 06:23:26,727 INFO Episode 4 Step 7 batch loss: 0.211266428232193
+2025-07-17 06:23:26,727 INFO Episode 4 Step 8 action: [ 0.16514714 -0.4282894 ]
+2025-07-17 06:23:26,728 INFO Episode 4 Step 8 reward: -0.9662510397364671, done: False, info: {}
+2025-07-17 06:23:26,744 INFO Episode 4 Step 8 batch loss: 0.21118682622909546
+2025-07-17 06:23:26,744 INFO Episode 4 Step 9 action: [ 0.16180018 -0.4353304 ]
+2025-07-17 06:23:26,745 INFO Episode 4 Step 9 reward: -0.9689375451675453, done: False, info: {}
+2025-07-17 06:23:26,759 INFO Episode 4 Step 9 batch loss: 0.21110811829566956
+2025-07-17 06:23:26,759 INFO Episode 4 Step 10 action: [ 0.15818273 -0.44238037]
+2025-07-17 06:23:26,759 INFO Episode 4 Step 10 reward: -0.9717175081291037, done: False, info: {}
+2025-07-17 06:23:26,770 INFO Episode 4 Step 10 batch loss: 0.21103014051914215
+2025-07-17 06:23:26,770 INFO Episode 4 Step 11 action: [ 0.15423846 -0.449435  ]
+2025-07-17 06:23:26,770 INFO Episode 4 Step 11 reward: -0.9745927685607771, done: False, info: {}
+2025-07-17 06:23:26,780 INFO Episode 4 Step 11 batch loss: 0.21095290780067444
+2025-07-17 06:23:26,781 INFO Episode 4 Step 12 action: [ 0.15139686 -0.45674133]
+2025-07-17 06:23:26,781 INFO Episode 4 Step 12 reward: -0.9775592721067314, done: False, info: {}
+2025-07-17 06:23:26,791 INFO Episode 4 Step 12 batch loss: 0.21087627112865448
+2025-07-17 06:23:26,792 INFO Episode 4 Step 13 action: [ 0.14838013 -0.4637711 ]
+2025-07-17 06:23:26,792 INFO Episode 4 Step 13 reward: -0.9806157485794632, done: False, info: {}
+2025-07-17 06:23:26,802 INFO Episode 4 Step 13 batch loss: 0.21080021560192108
+2025-07-17 06:23:26,803 INFO Episode 4 Step 14 action: [ 0.14529729 -0.47049457]
+2025-07-17 06:23:26,803 INFO Episode 4 Step 14 reward: -0.9837600031849596, done: False, info: {}
+2025-07-17 06:23:26,813 INFO Episode 4 Step 14 batch loss: 0.21072468161582947
+2025-07-17 06:23:26,814 INFO Episode 4 Step 15 action: [ 0.1421499  -0.47688818]
+2025-07-17 06:23:26,814 INFO Episode 4 Step 15 reward: -0.9869895832182931, done: False, info: {}
+2025-07-17 06:23:26,826 INFO Episode 4 Step 15 batch loss: 0.21064960956573486
+2025-07-17 06:23:26,826 INFO Episode 4 Step 16 action: [ 0.13893062 -0.4829297 ]
+2025-07-17 06:23:26,827 INFO Episode 4 Step 16 reward: -0.9903018780576455, done: False, info: {}
+2025-07-17 06:23:26,837 INFO Episode 4 Step 16 batch loss: 0.2105749249458313
+2025-07-17 06:23:26,837 INFO Episode 4 Step 17 action: [ 0.13563478 -0.48860186]
+2025-07-17 06:23:26,838 INFO Episode 4 Step 17 reward: -0.9936940976474777, done: False, info: {}
+2025-07-17 06:23:26,848 INFO Episode 4 Step 17 batch loss: 0.21050062775611877
+2025-07-17 06:23:26,849 INFO Episode 4 Step 18 action: [ 0.13225815 -0.4938898 ]
+2025-07-17 06:23:26,849 INFO Episode 4 Step 18 reward: -0.9971633033124176, done: False, info: {}
+2025-07-17 06:23:26,859 INFO Episode 4 Step 18 batch loss: 0.21042664349079132
+2025-07-17 06:23:26,860 INFO Episode 4 Step 19 action: [ 0.12879728 -0.49878144]
+2025-07-17 06:23:26,860 INFO Episode 4 Step 19 reward: -1.000706433569638, done: False, info: {}
+2025-07-17 06:23:26,871 INFO Episode 4 Step 19 batch loss: 0.21035297214984894
+2025-07-17 06:23:26,871 INFO Episode 4 Step 20 action: [ 0.12524927 -0.5032666 ]
+2025-07-17 06:23:26,872 INFO Episode 4 Step 20 reward: -1.0043202926311128, done: False, info: {}
+2025-07-17 06:23:26,881 INFO Episode 4 Step 20 batch loss: 0.21027956902980804
+2025-07-17 06:23:26,881 INFO Episode 4 Step 21 action: [ 0.12161128 -0.50733757]
+2025-07-17 06:23:26,882 INFO Episode 4 Step 21 reward: -1.0080016144422341, done: False, info: {}
+2025-07-17 06:23:26,891 INFO Episode 4 Step 21 batch loss: 0.21020641922950745
+2025-07-17 06:23:26,891 INFO Episode 4 Step 22 action: [ 0.11788176 -0.5109891 ]
+2025-07-17 06:23:26,891 INFO Episode 4 Step 22 reward: -1.011747014892619, done: False, info: {}
+2025-07-17 06:23:26,900 INFO Episode 4 Step 22 batch loss: 0.21013344824314117
+2025-07-17 06:23:26,901 INFO Episode 4 Step 23 action: [ 0.1140589  -0.51421815]
+2025-07-17 06:23:26,901 INFO Episode 4 Step 23 reward: -1.0155530975368074, done: False, info: {}
+2025-07-17 06:23:26,910 INFO Episode 4 Step 23 batch loss: 0.21006068587303162
+2025-07-17 06:23:26,911 INFO Episode 4 Step 24 action: [ 0.11014202 -0.5170253 ]
+2025-07-17 06:23:26,911 INFO Episode 4 Step 24 reward: -1.019416384756247, done: False, info: {}
+2025-07-17 06:23:26,921 INFO Episode 4 Step 24 batch loss: 0.2099880874156952
+2025-07-17 06:23:26,921 INFO Episode 4 Step 25 action: [ 0.10613139 -0.5194125 ]
+2025-07-17 06:23:26,921 INFO Episode 4 Step 25 reward: -1.0233334185995355, done: False, info: {}
+2025-07-17 06:23:26,930 INFO Episode 4 Step 25 batch loss: 0.2099156677722931
+2025-07-17 06:23:26,931 INFO Episode 4 Step 26 action: [ 0.10202803 -0.52138406]
+2025-07-17 06:23:26,931 INFO Episode 4 Step 26 reward: -1.0273006797326965, done: False, info: {}
+2025-07-17 06:23:26,941 INFO Episode 4 Step 26 batch loss: 0.20984330773353577
+2025-07-17 06:23:26,942 INFO Episode 4 Step 27 action: [ 0.09783378 -0.5229468 ]
+2025-07-17 06:23:26,942 INFO Episode 4 Step 27 reward: -1.0313147243164233, done: False, info: {}
+2025-07-17 06:23:26,951 INFO Episode 4 Step 27 batch loss: 0.20977112650871277
+2025-07-17 06:23:26,952 INFO Episode 4 Step 28 action: [ 0.09355135 -0.5241094 ]
+2025-07-17 06:23:26,952 INFO Episode 4 Step 28 reward: -1.0353721065797528, done: False, info: {}
+2025-07-17 06:23:26,961 INFO Episode 4 Step 28 batch loss: 0.20969901978969574
+2025-07-17 06:23:26,961 INFO Episode 4 Step 29 action: [ 0.08918418 -0.5248829 ]
+2025-07-17 06:23:26,962 INFO Episode 4 Step 29 reward: -1.0394694138743434, done: False, info: {}
+2025-07-17 06:23:26,971 INFO Episode 4 Step 29 batch loss: 0.20962701737880707
+2025-07-17 06:23:26,971 INFO Episode 4 Step 30 action: [ 0.08473666 -0.52528036]
+2025-07-17 06:23:26,972 INFO Episode 4 Step 30 reward: -1.0436033083821017, done: False, info: {}
+2025-07-17 06:23:26,981 INFO Episode 4 Step 30 batch loss: 0.20955508947372437
+2025-07-17 06:23:26,981 INFO Episode 4 Step 31 action: [ 0.08021392 -0.5253166 ]
+2025-07-17 06:23:26,982 INFO Episode 4 Step 31 reward: -1.0477705707668306, done: False, info: {}
+2025-07-17 06:23:26,991 INFO Episode 4 Step 31 batch loss: 0.20948319137096405
+2025-07-17 06:23:26,991 INFO Episode 4 Step 32 action: [ 0.07562199 -0.5250078 ]
+2025-07-17 06:23:26,991 INFO Episode 4 Step 32 reward: -1.0519680137191025, done: False, info: {}
+2025-07-17 06:23:27,000 INFO Episode 4 Step 32 batch loss: 0.2094114124774933
+2025-07-17 06:23:27,001 INFO Episode 4 Step 33 action: [ 0.07096754 -0.524372  ]
+2025-07-17 06:23:27,001 INFO Episode 4 Step 33 reward: -1.056192607157866, done: False, info: {}
+2025-07-17 06:23:27,013 INFO Episode 4 Step 33 batch loss: 0.20933961868286133
+2025-07-17 06:23:27,014 INFO Episode 4 Step 34 action: [ 0.06625815 -0.5234285 ]
+2025-07-17 06:23:27,014 INFO Episode 4 Step 34 reward: -1.0604413991383044, done: False, info: {}
+2025-07-17 06:23:27,024 INFO Episode 4 Step 34 batch loss: 0.20926786959171295
+2025-07-17 06:23:27,025 INFO Episode 4 Step 35 action: [ 0.06150159 -0.52219725]
+2025-07-17 06:23:27,025 INFO Episode 4 Step 35 reward: -1.0647115940895353, done: False, info: {}
+2025-07-17 06:23:27,035 INFO Episode 4 Step 35 batch loss: 0.20919615030288696
+2025-07-17 06:23:27,036 INFO Episode 4 Step 36 action: [ 0.05670655 -0.52069944]
+2025-07-17 06:23:27,036 INFO Episode 4 Step 36 reward: -1.0690005165262189, done: False, info: {}
+2025-07-17 06:23:27,047 INFO Episode 4 Step 36 batch loss: 0.20912443101406097
+2025-07-17 06:23:27,048 INFO Episode 4 Step 37 action: [ 0.05188182 -0.5189568 ]
+2025-07-17 06:23:27,048 INFO Episode 4 Step 37 reward: -1.0733056131226553, done: False, info: {}
+2025-07-17 06:23:27,057 INFO Episode 4 Step 37 batch loss: 0.20905274152755737
+2025-07-17 06:23:27,057 INFO Episode 4 Step 38 action: [ 0.0470365  -0.51699084]
+2025-07-17 06:23:27,058 INFO Episode 4 Step 38 reward: -1.0776245384879901, done: False, info: {}
+2025-07-17 06:23:27,071 INFO Episode 4 Step 38 batch loss: 0.20898106694221497
+2025-07-17 06:23:27,072 INFO Episode 4 Step 39 action: [ 0.04217987 -0.51482403]
+2025-07-17 06:23:27,072 INFO Episode 4 Step 39 reward: -1.0819550286805943, done: False, info: {}
+2025-07-17 06:23:27,083 INFO Episode 4 Step 39 batch loss: 0.20890934765338898
+2025-07-17 06:23:27,083 INFO Episode 4 Step 40 action: [ 0.03732106 -0.51247793]
+2025-07-17 06:23:27,083 INFO Episode 4 Step 40 reward: -1.0862950342791655, done: False, info: {}
+2025-07-17 06:23:27,094 INFO Episode 4 Step 40 batch loss: 0.2088376134634018
+2025-07-17 06:23:27,094 INFO Episode 4 Step 41 action: [ 0.03246914 -0.5099742 ]
+2025-07-17 06:23:27,094 INFO Episode 4 Step 41 reward: -1.090642640806445, done: False, info: {}
+2025-07-17 06:23:27,105 INFO Episode 4 Step 41 batch loss: 0.2087658941745758
+2025-07-17 06:23:27,106 INFO Episode 4 Step 42 action: [ 0.02763294 -0.5073338 ]
+2025-07-17 06:23:27,106 INFO Episode 4 Step 42 reward: -5.0, done: True, info: {'event': 'out_of_bounds'}
+2025-07-17 06:23:27,116 INFO Episode 4 Step 42 batch loss: 0.20869410037994385
+2025-07-17 06:23:27,116 INFO Episode 5 reset agent_ids: [0, 1, 2, 3, 4, 5]
+2025-07-17 06:23:27,117 INFO Episode 5 Step 0 action: [-0.00067729  0.5807878 ]
+2025-07-17 06:23:27,117 INFO Episode 5 Step 0 reward: -0.5137402647973821, done: False, info: {}
+2025-07-17 06:23:27,127 INFO Episode 5 Step 0 batch loss: 1.7398343086242676
+2025-07-17 06:23:27,128 INFO Episode 5 Step 1 action: [-0.01336053  0.59497666]
+2025-07-17 06:23:27,128 INFO Episode 5 Step 1 reward: -0.5133979845267082, done: False, info: {}
+2025-07-17 06:23:27,145 INFO Episode 5 Step 1 batch loss: 1.7395762205123901
+2025-07-17 06:23:27,145 INFO Episode 5 Step 2 action: [-0.007257    0.58949393]
+2025-07-17 06:23:27,145 INFO Episode 5 Step 2 reward: -0.5131865045792013, done: False, info: {}
+2025-07-17 06:23:27,156 INFO Episode 5 Step 2 batch loss: 1.7392860651016235
+2025-07-17 06:23:27,156 INFO Episode 5 Step 3 action: [-0.0019125  0.5860238]
+2025-07-17 06:23:27,156 INFO Episode 5 Step 3 reward: -0.513096359843467, done: False, info: {}
+2025-07-17 06:23:27,167 INFO Episode 5 Step 3 batch loss: 1.7389687299728394
+2025-07-17 06:23:27,167 INFO Episode 5 Step 4 action: [0.00215728 0.58403456]
+2025-07-17 06:23:27,168 INFO Episode 5 Step 4 reward: -0.5131137372149688, done: False, info: {}
+2025-07-17 06:23:27,178 INFO Episode 5 Step 4 batch loss: 1.738628625869751
+2025-07-17 06:23:27,178 INFO Episode 5 Step 5 action: [0.0049969  0.58303744]
+2025-07-17 06:23:27,178 INFO Episode 5 Step 5 reward: -0.5132258132162695, done: False, info: {}
+2025-07-17 06:23:27,189 INFO Episode 5 Step 5 batch loss: 1.738269329071045
+2025-07-17 06:23:27,190 INFO Episode 5 Step 6 action: [0.00688363 0.58266354]
+2025-07-17 06:23:27,190 INFO Episode 5 Step 6 reward: -0.513422833688671, done: False, info: {}
+2025-07-17 06:23:27,201 INFO Episode 5 Step 6 batch loss: 1.73789381980896
+2025-07-17 06:23:27,202 INFO Episode 5 Step 7 action: [0.0080947  0.58269835]
+2025-07-17 06:23:27,202 INFO Episode 5 Step 7 reward: -0.5136979979866328, done: False, info: {}
+2025-07-17 06:23:27,212 INFO Episode 5 Step 7 batch loss: 1.7375051975250244
+2025-07-17 06:23:27,213 INFO Episode 5 Step 8 action: [0.00887308 0.583015  ]
+2025-07-17 06:23:27,213 INFO Episode 5 Step 8 reward: -0.5140470186286097, done: False, info: {}

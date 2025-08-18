@@ -1,0 +1,14 @@
+torch==2.2.2
+torchvision==0.17.2
+torchaudio==2.2.2
+numpy>=1.21
+matplotlib>=3.5
+scipy>=1.8
+tqdm
+pyyaml
+pandas
+gym==0.26.2
+mamba-ssm==1.2.0
+# wandb
+# opencv-python
+

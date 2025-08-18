@@ -1,0 +1,89 @@
+<?xml version="1.0"?>
+<sdf version="1.6">
+  <world name="my_training_world">
+
+    <!-- 1) 光源、地面 -->
+    <include>
+      <uri>model://sun</uri>
+    </include>
+    <include>
+      <uri>model://ground_plane</uri>
+    </include>
+
+    <!-- 2) pioneer2dx: <include uri="model://pioneer2dx"> 才能加载官方车体与mesh/关节 -->
+    <include>
+      <uri>model://pioneer2dx_hinge</uri>
+      <name>pioneer2dx</name>
+      <!-- 放到 (-2,0,0) 远离actors，避免初始撞  -->
+      <pose>-2 0 0 0 0 0</pose>
+
+      <!-- 这里添加 DiffDrive 插件: 关节名要与 ~/.gazebo/models/pioneer2dx/model.sdf 的名称对应
+           通常是 left_wheel_hinge / right_wheel_hinge -->
+      <plugin name="pioneer2dx_diff_drive" filename="libgazebo_ros_diff_drive.so">
+        <ros>
+          <namespace>pioneer2dx</namespace>
+          <!-- cmd_vel:=cmd_vel 是旧式Remap写法，会warning但无大碍 -->
+          <argument>cmd_vel:=cmd_vel</argument>
+        </ros>
+        <update_rate>50</update_rate>
+        <left_joint>left_wheel_hinge</left_joint>
+        <right_joint>right_wheel_hinge</right_joint>
+        <wheel_separation>0.4</wheel_separation>
+        <wheel_radius>0.05</wheel_radius>
+        <commandTopic>cmd_vel</commandTopic>
+        <odometryTopic>odom</odometryTopic>
+      </plugin>
+    </include>
+
+    <!-- 3) Actor1放(2,2)，Actor2放(2,-2) -->
+    <actor name="actor1">
+      <pose>2 2 0 0 0 0</pose>
+      <skin>
+        <filename>model://person_walking/meshes/walking.dae</filename>
+      </skin>
+      <animation name="walk1">
+        <filename>model://person_walking/meshes/walking.dae</filename>
+        <interpolate_x>true</interpolate_x>
+      </animation>
+      <script>
+        <trajectory id="0" type="walk">
+          <waypoint><time>0</time><pose>2 2 0 0 0 0</pose></waypoint>
+          <waypoint><time>8</time><pose>2 1.5 0 0 0 0</pose></waypoint>
+          <waypoint><time>16</time><pose>2 2 0 0 0 0</pose></waypoint>
+        </trajectory>
+      </script>
+    </actor>
+
+    <actor name="actor2">
+      <pose>2 -2 0 0 0 0</pose>
+      <skin>
+        <filename>model://person_walking/meshes/walking.dae</filename>
+      </skin>
+      <animation name="walk2">
+        <filename>model://person_walking/meshes/walking.dae</filename>
+        <interpolate_x>true</interpolate_x>
+      </animation>
+      <script>
+        <trajectory id="0" type="walk">
+          <waypoint><time>0</time><pose>2 -2 0 0 0 0</pose></waypoint>
+          <waypoint><time>8</time><pose>2 -1.5 0 0 0 0</pose></waypoint>
+          <waypoint><time>16</time><pose>2 -2 0 0 0 0</pose></waypoint>
+        </trajectory>
+      </script>
+    </actor>
+
+    <!-- 4) gazebo_ros_state插件: 提供 /get_entity_state 等, 方便脚本读/写坐标 -->
+    <plugin name="gazebo_ros_state" filename="libgazebo_ros_state.so">
+      <ros>
+        <namespace>/</namespace>
+      </ros>
+    </plugin>
+
+    <!-- 物理参数 -->
+    <physics type="ode">
+      <real_time_update_rate>1000</real_time_update_rate>
+      <max_step_size>0.001</max_step_size>
+    </physics>
+  </world>
+</sdf>
+
