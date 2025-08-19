@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import sys, os, shutil, json, logging, argparse, configparser, random
 import gym, git, numpy as np, torch
 from tqdm.auto import tqdm
@@ -12,6 +15,20 @@ from crowd_nav.utils.memory import ReplayMemory, ExpertReplayMemory
 from crowd_nav.utils.trainer import Trainer
 from crowd_nav.utils.explorer import Explorer
 from crowd_sim.envs.utils.state import JointState
+
+# ====== 高性能设置（Ampere+ 显著提速；安全）======
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
+try:
+    torch.set_float32_matmul_precision("high")
+except Exception:
+    pass
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+torch.set_num_threads(1)
+
+# 并发采样器
+from crowd_nav.utils.parallel_sampler import ParallelSampler
 
 ROBOT_VPREF_IDX = 7
 DEFAULT_SEED = 42
@@ -79,7 +96,7 @@ def bc_pretrain_actor(policy, exp_buf, device, iters=2000, batch_size=256, lr=3e
 def main():
     parser = argparse.ArgumentParser('Parse configuration file')
     parser.add_argument('--env_config', type=str, default='configs/env.config')
-    parser.add_argument('--policy', type=str, default='mamba_rl')
+    parser.add_argument('--policy', type=str, default='mamba')  # 你的工厂键为 'mamba'
     parser.add_argument('--policy_config', type=str, default='configs/policy.config')
     parser.add_argument('--train_config', type=str, default='configs/train.config')
     parser.add_argument('--output_dir', type=str, default='data/output')
@@ -141,19 +158,29 @@ def main():
     env = gym.make('CrowdSim-v0'); env.configure(env_config)
     robot = Robot(env_config, 'robot'); env.set_robot(robot)
 
+    # 取出环境里的终局奖励（用于“终局曲线”）
+    succ_bonus      = env_config.getfloat('reward', 'success_reward',      fallback=10.0)
+    coll_penalty    = env_config.getfloat('reward', 'collision_penalty',   fallback=-3.0)
+    timeout_penalty = env_config.getfloat('reward', 'timeout_penalty',     fallback=0.0)  # 若无就当 0
+
     # ----------- train params -----------
     train_config = configparser.RawConfigParser(inline_comment_prefixes=('#',';'))
     train_config.read(args.train_config)
 
     train_episodes = train_config.getint('train', 'train_episodes')
-    sample_episodes = train_config.getint('train', 'sample_episodes')
-    evaluation_interval = train_config.getint('train', 'evaluation_interval')
-    checkpoint_interval = train_config.getint('train', 'checkpoint_interval')
-    capacity = train_config.getint('train', 'capacity')
+    sample_episodes = train_config.getint('train', 'sample_episodes', fallback=12)
+    evaluation_interval = train_config.getint('train', 'evaluation_interval', fallback=50)
+    checkpoint_interval = train_config.getint('train', 'checkpoint_interval', fallback=250)
+    capacity = train_config.getint('train', 'capacity', fallback=200000)
 
-    epsilon_start = train_config.getfloat('train', 'epsilon_start', fallback=0.2)
+    epsilon_start = train_config.getfloat('train', 'epsilon_start', fallback=0.1)
     epsilon_end   = train_config.getfloat('train', 'epsilon_end',   fallback=0.05)
     epsilon_decay = train_config.getfloat('train', 'epsilon_decay', fallback=1000)
+
+    # 轻量评估参数
+    val_subset        = train_config.getint('train', 'val_subset',        fallback=50)
+    eval_full_every   = train_config.getint('train', 'eval_full_every',   fallback=200)
+    train_stat_stride = train_config.getint('train', 'train_stat_stride', fallback=5)
 
     # SAC 超参
     gamma     = train_config.getfloat('trainer', 'gamma',     fallback=0.99)
@@ -162,19 +189,19 @@ def main():
     lr_critic = train_config.getfloat('trainer', 'lr_critic', fallback=3e-4)
     lr_alpha  = train_config.getfloat('trainer', 'lr_alpha',  fallback=3e-4)
     batch_size= train_config.getint  ('trainer', 'batch_size', fallback=256)
-    
     target_entropy = train_config.getfloat('trainer', 'target_entropy', fallback=-2.0)
     use_amp        = train_config.getboolean('trainer', 'use_amp',       fallback=True)
     grad_clip      = train_config.getfloat ('trainer', 'grad_clip',      fallback=1.0)
 
-    # ----------- Trainer -----------
+    # ----------- Trainer（仅一次） -----------
     trainer = Trainer(policy, device,
                       gamma=gamma, tau=tau,
                       lr_actor=lr_actor, lr_critic=lr_critic, lr_alpha=lr_alpha,
                       batch_size=batch_size,
                       target_entropy=target_entropy,
                       use_amp=use_amp,
-                      grad_clip=grad_clip)
+                      grad_clip=grad_clip,
+                      v_pref_idx=ROBOT_VPREF_IDX)
 
     # ----------- buffers / explorer / expert -----------
     rl_buf = ReplayMemory(capacity)
@@ -185,20 +212,36 @@ def main():
     expert_policy = policy_factory[il_policy_name](policy_config)
     expert_policy.configure(policy_config)
     expert_policy.set_device(device)
-    expert_policy.multiagent_training = policy.multiagent_training
+    expert_policy.multiagent_training = getattr(policy, 'multiagent_training', False)
     expert_policy.safety_space = train_config.getfloat('imitation_learning', 'safety_space', fallback=0.0)
 
-    # ----------- Trainer -----------
-    trainer = Trainer(policy, device,
-                      gamma=gamma, tau=tau,
-                      lr_actor=lr_actor, lr_critic=lr_critic, lr_alpha=lr_alpha,
-                      batch_size=batch_size)
+    # ----------- 并发采样配置 -----------
+    vec_enable     = train_config.getboolean('vectorize', 'enable',           fallback=True)
+    vec_workers    = train_config.getint('vectorize', 'num_workers',          fallback=4)
+    vec_eps_per    = train_config.getint('vectorize', 'episodes_per_worker',  fallback=3)
+    broadcast_k    = train_config.getint('vectorize', 'broadcast_interval',   fallback=5)
+    worker_device  = train_config.get('vectorize', 'worker_device',
+                                      fallback=('cuda:0' if args.gpu and torch.cuda.is_available() else 'cpu'))
 
-    # ----------- IL: 专家开车 + BC（仅线下一次；无 DAgger） ----------- 
+    sampler = None
+    if vec_enable:
+        sampler = ParallelSampler(
+            num_workers=vec_workers,
+            env_config_path=args.env_config,
+            policy_config_path=args.policy_config,
+            policy_name_student=args.policy,
+            policy_name_expert=il_policy_name,
+            device_str=worker_device,          # worker 在 CUDA 前向（mamba_ssm 需要）
+            base_seed=args.seed * 1000
+        )
+        sampler.broadcast_policy(policy)
+
+    # ----------- IL: 专家开车 + BC（线下一次；无 DAgger） ----------- 
     il_episodes = train_config.getint('imitation_learning', 'il_episodes', fallback=0)
     il_epochs   = train_config.getint('imitation_learning', 'il_epochs',   fallback=0)
     il_lr       = train_config.getfloat('imitation_learning', 'il_learning_rate', fallback=3e-4)
     if il_episodes > 0:
+        # 为确保 ExpertReplayMemory 标签完整性，这里保持单进程收集
         robot.set_policy(expert_policy)
 
         succ = coll = tout = 0
@@ -245,7 +288,7 @@ def main():
         # 还回学生策略
         robot.set_policy(policy)
 
-    # ----------- RL 主循环（SACfD：固定 demos，仅正则；无 DAgger） -----------
+    # ----------- RL 主循环（SACfD：固定 demos 正则；无 DAgger） -----------
     policy.set_env(env) if hasattr(policy, "set_env") else None
     robot.set_policy(policy)
     try:
@@ -253,12 +296,16 @@ def main():
     except Exception:
         pass
 
-    train_succ_hist, train_coll_hist, train_timeout_hist, train_reward_hist = [], [], [], []
-    best_val = None
+    # 历史记录（含“终局期望回报”）
+    train_succ_hist, train_coll_hist, train_timeout_hist = [], [], []
+    train_reward_hist = []          # shaped 总回报（你已有）
+    train_term_hist   = []          # 终局期望回报：succ*R + coll*P + timeout*P_t
+
     plot_interval = 50
+    best_val = None
 
     for episode in tqdm(range(train_episodes), desc="Training progress", unit="ep", dynamic_ncols=True):
-        # epsilon
+        # epsilon（若策略支持）
         if episode < epsilon_decay:
             epsilon = epsilon_start + (epsilon_end - epsilon_start) * (episode / max(1, epsilon_decay))
         else:
@@ -266,94 +313,160 @@ def main():
         if hasattr(policy, "set_epsilon"):
             policy.set_epsilon(epsilon)
 
-        # 评估
+        # ---- 动态目标熵：早期更“抖”，后期收敛（不影响吞吐）----
+        ent_t = episode / max(1, int(0.5 * train_episodes))  # 前 50% 线性过渡
+        target_H_hi, target_H_lo = -1.5, -2.2
+        trainer.target_entropy = float(target_H_hi + (target_H_lo - target_H_hi) * min(1.0, ent_t))
+
+        # 定期广播学生策略到并发 worker
+        if sampler and (episode % max(1, broadcast_k) == 0):
+            sampler.broadcast_policy(policy)
+
+        # 评估：子集 + 定期全量
         if episode % evaluation_interval == 0:
-            val_stats = explorer.run_k_episodes(env.case_size['val'], 'val', episode=episode,
+            do_full = (episode % eval_full_every == 0)
+            val_k = env.case_size['val'] if do_full else min(val_subset, env.case_size['val'])
+            val_stats = explorer.run_k_episodes(val_k, 'val', episode=episode,
                                                 return_stats=True, show_tqdm=True)
-            logging.info("VAL  ep=%d | succ=%.2f coll=%.2f timeout=%.2f nav=%.2f reward=%.2f",
-                         episode, val_stats["success_rate"], val_stats["collision_rate"],
+            logging.info("VAL  ep=%d | [%s] succ=%.2f coll=%.2f timeout=%.2f nav=%.2f reward=%.2f",
+                         episode, "FULL" if do_full else f"SUB({val_k})",
+                         val_stats["success_rate"], val_stats["collision_rate"],
                          val_stats["timeout_rate"], val_stats["nav_time"], val_stats["total_reward"])
             if (best_val is None or
-                val_stats["success_rate"] > best_val["success_rate"] or
-                (val_stats["success_rate"] == best_val["success_rate"] and
-                 val_stats["collision_rate"] < best_val["collision_rate"])):
+                val_stats["success_rate"] > best_val.get("success_rate", -1) or
+                (val_stats["success_rate"] == best_val.get("success_rate", -1) and
+                 val_stats["collision_rate"] < best_val.get("collision_rate", 1e9))):
                 best_val = dict(val_stats); best_val["episode"] = int(episode)
 
-        # ===== 采样（仅学生策略与环境交互；静音 Explorer；显示一个 tqdm 条）=====
-        succ = coll = tout = 0
-        ep_rewards = []
-        bar_c = tqdm(range(sample_episodes), desc=f"Interact [ep {episode}]", dynamic_ncols=True, leave=False)
-        for _ in bar_c:
+        # ===== 采样（并发优先；否则单进程一次性采样）=====
+        if sampler:
+            try:
+                tr, traj = sampler.collect(
+                    episodes_per_worker=vec_eps_per,
+                    episode_idx=episode,
+                    use_expert=False
+                )
+            except RuntimeError as e:
+                logging.error("Parallel sampler error: %s", e)
+                raise
+            # 写入主进程回放池
+            for (args_, kwargs_) in traj:
+                rl_buf.push(*args_, **kwargs_)
+            logging.info("TRAIN(interact, parallel) | succ=%.2f coll=%.2f timeout=%.2f reward=%.2f | rl_buf=%d",
+                         tr.get("success_rate", 0.0),
+                         tr.get("collision_rate", 0.0),
+                         tr.get("timeout_rate", 0.0),
+                         tr.get("total_reward", 0.0),
+                         len(rl_buf))
+        else:
             with _quiet_logs():  # 静音 Explorer 内部的 info 打印
-                st = explorer.run_k_episodes(1, 'train', update_memory=True, episode=episode,
-                                             return_stats=True, show_tqdm=False)
-            if st:
-                succ += int(st.get("success_rate", 0.0) > 0.5)
-                coll += int(st.get("collision_rate", 0.0) > 0.5)
-                tout += int(st.get("timeout_rate", 0.0)  > 0.5)
-                ep_rewards.append(st.get("total_reward", 0.0))
-            n = max(1, len(ep_rewards))
-            bar_c.set_postfix({
-                "succ": f"{succ/n:.2f}",
-                "coll": f"{coll/n:.2f}",
-                "timeout": f"{tout/n:.2f}",
-                "rl_buf": f"{len(rl_buf)}"
-            })
-        logging.info("TRAIN(interact) | succ=%.2f coll=%.2f timeout=%.2f reward=%.2f | rl_buf=%d",
-                     succ/max(1,sample_episodes), coll/max(1,sample_episodes),
-                     tout/max(1,sample_episodes), (np.mean(ep_rewards) if ep_rewards else 0.0),
-                     len(rl_buf))
+                tr = explorer.run_k_episodes(sample_episodes, 'train', update_memory=True, episode=episode,
+                                             return_stats=True, show_tqdm=True)
+            logging.info("TRAIN(interact) | succ=%.2f coll=%.2f timeout=%.2f reward=%.2f | rl_buf=%d",
+                         tr.get("success_rate", 0.0), tr.get("collision_rate", 0.0),
+                         tr.get("timeout_rate", 0.0), tr.get("total_reward", 0.0),
+                         len(rl_buf))
 
         # ===== Optimize（SACfD：仅用固定 demos 作正则）=====
-        # 线性调度：p_demo 0.5→0.1；lambda_bc 1.0→0（到 60% 进度）
+        # 线性进度刻度
         t = episode / max(1, train_episodes - 1)
-        p_demo = float(np.interp(t, [0.0, 1.0], [0.5, 0.1]))
-        lambda_bc = float(np.interp(min(t, 0.6), [0.0, 0.6], [1.0, 0.0]))
+
+        # —— 更保守的专家引导 ——（放缓衰减 & 保留少量常驻 BC）
+        p_demo    = float(np.interp(t, [0.0, 1.0],       [0.6, 0.2]))
+        lambda_bc = float(np.interp(t, [0.0, 0.6, 1.0],  [1.0, 0.4, 0.2]))
+
+        # —— 自适应更新步数：早期样本少→少更新；后期样本多→稍微更多 —— 
+        updates = train_config.getint('train', 'train_batches', fallback=120)
+        if len(rl_buf) < 10_000:
+            updates = max(40, updates // 3)
+        elif len(rl_buf) > 60_000:
+            updates = int(updates * 1.25)
+
         meter = trainer.optimize_batch(
-            rl_buf, exp_buf, updates=train_config.getint('train', 'train_batches', fallback=1),
+            rl_buf, exp_buf, updates=updates,
             p_demo=p_demo, lambda_bc=lambda_bc, use_q_filter=True
         )
 
-        # 快速统计（仅 1 回合；静音 Explorer）
-        with _quiet_logs():
-            tr = explorer.run_k_episodes(1, 'train', update_memory=False, episode=episode,
-                                         return_stats=True, show_tqdm=False)
-        train_succ_hist.append(tr["success_rate"])
-        train_coll_hist.append(tr["collision_rate"])
-        train_timeout_hist.append(tr["timeout_rate"])
-        train_reward_hist.append(tr["total_reward"])
-        logging.info("TRAIN ep=%d | succ=%.2f coll=%.2f timeout=%.2f nav=%.2f reward=%.4f | p_demo=%.2f λ_bc=%.2f | meter=%s",
-                     episode, tr["success_rate"], tr["collision_rate"], tr["timeout_rate"], tr["nav_time"],
-                     tr["total_reward"], p_demo, lambda_bc,
-                     {k: round(v, 4) for k, v in meter.items()})
+        # —— 终局期望回报（只看成功/碰撞/超时的终局项）——
+        term_ret = (
+            tr.get("success_rate", 0.0)  * succ_bonus +
+            tr.get("collision_rate", 0.0)* coll_penalty +
+            tr.get("timeout_rate", 0.0)  * timeout_penalty
+        )
+
+        # 快速统计（本轮交互聚合统计）
+        train_succ_hist.append(tr.get("success_rate", 0.0))
+        train_coll_hist.append(tr.get("collision_rate", 0.0))
+        train_timeout_hist.append(tr.get("timeout_rate", 0.0))
+        train_reward_hist.append(tr.get("total_reward", 0.0))  # shaped
+        train_term_hist.append(term_ret)                       # terminal-only
+        logging.info("TRAIN ep=%d | succ=%.2f coll=%.2f timeout=%.2f nav=%.2f reward=%.4f | p_demo=%.2f λ_bc=%.2f upd=%d | meter=%s",
+                     episode, tr.get("success_rate", 0.0), tr.get("collision_rate", 0.0),
+                     tr.get("timeout_rate", 0.0), tr.get("nav_time", 0.0),
+                     tr.get("total_reward", 0.0), p_demo, lambda_bc, updates,
+                     {k: round(v, 4) for k, v in (meter or {}).items()})
 
         # 保存
         if episode != 0 and episode % checkpoint_interval == 0:
             model_path = os.path.join(args.output_dir, f'rl_model_ep{episode}.pth')
             if hasattr(policy, "save_model"):
                 policy.save_model(model_path)
+            elif hasattr(policy, "get_state_dict"):
+                torch.save(policy.get_state_dict(), model_path)
             else:
                 torch.save(policy.state_dict(), model_path)
             logging.info("Checkpoint saved at ep=%d -> %s", episode, model_path)
 
-        # 画图（每 50 ep）
-        plot_interval = 50
+        # 画图（每 50 ep）：三联图 + 双滑窗（100 / 500）
         if episode % plot_interval == 0 and episode > 0:
-            W = min(plot_interval, len(train_reward_hist))
-            reward_ma = moving_average(train_reward_hist, W)
-            succ_ma   = moving_average(train_succ_hist, W)
-            coll_ma   = moving_average(train_coll_hist, W)
-            tout_ma   = moving_average(train_timeout_hist, W)
-            plt.figure(figsize=(12,6))
-            plt.subplot(211); plt.plot(train_reward_hist, label='Train Avg Reward')
-            if len(reward_ma) > 0: plt.axhline(np.mean(train_reward_hist[-W:]), ls='--', label=f'mean({W})')
-            plt.xlabel('Episode'); plt.ylabel('Reward'); plt.legend()
-            plt.subplot(212)
-            x0 = np.arange(W-1, W-1+len(succ_ma))
-            if len(succ_ma): plt.plot(x0, succ_ma, label=f'Success (w={W})')
-            if len(coll_ma): plt.plot(x0, coll_ma, label=f'Collision (w={W})')
-            if len(tout_ma): plt.plot(x0, tout_ma, label=f'Timeout (w={W})')
-            plt.xlabel('Episode'); plt.ylabel('Rate'); plt.legend()
+            Ws = 100
+            Wl = 500
+
+            def ma(arr, w):
+                import numpy as _np
+                if len(arr) == 0: return _np.array([])
+                w = max(1, min(w, len(arr)))
+                return _np.convolve(_np.array(arr, dtype=float), _np.ones(w)/w, mode='valid')
+
+            # 1) Shaped Return（总回报）
+            R_ma_s = ma(train_reward_hist, Ws)
+            R_ma_l = ma(train_reward_hist, Wl)
+            x_s_R = np.arange(Ws-1, Ws-1+len(R_ma_s))
+            x_l_R = np.arange(Wl-1, Wl-1+len(R_ma_l))
+
+            # 2) 终局回报（只由 success/collision/timeout 的终局项构成）
+            T_ma_s = ma(train_term_hist, Ws)
+            T_ma_l = ma(train_term_hist, Wl)
+            x_s_T = np.arange(Ws-1, Ws-1+len(T_ma_s))
+            x_l_T = np.arange(Wl-1, Wl-1+len(T_ma_l))
+
+            # 3) 成功/碰撞/超时（短窗 100）
+            S_ma = ma(train_succ_hist, Ws)
+            C_ma = ma(train_coll_hist, Ws)
+            O_ma = ma(train_timeout_hist, Ws)
+            x_SCO = np.arange(Ws-1, Ws-1+len(S_ma))
+
+            plt.figure(figsize=(12, 10))
+
+            # --- Panel 1: Shaped Return（MA100/MA500）---
+            plt.subplot(311)
+            if len(R_ma_s): plt.plot(x_s_R, R_ma_s, label=f'Shaped Return (MA{Ws})')
+            if len(R_ma_l): plt.plot(x_l_R, R_ma_l, label=f'Shaped Return (MA{Wl})')
+            plt.xlabel('Episode'); plt.ylabel('Reward'); plt.legend(); plt.grid(alpha=0.2)
+
+            # --- Panel 2: Terminal-only Return（MA100/MA500）---
+            plt.subplot(312)
+            if len(T_ma_s): plt.plot(x_s_T, T_ma_s, label=f'Terminal Return (MA{Ws})')
+            if len(T_ma_l): plt.plot(x_l_T, T_ma_l, label=f'Terminal Return (MA{Wl})')
+            plt.xlabel('Episode'); plt.ylabel('Terminal Reward'); plt.legend(); plt.grid(alpha=0.2)
+
+            # --- Panel 3: Rates（MA100）---
+            plt.subplot(313)
+            if len(S_ma): plt.plot(x_SCO, S_ma, label=f'Success (MA{Ws})')
+            if len(C_ma): plt.plot(x_SCO, C_ma, label=f'Collision (MA{Ws})')
+            if len(O_ma): plt.plot(x_SCO, O_ma, label=f'Timeout (MA{Ws})')
+            plt.xlabel('Episode'); plt.ylabel('Rate'); plt.legend(); plt.grid(alpha=0.2)
+
             plt.tight_layout()
             fig_name = os.path.join(args.output_dir, f"train_curves_ep{episode}.png")
             plt.savefig(fig_name); plt.close()
@@ -377,29 +490,30 @@ def main():
         "collision_rate": _mean_last(train_coll_hist, W),
         "timeout_rate": _mean_last(train_timeout_hist,W),
         "total_reward": _mean_last(train_reward_hist, W),
+        "terminal_reward": _mean_last(train_term_hist, W),
     }
 
-    best_val = locals().get("best_val", None)
-    if best_val is not None:
+    best_val_local = locals().get("best_val", None)
+    if best_val_local is not None:
         logging.info(
-            "FINAL | Train(last%02d): succ=%.2f coll=%.2f timeout=%.2f reward=%.2f | "
+            "FINAL | Train(last%02d): succ=%.2f coll=%.2f timeout=%.2f reward=%.2f term=%.2f | "
             "BestVAL(ep=%d): succ=%.2f coll=%.2f timeout=%.2f nav=%.2f reward=%.2f | "
             "TEST: succ=%.2f coll=%.2f timeout=%.2f nav=%.2f reward=%.2f",
             W,
             train_summary["success_rate"], train_summary["collision_rate"],
-            train_summary["timeout_rate"], train_summary["total_reward"],
-            best_val["episode"], best_val["success_rate"], best_val["collision_rate"],
-            best_val["timeout_rate"], best_val["nav_time"], best_val["total_reward"],
+            train_summary["timeout_rate"], train_summary["total_reward"], train_summary["terminal_reward"],
+            best_val_local["episode"], best_val_local["success_rate"], best_val_local["collision_rate"],
+            best_val_local["timeout_rate"], best_val_local["nav_time"], best_val_local["total_reward"],
             test_stats["success_rate"], test_stats["collision_rate"],
             test_stats["timeout_rate"], test_stats["nav_time"], test_stats["total_reward"]
         )
     else:
         logging.info(
-            "FINAL | Train(last%02d): succ=%.2f coll=%.2f timeout=%.2f reward=%.2f | "
+            "FINAL | Train(last%02d): succ=%.2f coll=%.2f timeout=%.2f reward=%.2f term=%.2f | "
             "TEST: succ=%.2f coll=%.2f timeout=%.2f nav=%.2f reward=%.2f",
             W,
             train_summary["success_rate"], train_summary["collision_rate"],
-            train_summary["timeout_rate"], train_summary["total_reward"],
+            train_summary["timeout_rate"], train_summary["total_reward"], train_summary["terminal_reward"],
             test_stats["success_rate"], test_stats["collision_rate"],
             test_stats["timeout_rate"], test_stats["nav_time"], test_stats["total_reward"]
         )
@@ -407,9 +521,13 @@ def main():
     with open(os.path.join(args.output_dir, "final_summary.json"), "w") as f:
         json.dump({
             "train_last_window": train_summary,
-            "best_val": best_val,
+            "best_val": best_val_local,
             "test": test_stats
         }, f, indent=2)
+
+    # 回收并发资源
+    if sampler is not None:
+        sampler.close()
 
     logging.info("Training complete.")
 

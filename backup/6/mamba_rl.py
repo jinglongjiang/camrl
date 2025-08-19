@@ -491,3 +491,4 @@ class MambaRL(Policy):
 
     def get_model(self):
         return self.encoder
+

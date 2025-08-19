@@ -38,3 +38,4 @@ python train_optimized.py \
 echo "训练完成！结果保存在: $OUTPUT_DIR"
 echo "可以查看训练曲线: $OUTPUT_DIR/train_curves_ep*.png"
 echo "查看详细日志: $OUTPUT_DIR/output.log"
+
