@@ -1,4 +1,4 @@
-# CrowdNav/crowd_nav/utils/parallel_sampler.py
+# crowd_nav/utils/parallel_sampler.py
 # -*- coding: utf-8 -*-
 """
 并发采样器（修正版）：
@@ -6,6 +6,7 @@
 - 支持两种权重接口：state_dict()/load_state_dict() 或 get_state_dict()/set_state_dict()
 - worker 设备可设为 cuda:0（mamba_ssm 需要在 CUDA 上前向）
 - collect() 内部 try/except，把错误通过管道返回，避免 EOFError
+- ★ 关键修复：广播前强制把权重转成 float32；worker 端加载后再 cast 到 float32，避免 Float vs Half 报错
 """
 
 import os
@@ -42,11 +43,24 @@ def _silence_debug_prints_in_worker():
 
 
 def _to_cpu_state_dict(sd):
-    """将任意权重字典中的 tensor 迁到 CPU；非张量原样返回。"""
+    """将任意权重字典中的 tensor 迁到 CPU，并强制转为 float32；非张量原样返回。"""
     out = {}
     for k, v in (sd.items() if hasattr(sd, "items") else []):
-        out[k] = v.detach().cpu() if torch.is_tensor(v) else v
+        if torch.is_tensor(v):
+            t = v.detach().to('cpu')
+            if t.is_floating_point() and t.dtype != torch.float32:
+                t = t.float()  # ★ 强制 float32，避免 Half/Fp16 混入
+            out[k] = t
+        else:
+            out[k] = v
     return out
+
+
+def _cast_policy_fp32(policy, device):
+    """将策略的关键子模块 cast 成 float32（worker 端加载权重后调用）。"""
+    for name in ('encoder', 'actor', 'q1', 'q2'):
+        if hasattr(policy, name):
+            getattr(policy, name).to(device=device, dtype=torch.float32)
 
 
 def _worker_entry(conn, seed, env_config_path, policy_name_student, policy_name_expert,
@@ -89,6 +103,10 @@ def _worker_entry(conn, seed, env_config_path, policy_name_student, policy_name_
 
     student = policy_factory[policy_name_student](pol_cfg); student.configure(pol_cfg); student.set_device(device)
     expert  = policy_factory[policy_name_expert](pol_cfg);  expert.configure(pol_cfg);  expert.set_device(device)
+
+    # ★ 强制 FP32，以防框架/权重默认为半精度
+    _cast_policy_fp32(student, device)
+    _cast_policy_fp32(expert, device)
 
     robot.set_policy(student)
 
@@ -144,7 +162,9 @@ def _worker_entry(conn, seed, env_config_path, policy_name_student, policy_name_
                     loaded = True
                 except Exception:
                     pass
-            # 加载失败也不崩，下次广播会覆盖
+
+            # ★ 加载完成后再转 FP32，避免半精度权重混入
+            _cast_policy_fp32(student, device)
 
         elif mtype == "collect":
             k = int(msg.get("episodes", 1))
@@ -197,7 +217,7 @@ class ParallelSampler:
             self.conns.append(parent)
 
     def broadcast_policy(self, policy):
-        """导出权重并广播到所有 worker（兼容多种导出接口）"""
+        """导出权重并广播到所有 worker（兼容多种导出接口；统一转 float32）"""
         sd = None
         if hasattr(policy, "state_dict"):
             try:

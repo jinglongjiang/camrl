@@ -1,6 +1,10 @@
 import logging
-import gym
-from gym import spaces
+try:
+    import gymnasium as gym
+    from gymnasium import spaces
+except ImportError:
+    import gym
+    from gym import spaces
 import numpy as np
 from numpy.linalg import norm
 import rvo2

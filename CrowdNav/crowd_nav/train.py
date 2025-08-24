@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import sys, os, shutil, json, logging, argparse, configparser, random
+import sys, os, shutil, logging, argparse, configparser, random
 import gym, git, numpy as np, torch
 from tqdm.auto import tqdm
 
@@ -14,7 +14,6 @@ from crowd_nav.policy.policy_factory import policy_factory
 from crowd_nav.utils.memory import ReplayMemory, ExpertReplayMemory
 from crowd_nav.utils.trainer import Trainer
 from crowd_nav.utils.explorer import Explorer
-from crowd_sim.envs.utils.state import JointState
 
 # ====== 高性能设置（Ampere+ 显著提速；安全）======
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -30,6 +29,7 @@ torch.set_num_threads(1)
 # 并发采样器
 from crowd_nav.utils.parallel_sampler import ParallelSampler
 
+# ====== 统一口径：v_pref 索引（必须与环境/Trainer/推理一致）======
 ROBOT_VPREF_IDX = 7
 DEFAULT_SEED = 42
 
@@ -39,12 +39,6 @@ def set_global_seed(seed: int, deterministic: bool = True):
     torch.manual_seed(seed); torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = deterministic
-
-def moving_average(x, w):
-    if len(x) == 0:
-        return np.array([])
-    w = max(1, min(w, len(x)))
-    return np.convolve(np.array(x, dtype=float), np.ones(w)/w, mode='valid')
 
 class _quiet_logs:
     """临时把 root logger 降到 WARNING，用于静音 Explorer 的频繁 info 输出"""
@@ -58,6 +52,12 @@ class _quiet_logs:
     def __exit__(self, exc_type, exc, tb):
         logging.getLogger().setLevel(self.prev if self.prev is not None else logging.INFO)
 
+# ----------------- 统一动作缩放（单一入口，BC/训练/推理都用） -----------------
+def phys_to_norm_actions(a_phys_np: np.ndarray, s_np: np.ndarray, action_scale: float) -> np.ndarray:
+    """物理动作 -> [-1,1]。s_np 为观测（含 v_pref），必须和 ROBOT_VPREF_IDX 一致。"""
+    v_pref = np.clip(s_np[:, ROBOT_VPREF_IDX:ROBOT_VPREF_IDX+1], 1e-6, None)
+    return np.clip(a_phys_np / (v_pref * action_scale), -1.0, 1.0)
+
 # ----------------- IL：BC 预训练 -----------------
 def bc_pretrain_actor(policy, exp_buf, device, iters=2000, batch_size=256, lr=3e-4):
     if len(exp_buf) == 0:
@@ -69,8 +69,7 @@ def bc_pretrain_actor(policy, exp_buf, device, iters=2000, batch_size=256, lr=3e
     bar = tqdm(range(iters), desc="BC pretrain (Actor on demos)", dynamic_ncols=True, leave=False)
     for _ in bar:
         s, a_star = exp_buf.sample(min(batch_size, len(exp_buf)))
-        v_pref = np.clip(s[:, ROBOT_VPREF_IDX:ROBOT_VPREF_IDX+1], 1e-6, None)
-        a_norm = np.clip(a_star / (v_pref * getattr(policy, 'action_scale', 1.0)), -1.0, 1.0)
+        a_norm = phys_to_norm_actions(a_star, s, getattr(policy, 'action_scale', 1.0))  # 统一口径
 
         s_t = torch.as_tensor(s, dtype=torch.float32, device=device)
         if hasattr(policy, "_norm_obs"):
@@ -83,7 +82,10 @@ def bc_pretrain_actor(policy, exp_buf, device, iters=2000, batch_size=256, lr=3e
         a_mu = torch.tanh(mu)
         target = torch.as_tensor(a_norm, dtype=torch.float32, device=device)
         loss = ((a_mu - target) ** 2).mean()
-        opt.zero_grad(); loss.backward(); torch.nn.utils.clip_grad_norm_(actor.parameters(), 1.0); opt.step()
+        opt.zero_grad(); loss.backward()
+        torch.nn.utils.clip_grad_norm_(actor.parameters(), 1.0)
+        opt.step()
+
         losses.append(float(loss.item()))
         if hasattr(policy, "update_obs_rms"):
             with torch.no_grad():
@@ -96,7 +98,7 @@ def bc_pretrain_actor(policy, exp_buf, device, iters=2000, batch_size=256, lr=3e
 def main():
     parser = argparse.ArgumentParser('Parse configuration file')
     parser.add_argument('--env_config', type=str, default='configs/env.config')
-    parser.add_argument('--policy', type=str, default='mamba')  # 你的工厂键为 'mamba'
+    parser.add_argument('--policy', type=str, default='mamba')  # policy_factory 键
     parser.add_argument('--policy_config', type=str, default='configs/policy.config')
     parser.add_argument('--train_config', type=str, default='configs/train.config')
     parser.add_argument('--output_dir', type=str, default='data/output')
@@ -161,37 +163,38 @@ def main():
     # 取出环境里的终局奖励（用于“终局曲线”）
     succ_bonus      = env_config.getfloat('reward', 'success_reward',      fallback=10.0)
     coll_penalty    = env_config.getfloat('reward', 'collision_penalty',   fallback=-3.0)
-    timeout_penalty = env_config.getfloat('reward', 'timeout_penalty',     fallback=0.0)  # 若无就当 0
+    timeout_penalty = env_config.getfloat('reward', 'timeout_penalty',     fallback=0.0)
 
     # ----------- train params -----------
     train_config = configparser.RawConfigParser(inline_comment_prefixes=('#',';'))
     train_config.read(args.train_config)
 
-    train_episodes = train_config.getint('train', 'train_episodes')
-    sample_episodes = train_config.getint('train', 'sample_episodes', fallback=12)
-    evaluation_interval = train_config.getint('train', 'evaluation_interval', fallback=50)
-    checkpoint_interval = train_config.getint('train', 'checkpoint_interval', fallback=250)
-    capacity = train_config.getint('train', 'capacity', fallback=200000)
+    train_episodes     = train_config.getint('train', 'train_episodes')
+    sample_episodes    = train_config.getint('train', 'sample_episodes', fallback=12)
+    evaluation_interval= train_config.getint('train', 'evaluation_interval', fallback=150)
+    checkpoint_interval= train_config.getint('train', 'checkpoint_interval', fallback=500)
+    capacity           = train_config.getint('train', 'capacity', fallback=100000)  # 100k，训练更稳
 
-    epsilon_start = train_config.getfloat('train', 'epsilon_start', fallback=0.1)
-    epsilon_end   = train_config.getfloat('train', 'epsilon_end',   fallback=0.05)
-    epsilon_decay = train_config.getfloat('train', 'epsilon_decay', fallback=1000)
+    epsilon_start = train_config.getfloat('train', 'epsilon_start', fallback=0.08)
+    epsilon_end   = train_config.getfloat('train', 'epsilon_end',   fallback=0.03)
+    epsilon_decay = train_config.getfloat('train', 'epsilon_decay', fallback=1500)
 
     # 轻量评估参数
     val_subset        = train_config.getint('train', 'val_subset',        fallback=50)
-    eval_full_every   = train_config.getint('train', 'eval_full_every',   fallback=200)
+    eval_full_every   = train_config.getint('train', 'eval_full_every',   fallback=300)
     train_stat_stride = train_config.getint('train', 'train_stat_stride', fallback=5)
 
     # SAC 超参
-    gamma     = train_config.getfloat('trainer', 'gamma',     fallback=0.99)
-    tau       = train_config.getfloat('trainer', 'tau',       fallback=0.005)
+    gamma     = train_config.getfloat('trainer', 'gamma',     fallback=0.95)
+    tau       = train_config.getfloat('trainer', 'tau',       fallback=0.0075)   # 略强的 Polyak
     lr_actor  = train_config.getfloat('trainer', 'lr_actor',  fallback=3e-4)
-    lr_critic = train_config.getfloat('trainer', 'lr_critic', fallback=3e-4)
-    lr_alpha  = train_config.getfloat('trainer', 'lr_alpha',  fallback=3e-4)
-    batch_size= train_config.getint  ('trainer', 'batch_size', fallback=256)
-    target_entropy = train_config.getfloat('trainer', 'target_entropy', fallback=-2.0)
+    lr_critic = train_config.getfloat('trainer', 'lr_critic', fallback=3.6e-4)   # 1.2x actor
+    lr_alpha  = train_config.getfloat('trainer', 'lr_alpha',  fallback=2.4e-4)   # 0.8x actor
+    batch_size= train_config.getint  ('trainer', 'batch_size', fallback=1024)
+    target_entropy = train_config.getfloat('trainer', 'target_entropy', fallback=-1.8)  # 会被日程覆盖
     use_amp        = train_config.getboolean('trainer', 'use_amp',       fallback=True)
     grad_clip      = train_config.getfloat ('trainer', 'grad_clip',      fallback=1.0)
+    awbc_beta      = train_config.getfloat ('trainer', 'awbc_beta',      fallback=2.5)
 
     # ----------- Trainer（仅一次） -----------
     trainer = Trainer(policy, device,
@@ -201,7 +204,8 @@ def main():
                       target_entropy=target_entropy,
                       use_amp=use_amp,
                       grad_clip=grad_clip,
-                      v_pref_idx=ROBOT_VPREF_IDX)
+                      v_pref_idx=ROBOT_VPREF_IDX,
+                      awbc_beta=awbc_beta)
 
     # ----------- buffers / explorer / expert -----------
     rl_buf = ReplayMemory(capacity)
@@ -275,6 +279,13 @@ def main():
                      succ/max(1,il_episodes), coll/max(1,il_episodes), tout/max(1,il_episodes),
                      nav_time, (np.mean(ep_rewards) if ep_rewards else 0.0), len(exp_buf))
 
+        # —— 仅日志：专家数据质控（不过度筛掉慢样本，保多样性） ——
+        if len(succ_times) > 0 and len(exp_buf) > 0:
+            median_time = float(np.median(succ_times))
+            fast_threshold = median_time * 0.8
+            logging.info("Enhanced expert quality control: median=%.2f, fast_threshold=%.2f", 
+                        median_time, fast_threshold)
+
         # 仅 Actor 的 BC 预训练
         if il_epochs > 0:
             bc_loss = bc_pretrain_actor(policy, exp_buf, device, iters=max(1, il_epochs),
@@ -288,6 +299,14 @@ def main():
         # 还回学生策略
         robot.set_policy(policy)
 
+        # —— 轻量 BC SanITY（不加噪，快速验证口径一致性） ——
+        with _quiet_logs():
+            val_k = min(30, env.case_size['val'])
+            bc_val = explorer.run_k_episodes(val_k, 'val', episode=0, return_stats=True, show_tqdm=False)
+        logging.info("BC SANITY | succ=%.2f coll=%.2f timeout=%.2f nav=%.2f reward=%.2f",
+                     bc_val["success_rate"], bc_val["collision_rate"],
+                     bc_val["timeout_rate"], bc_val["nav_time"], bc_val["total_reward"])
+
     # ----------- RL 主循环（SACfD：固定 demos 正则；无 DAgger） -----------
     policy.set_env(env) if hasattr(policy, "set_env") else None
     robot.set_policy(policy)
@@ -298,7 +317,7 @@ def main():
 
     # 历史记录（含“终局期望回报”）
     train_succ_hist, train_coll_hist, train_timeout_hist = [], [], []
-    train_reward_hist = []          # shaped 总回报（你已有）
+    train_reward_hist = []          # shaped 总回报
     train_term_hist   = []          # 终局期望回报：succ*R + coll*P + timeout*P_t
 
     plot_interval = 50
@@ -313,10 +332,34 @@ def main():
         if hasattr(policy, "set_epsilon"):
             policy.set_epsilon(epsilon)
 
-        # ---- 动态目标熵：早期更“抖”，后期收敛（不影响吞吐）----
-        ent_t = episode / max(1, int(0.5 * train_episodes))  # 前 50% 线性过渡
-        target_H_hi, target_H_lo = -1.5, -2.2
+        # ---- 目标熵日程：-2.2 → -2.8，覆盖前 80% ----
+        # 降低探索强度，让策略更确定性，减少随机冒险
+        ent_t = episode / max(1, int(0.8 * train_episodes))
+        target_H_hi, target_H_lo = -2.2, -2.8  # 更低的目标熵，减少探索
         trainer.target_entropy = float(target_H_hi + (target_H_lo - target_H_hi) * min(1.0, ent_t))
+
+        # ---- 学习率日程：10% warmup → 60% 保持 → 30% 线性衰减到 0.4x ----
+        lr_progress = episode / max(1, train_episodes)
+        if lr_progress <= 0.1:      # 前10% warmup（0.5x → 1.0x）
+            lr_mult = 0.5 + 0.5 * (lr_progress / 0.1)
+        elif lr_progress <= 0.6:    # 10%-60% 高学习率探索
+            lr_mult = 1.0
+        else:                       # 后40% 逐步衰减到 0.4x
+            lr_mult = 1.0 - 0.6 * ((lr_progress - 0.6) / 0.4)
+
+        current_lr_actor  = lr_actor  * lr_mult
+        current_lr_critic = lr_critic * lr_mult
+        current_lr_alpha  = lr_alpha  * lr_mult
+
+        # 更新优化器学习率
+        for param_group in trainer.opt_actor.param_groups:
+            param_group['lr'] = current_lr_actor
+        for param_group in trainer.opt_q1.param_groups:
+            param_group['lr'] = current_lr_critic
+        for param_group in trainer.opt_q2.param_groups:
+            param_group['lr'] = current_lr_critic
+        for param_group in trainer.opt_alpha.param_groups:
+            param_group['lr'] = current_lr_alpha
 
         # 定期广播学生策略到并发 worker
         if sampler and (episode % max(1, broadcast_k) == 0):
@@ -340,18 +383,17 @@ def main():
 
         # ===== 采样（并发优先；否则单进程一次性采样）=====
         if sampler:
-            try:
-                tr, traj = sampler.collect(
-                    episodes_per_worker=vec_eps_per,
-                    episode_idx=episode,
-                    use_expert=False
-                )
-            except RuntimeError as e:
-                logging.error("Parallel sampler error: %s", e)
-                raise
-            # 写入主进程回放池
-            for (args_, kwargs_) in traj:
-                rl_buf.push(*args_, **kwargs_)
+            tr, traj = sampler.collect(
+                episodes_per_worker=vec_eps_per,
+                episode_idx=episode,
+                use_expert=False
+            )
+            # 写入主进程回放池（优先用批量接口以省 Python 循环）
+            if hasattr(rl_buf, "push_many"):
+                rl_buf.push_many([args_ for (args_, _) in traj])
+            else:
+                for (args_, kwargs_) in traj:
+                    rl_buf.push(*args_, **kwargs_)
             logging.info("TRAIN(interact, parallel) | succ=%.2f coll=%.2f timeout=%.2f reward=%.2f | rl_buf=%d",
                          tr.get("success_rate", 0.0),
                          tr.get("collision_rate", 0.0),
@@ -367,20 +409,24 @@ def main():
                          tr.get("timeout_rate", 0.0), tr.get("total_reward", 0.0),
                          len(rl_buf))
 
-        # ===== Optimize（SACfD：仅用固定 demos 作正则）=====
+        # ===== Optimize（SACfD：固定 demos 正则；无 DAgger）=====
         # 线性进度刻度
         t = episode / max(1, train_episodes - 1)
 
-        # —— 更保守的专家引导 ——（放缓衰减 & 保留少量常驻 BC）
-        p_demo    = float(np.interp(t, [0.0, 1.0],       [0.6, 0.2]))
-        lambda_bc = float(np.interp(t, [0.0, 0.6, 1.0],  [1.0, 0.4, 0.2]))
+        # —— 更持久的 BC 日程：p_demo 0.50→0.35；λ_bc 0.95→0.70→0.40 ——
+        # 大幅增强BC正则，让策略更保守，减少冒进
+        p_demo    = float(np.interp(t, [0.0, 1.0],        [0.50, 0.35]))  # 保持更高的专家数据比例
+        lambda_bc = float(np.interp(t, [0.0, 0.6, 1.0],   [0.95, 0.70, 0.40]))  # BC权重衰减更慢
 
-        # —— 自适应更新步数：早期样本少→少更新；后期样本多→稍微更多 —— 
-        updates = train_config.getint('train', 'train_batches', fallback=120)
+        # —— 固定 updates（速度稳定）：早期 40，之后恒定 base；成功率>0.6 降到 0.85× ——
+        updates_base = train_config.getint('train', 'train_batches', fallback=120)
         if len(rl_buf) < 10_000:
-            updates = max(40, updates // 3)
-        elif len(rl_buf) > 60_000:
-            updates = int(updates * 1.25)
+            updates = 40
+        else:
+            updates = updates_base
+            # 简单自适应：近 50 集成功率 > 0.6 降低少量 SGD 步以稳住策略
+            if len(train_succ_hist) >= 50 and np.mean(train_succ_hist[-50:]) > 0.6:
+                updates = max(102, int(updates_base * 0.85))
 
         meter = trainer.optimize_batch(
             rl_buf, exp_buf, updates=updates,
@@ -517,13 +563,6 @@ def main():
             test_stats["success_rate"], test_stats["collision_rate"],
             test_stats["timeout_rate"], test_stats["nav_time"], test_stats["total_reward"]
         )
-
-    with open(os.path.join(args.output_dir, "final_summary.json"), "w") as f:
-        json.dump({
-            "train_last_window": train_summary,
-            "best_val": best_val_local,
-            "test": test_stats
-        }, f, indent=2)
 
     # 回收并发资源
     if sampler is not None:

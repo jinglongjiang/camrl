@@ -12,5 +12,5 @@ policy_factory['cadrl'] = CADRL
 policy_factory['lstm_rl'] = LstmRL
 policy_factory['sarl'] = SARL
 policy_factory['mamba'] = MambaRL
-policy_factory['orca'] = ORCA      # <--- 加这一句
+policy_factory['mamba_rl'] = MambaRL  # 添加mamba_rl别名
 policy_factory['orca'] = ORCA_WRAPPER

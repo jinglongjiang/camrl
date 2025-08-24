@@ -1,4 +1,7 @@
-from gym.envs.registration import register
+try:
+    from gymnasium.envs.registration import register
+except ImportError:
+    from gym.envs.registration import register
 
 register(
     id='CrowdSim-v0',

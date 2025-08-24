@@ -9,11 +9,15 @@
 """
 
 import sys, os, shutil, json, logging, argparse, configparser, random
-import gym, git, numpy as np, torch
+import numpy as np, torch
 from tqdm.auto import tqdm
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+
+# 确保CrowdSim环境被注册
+import crowd_sim
+import gym
 
 from crowd_sim.envs.utils.robot import Robot
 from crowd_nav.policy.policy_factory import policy_factory
@@ -139,10 +143,10 @@ def bc_pretrain_actor(policy, exp_buf, device, iters=3000, batch_size=2048, lr=1
 # ----------------- 主程序 -----------------
 def main():
     parser = argparse.ArgumentParser('Parse configuration file')
-    parser.add_argument('--env_config', type=str, default='configs/env_optimized.config')
+    parser.add_argument('--env_config', type=str, default='configs/env.config')
     parser.add_argument('--policy', type=str, default='mamba_rl')
     parser.add_argument('--policy_config', type=str, default='configs/policy.config')
-    parser.add_argument('--train_config', type=str, default='configs/train_optimized.config')
+    parser.add_argument('--train_config', type=str, default='configs/train.config')
     parser.add_argument('--output_dir', type=str, default='data/output_optimized')
     parser.add_argument('--resume', action='store_true')
     parser.add_argument('--gpu', action='store_true')
@@ -233,8 +237,8 @@ def main():
         decay_episodes=train_config.getint('train', 'epsilon_decay')
     )
     
-    # 早停机制
-    early_stopping = EarlyStopping(patience=100, min_delta=0.02)
+    # 早停机制 - 调整参数以匹配新的训练配置
+    early_stopping = EarlyStopping(patience=50, min_delta=0.03)
 
     # ----------- 模仿学习阶段 -----------
     il_episodes = train_config.getint('imitation_learning', 'il_episodes')
@@ -468,4 +472,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 

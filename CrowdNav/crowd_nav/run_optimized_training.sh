@@ -3,14 +3,14 @@
 # 优化训练启动脚本
 # 解决训练效果低下和速度慢的问题
 
-echo "=== CrowdNav 优化训练启动 ==="
+echo "=== CrowdNav Mamba-RL 优化训练启动 ==="
 echo "主要改进："
-echo "1. 更大的batch size (2048) 提高训练稳定性"
-echo "2. 降低学习率 (1e-4) 提高收敛稳定性"
-echo "3. 自适应探索策略"
-echo "4. 早停机制防止过拟合"
-echo "5. 更频繁的评估和检查点"
-echo "6. 优化的奖励函数"
+echo "1. 更大的batch size (4096) 提高训练稳定性"
+echo "2. 优化的学习率调度 (actor:1.5e-4, critic:2e-4)"
+echo "3. 增强的Mamba架构 (hidden_dim=128, n_blocks=4)"
+echo "4. 改进的奖励函数 (success=30, collision=-15)"
+echo "5. 增加IL专家数据 (300 episodes, 5000 epochs)"
+echo "6. 并行采样加速 (8 workers, 6 episodes/worker)"
 echo ""
 
 # 检查GPU可用性
@@ -29,8 +29,9 @@ echo "输出目录: $OUTPUT_DIR"
 # 启动训练
 echo "开始优化训练..."
 python train_optimized.py \
-    --env_config configs/env_optimized.config \
-    --train_config configs/train_optimized.config \
+    --env_config configs/env.config \
+    --policy_config configs/policy.config \
+    --train_config configs/train.config \
     --output_dir "$OUTPUT_DIR" \
     $GPU_FLAG \
     --seed 42
@@ -38,4 +39,5 @@ python train_optimized.py \
 echo "训练完成！结果保存在: $OUTPUT_DIR"
 echo "可以查看训练曲线: $OUTPUT_DIR/train_curves_ep*.png"
 echo "查看详细日志: $OUTPUT_DIR/output.log"
+
 

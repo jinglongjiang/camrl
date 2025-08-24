@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import math
 import torch
 import torch.nn as nn
@@ -19,7 +20,7 @@ EPS = 1e-6
 def _split_state(x, robot_dim, human_dim, human_num):
     """
     x: [B, D] 或 [B, T, D]
-    return: robot_x [B,1,Fr], human_x [B,N,Fh], mask [B,N]
+    return: robot_x [B,1,Fr], human_x [B,N,Fh], mask [B,N]  (mask=True 表示有效)
     """
     if x.dim() == 3:
         x = x[:, -1, :]
@@ -28,12 +29,12 @@ def _split_state(x, robot_dim, human_dim, human_num):
     human = x[:, robot_dim:]
 
     need = human_num * human_dim
-    orig = human.size(1)  # 记录补零前的人类维度
+    orig = human.size(1)
     if orig < need:
         pad = x.new_zeros(b, need - orig)
         human = torch.cat([human, pad], dim=1)
         valid = torch.zeros(b, human_num, dtype=torch.bool, device=x.device)
-        fill_n = min(orig // human_dim, human_num)  # 用原始维度算有效人数
+        fill_n = min(orig // human_dim, human_num)
         if fill_n > 0:
             valid[:, :fill_n] = True
     else:
@@ -46,8 +47,9 @@ def _split_state(x, robot_dim, human_dim, human_num):
 
 
 def _sort_by_distance(robot_xy, human_xy, mask):
+    # human_xy, robot_xy: 世界坐标或相对坐标均可；这里仅用于排序
     dist = torch.norm(human_xy - robot_xy.unsqueeze(1), dim=-1)  # [B,N]
-    dist = dist + (~mask).to(dist.dtype) * 1e6                   # 明确转 dtype，安全叠加
+    dist = dist + (~mask).to(dist.dtype) * 1e6
     idx = torch.argsort(dist, dim=1)
     return idx
 
@@ -72,7 +74,7 @@ class AttentionPooling(nn.Module):
         """
         robot_tok: [B,1,H]
         human_tok: [B,N,H]
-        mask:      [B,N]  bool，True 表示有效
+        mask:      [B,N]  bool，True=有效
         """
         if mask.dtype != torch.bool:
             mask = mask.bool()
@@ -81,16 +83,14 @@ class AttentionPooling(nn.Module):
         k = self.k(human_tok)                        # [B,N,H]
         v = self.v(human_tok)                        # [B,N,H]
 
-        logits = torch.matmul(q, k.transpose(1, 2)) / math.sqrt(max(k.size(-1), 1))  # [B,1,N]
-        # fp16 安全的掩码：用 dtype 的最小值当作 -inf
+        logits = torch.matmul(q, k.transpose(1, 2)) / (math.sqrt(max(k.size(-1), 1)) + 1e-6)  # [B,1,N]
         neg_inf = torch.finfo(logits.dtype).min
         logits = logits.masked_fill(~mask.unsqueeze(1), neg_inf)
 
-        # masked softmax -> 权重在无效位为 0；若全无有效项，归一化后仍为 0
         w = torch.softmax(logits, dim=-1)                               # [B,1,N]
         w = w * mask.unsqueeze(1).to(w.dtype)                           # 置零无效位置
-        w_sum = w.sum(dim=-1, keepdim=True).clamp(min=1e-6)            # [B,1,1]
-        w = w / w_sum                                                   # 全无有效项 -> 全 0（被 clamp 成 0/1e-6）
+        w_sum = w.sum(dim=-1, keepdim=True).clamp(min=1e-6)             # [B,1,1]
+        w = w / w_sum
 
         pooled = torch.matmul(w, v).squeeze(1)       # [B,H]
         return self.fc(pooled)
@@ -99,6 +99,9 @@ class AttentionPooling(nn.Module):
 class MambaStateEncoder(nn.Module):
     """
     robot+humans -> token 序列 -> Mamba -> robot_token + 人群摘要
+    关键修改：
+      - 用“相对坐标”(human_xy -= robot_xy) 替代绝对坐标（提升对齐与泛化）
+      - 仅保留最近 topk 个行人（其余 masked），降低噪声与计算
     """
     def __init__(self, robot_feat_dim, human_feat_dim, human_num,
                  hidden_dim=64, n_blocks=4, d_state=None, conv_dim=4, expand=2,
@@ -113,7 +116,7 @@ class MambaStateEncoder(nn.Module):
         self.human_feat_dim = human_feat_dim
         self.human_num = human_num
         self.hidden_dim = hidden_dim
-        self.topk = topk  # 只编码最近 topk 个行人（None 表示全用）
+        self.topk = topk  # 只编码最近 topk 个行人（None/>=N 表示全用）
 
         if d_state is None:
             d_state = hidden_dim
@@ -133,7 +136,7 @@ class MambaStateEncoder(nn.Module):
             for _ in range(n_blocks)
         ])
         self.norms = nn.ModuleList([nn.LayerNorm(hidden_dim) for _ in range(n_blocks)])
-        self.dropout = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
+        self.dropout = nn.Dropout(dropout) if dropout and dropout > 0 else nn.Identity()
         self.pool = AttentionPooling(hidden_dim)
 
     def forward(self, x):
@@ -142,24 +145,33 @@ class MambaStateEncoder(nn.Module):
             x, self.robot_feat_dim, self.human_feat_dim, self.human_num
         )  # [B,1,Fr], [B,N,Fh], [B,N]
 
-        # 基于位置排序（假设前2维是 px,py）
+        # 取出机器人位置（假设 robot 前两维是 px,py；CrowdNav 的 9 维里默认如此）
         rxy = robot_x[..., :2].squeeze(1)       # [B,2]
         hxy = human_x[..., :2]                  # [B,N,2]
+
+        # === 关键改动 1：行人坐标 → 相对坐标（以机器人为原点） ===
+        human_x = human_x.clone()
+        human_x[..., 0:2] = human_x[..., 0:2] - rxy.unsqueeze(1)
+
+        # 按距离排序（用相对坐标即可）
         idx = _sort_by_distance(rxy, hxy, mask) # [B,N]
         b, n, fh = human_x.size()
         batch_idx = torch.arange(b, device=x.device).unsqueeze(-1)
         human_x = human_x[batch_idx, idx, :]
         mask = mask[batch_idx, idx]
 
-        # 只取最近 topk（其余置零并 mask=False）
+        # === 关键改动 2：Top-K 最近行人 ===
         if self.topk is not None and self.topk < n:
             keep = self.topk
             drop = n - keep
             keep_x = human_x[:, :keep, :]
-            drop_x = human_x.new_zeros(b, drop, fh)
-            human_x = torch.cat([keep_x, drop_x], dim=1)
             keep_m = mask[:, :keep]
+
+            # 其余位置清零并 mask=False
+            drop_x = human_x.new_zeros(b, drop, fh)
             drop_m = torch.zeros_like(mask[:, keep:], dtype=torch.bool)
+
+            human_x = torch.cat([keep_x, drop_x], dim=1)
             mask = torch.cat([keep_m, drop_m], dim=1)
 
         r_tok = self.robot_enc(robot_x)               # [B,1,H]
@@ -189,8 +201,8 @@ class TanhGaussianActor(nn.Module):
             nn.Linear(hidden_dim, hidden_dim), nn.SiLU(),
         )
         self.mu = nn.Linear(hidden_dim, act_dim)
-        this_log_std = nn.Linear(hidden_dim, act_dim)
-        self.log_std = this_log_std
+        _log_std = nn.Linear(hidden_dim, act_dim)
+        self.log_std = _log_std
         self.log_std_min = log_std_min
         self.log_std_max = log_std_max
         self.apply(lambda m: orthogonal_init(m, gain=1.0))
@@ -239,6 +251,8 @@ class QCritic(nn.Module):
 class MambaRL(Policy):
     """
     共享编码器 + TanhGaussian Actor + 双 Q
+    - 训练交互由 `set_phase('train')` 控制是否随机策略（SAC需要）
+    - 通过 config 的 [mamba] 段配置 hidden_dim/n_blocks/topk 等
     """
     def __init__(self, config, device=None):
         super().__init__()
@@ -413,8 +427,8 @@ class MambaRL(Policy):
     def predict(self, obs):
         """
         环境调用：
-        - 训练期默认使用随机采样（与 SAC 一致），可通过 env_stochastic=False 改为确定性。
-        - 若仍想用 epsilon 额外噪声，可保留 self.epsilon>0（不推荐 SAC 下叠加）。
+        - 训练期默认使用随机采样（由 set_phase('train') + env_stochastic 控制）
+        - 评估/测试期用确定性 tanh(mu)
         """
         def to_array(state):
             from crowd_sim.envs.utils.state import JointState

@@ -1,3 +1,5 @@
+# crowd_nav/utils/memory.py
+# -*- coding: utf-8 -*-
 import random
 import numpy as np
 from torch.utils.data import Dataset
@@ -7,8 +9,7 @@ def _action_to_np(action):
     # 允许 ActionXY / ActionRot 或 numpy/list/tuple
     if hasattr(action, 'vx') and hasattr(action, 'vy'):      # ActionXY
         return np.asarray([action.vx, action.vy], dtype=np.float32)
-    if hasattr(action, 'v') and hasattr(action, 'r'):        # ActionRot（若后续需要支持旋转动作，可在此定义变换）
-        # 这里仍按二维线速度存储（如果你的策略输出就是旋转+速度，建议保持 RL 侧统一是2维tanh，env里再解释）
+    if hasattr(action, 'v') and hasattr(action, 'r'):        # ActionRot
         return np.asarray([float(action.v), float(action.r)], dtype=np.float32)
     return np.asarray(action, dtype=np.float32)
 
@@ -43,7 +44,6 @@ class ReplayMemory(Dataset):
     def push(self, state, action, reward, next_state, done: bool):
         a_np = _action_to_np(action).astype(np.float32)
         _maybe_warn_if_not_normalized(a_np, self._warn_flags, "rl_action_norm_check")
-
         item = (
             np.asarray(state, dtype=np.float32),
             a_np,
@@ -57,6 +57,14 @@ class ReplayMemory(Dataset):
             self.memory[self.position] = item
         self.position = (self.position + 1) % self.capacity
 
+    # 批量塞入（来自并发采样器时更高效）
+    def push_many(self, items):
+        """
+        items: 可迭代的 (state, action, reward, next_state, done)
+        """
+        for s, a, r, s2, d in items:
+            self.push(s, a, r, s2, d)
+
     def __len__(self):
         return len(self.memory)
 
@@ -68,6 +76,17 @@ class ReplayMemory(Dataset):
         self.position = 0
         self._warn_flags.clear()
 
+    # 统一打包（保证维度）
+    @staticmethod
+    def _pack(batch):
+        B = len(batch)
+        s  = np.stack([b[0] for b in batch]).astype(np.float32)              # (B, Ds)
+        a  = np.stack([b[1] for b in batch]).astype(np.float32)              # (B, 2)  in [-1,1]
+        r  = np.array ([b[2] for b in batch], dtype=np.float32).reshape(B,1) # (B,1)
+        s2 = np.stack([b[3] for b in batch]).astype(np.float32)              # (B, Ds)
+        d  = np.array ([b[4] for b in batch], dtype=np.bool_)                # (B,)
+        return s, a, r, s2, d
+
     def sample(self, batch_size: int):
         """均匀采样并堆叠为 numpy。若样本不足则按可用数量采样。"""
         n = len(self.memory)
@@ -75,12 +94,44 @@ class ReplayMemory(Dataset):
             raise ValueError("ReplayMemory is empty")
         B = min(batch_size, n)
         batch = random.sample(self.memory, B)
-        s  = np.stack([b[0] for b in batch]).astype(np.float32)
-        a  = np.stack([b[1] for b in batch]).astype(np.float32)      # [-1,1]
-        r  = np.array ([b[2] for b in batch], dtype=np.float32).reshape(B, 1)
-        s2 = np.stack([b[3] for b in batch]).astype(np.float32)
-        d  = np.array ([b[4] for b in batch], dtype=np.bool_)
-        return s, a, r, s2, d
+        return self._pack(batch)
+
+    def sample_mixed(self, batch_size: int, priority_frac: float = 0.2):
+        """
+        混合采样：前 20%（可调）的高回报轨迹 + 随机样本，其余与 sample() 保持同形状。
+        不依赖外部权重，不改变 self.memory 顺序。
+        """
+        n = len(self.memory)
+        if n == 0:
+            raise ValueError("ReplayMemory is empty")
+        B = min(batch_size, n)
+        Bp = int(max(0, min(priority_frac, 0.9)) * B)  # 保护 0~0.9
+        Br = B - Bp
+
+        # 构造奖励数组
+        rewards = np.fromiter((itm[2] for itm in self.memory), dtype=np.float32, count=n)
+
+        # 选 top-Bp 下标
+        if Bp > 0 and n >= 50:
+            if Bp < n:
+                top_idx = np.argpartition(rewards, -Bp)[-Bp:]
+            else:
+                top_idx = np.arange(n)
+            pri_idx = np.random.choice(top_idx, size=Bp, replace=False)
+        else:
+            pri_idx = np.empty((0,), dtype=np.int64)
+
+        # 其余随机
+        pool = np.setdiff1d(np.arange(n), pri_idx, assume_unique=False)
+        if Br > 0:
+            rnd_idx = np.random.choice(pool, size=Br, replace=False) if len(pool) >= Br else pool
+        else:
+            rnd_idx = np.empty((0,), dtype=np.int64)
+
+        idx = np.concatenate([pri_idx, rnd_idx])
+        np.random.shuffle(idx)
+        batch = [self.memory[i] for i in idx]
+        return self._pack(batch)
 
     # 兼容 Dataset（很少用到）
     def __getitem__(self, idx: int):

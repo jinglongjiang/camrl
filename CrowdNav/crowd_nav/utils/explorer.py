@@ -341,9 +341,10 @@ class Explorer(object):
         if phase in ['val', 'test']:
             # 近似步数统计危险频率
             step_count = 0
-            if getattr(self.robot, "time_step", 0.0) > 0:
+            robot_time_step = getattr(self.robot, "time_step", 0.0)
+            if robot_time_step and robot_time_step > 0:
                 all_times = success_times + collision_times + timeout_times
-                step_count = int(sum(all_times) / max(1e-6, self.robot.time_step))
+                step_count = int(sum(all_times) / max(1e-6, robot_time_step))
             step_count = max(1, step_count)
             freq_danger = too_close / step_count
             avg_min_sep = (sum(min_dist) / len(min_dist)) if len(min_dist) else 0.0

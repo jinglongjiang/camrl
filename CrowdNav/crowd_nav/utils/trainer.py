@@ -8,8 +8,8 @@ import torch.nn as nn
 class Trainer:
     """
     SAC + 双Q + 可选 BC 正则（SACfD 风格，含优势加权 AWBC）
-    - AMP 友好（unscale 后裁剪）
-    - 前向图完全分离：Critic 与 Actor 各自独立 encoder 前向，避免二次反向
+    - AMP 友好（仅在 CUDA 上启用；unscale 后裁剪）
+    - Critic 与 Actor 各自独立 encoder 前向，避免“second backward”
     - 目标网络 Polyak
     - Pinned memory + non_blocking 传输（CPU->GPU）
     依赖 policy 暴露：
@@ -21,17 +21,17 @@ class Trainer:
                  gamma=0.99, tau=0.005,
                  lr_actor=3e-4, lr_critic=3e-4, lr_alpha=3e-4,
                  batch_size=512,
-                 target_entropy: float = -3.0,  # 动作维=2，常用 -2~-3
+                 target_entropy: float = -3.0,   # 动作维=2，常用 -2~-3
                  use_amp: bool = True,
                  grad_clip: float = 1.0,
                  v_pref_idx: int = 7,
-                 awbc_beta: float = 5.0):       # AWBC 温度（越大越接近硬筛）
+                 awbc_beta: float = 2.5):        # AWBC 温度（降低过度筛选）
         self.policy = policy
         self.device = torch.device(device)
         self.gamma = float(gamma)
         self.tau = float(tau)
         self.batch_size = int(batch_size)
-        self.use_amp = bool(use_amp)
+        self.use_amp = bool(use_amp) and (self.device.type == "cuda")
         self.grad_clip = float(grad_clip) if grad_clip is not None else None
         self.v_pref_idx = int(v_pref_idx)
         self.target_entropy = float(target_entropy)
@@ -69,7 +69,7 @@ class Trainer:
         self.log_alpha = torch.zeros(1, device=self.device, requires_grad=True)
         self.opt_alpha = torch.optim.Adam([self.log_alpha], lr=lr_alpha)
 
-        # AMP scaler
+        # AMP scaler（仅 CUDA 时启用）
         self.scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
 
     # ---------- helpers ----------
@@ -102,16 +102,79 @@ class Trainer:
 
     # ---------- sampling ----------
     def _sample_rl_batch(self, rl_buf, n):
+        """
+        随机采样 + 20% 高回报优先采样（仅在一个随机 probe 集内做 80 分位阈值，轻量、稳定）
+        返回 (s_t, a_t, r_t, s2_t, d_t) 都在 device 上。
+        约定：rl_buf 里动作可能是物理速度或已归一化；我们后续统一再做一次归一。
+        """
         if n <= 0 or len(rl_buf) == 0:
             return None
-        s, a, r, s2, d = rl_buf.sample(n)  # numpy
+
+        # 增加优先采样比例，更多学习成功轨迹
+        n_priority = max(0, int(0.35 * n))  # 增加到35%
+        n_random = n - n_priority
+
+        # 基础随机采样
+        s, a, r, s2, d = rl_buf.sample(n_random)  # numpy
+
+        # 轻量优先：基于终局状态选择（成功>0，碰撞<0），避免选择"快撞"轨迹
+        if n_priority > 0 and len(rl_buf) >= 128:
+            try:
+                probe = min(2048, len(rl_buf))
+                idx_probe = np.random.choice(len(rl_buf), size=probe, replace=False)
+                mem = rl_buf.memory  # 期望为 list[(s,a,r,s2,d), ...]
+                # 使用终局奖励作为优先级（r>10为成功，r<-3为碰撞）
+                rewards_probe = np.array([
+                    (mem[i][2].mean() if isinstance(mem[i][2], np.ndarray) else float(mem[i][2]))
+                    for i in idx_probe
+                ], dtype=np.float32)
+                # 优先选择成功轨迹（r>5）或高质量轨迹
+                # 首先尝试找成功轨迹（终局奖励>5）
+                success_cand = idx_probe[rewards_probe > 5.0]
+                if len(success_cand) > n_priority // 2:
+                    # 如果成功轨迹足够多，优先采样
+                    cand = success_cand
+                else:
+                    # 否则选择前30%高回报轨迹（避免碰撞）
+                    thr = np.percentile(rewards_probe, 70.0)
+                    cand = idx_probe[rewards_probe >= max(thr, -5.0)]  # 避免选择太多碰撞
+                if cand.size > 0:
+                    pick = np.random.choice(cand, size=min(n_priority, cand.size), replace=False)
+                    prio_samples = [mem[i] for i in pick]
+                    ps  = np.array([x[0] for x in prio_samples], dtype=np.float32)
+                    pa  = np.array([x[1] for x in prio_samples], dtype=np.float32)
+                    pr  = np.array([x[2] for x in prio_samples], dtype=np.float32)
+                    ps2 = np.array([x[3] for x in prio_samples], dtype=np.float32)
+                    pd  = np.array([x[4] for x in prio_samples])
+
+                    # 奖励维度对齐
+                    if pr.ndim == 1 and r.ndim == 2:
+                        pr = pr.reshape(-1, 1)
+                    elif pr.ndim == 2 and r.ndim == 1:
+                        r = r.reshape(-1, 1)
+
+                    # 拼接
+                    s  = np.concatenate([s,  ps ], axis=0)
+                    a  = np.concatenate([a,  pa ], axis=0)
+                    r  = np.concatenate([r,  pr ], axis=0)
+                    s2 = np.concatenate([s2, ps2], axis=0)
+                    d  = np.concatenate([d,  pd ], axis=0)
+            except Exception:
+                # 回退到纯随机
+                pass
+
+        # 在线更新观测统计
         if hasattr(self.policy, "update_obs_rms"):
             self.policy.update_obs_rms(s); self.policy.update_obs_rms(s2)
-        s_t  = self._to_device(s)
-        a_t  = self._to_device(a)
-        r_t  = self._to_device(r, dtype=torch.float32)
-        s2_t = self._to_device(s2)
-        d_t  = self._to_device(d, dtype=torch.float32)
+
+        # to device
+        s_t  = self._to_device(s,  dtype=torch.float32)
+        a_t  = self._to_device(a,  dtype=torch.float32)
+        r_t  = self._to_device(r,  dtype=torch.float32)
+        s2_t = self._to_device(s2, dtype=torch.float32)
+        # done 统一为 float32（0/1）
+        d = d.astype(np.float32) if isinstance(d, np.ndarray) else d
+        d_t  = self._to_device(d,  dtype=torch.float32)
         return s_t, a_t, r_t, s2_t, d_t
 
     def _sample_demo_batch(self, exp_buf, n):
@@ -137,7 +200,7 @@ class Trainer:
     def optimize_batch(self, rl_buf, exp_buf=None, updates=1,
                        p_demo=0.0, lambda_bc=0.0, use_q_filter=True):
         """
-        rl_buf: ReplayMemory(state, action(phys), reward, next_state, done)
+        rl_buf: ReplayMemory(state, action(phys 或 [-1,1]), reward, next_state, done)
         exp_buf: ExpertReplayMemory(state, expert_action(phys))
         p_demo:  每次更新从专家缓冲采样的比例（0~1）
         lambda_bc: BC 正则权重
@@ -152,15 +215,17 @@ class Trainer:
         for _ in range(u):
             B = self.batch_size
             B_demo = int(B * float(p_demo))
+            B_demo = min(B_demo, 128)  # 上限，避免 BC 过强
             B_rl   = max(1, B - B_demo)
 
             rl = self._sample_rl_batch(rl_buf, B_rl)
             if rl is None:
                 continue
-            s_rl, a_rl_phys, r_rl, s2_rl, d_rl = rl
+            s_rl, a_rl_in, r_rl, s2_rl, d_rl = rl
 
-            # 动作归一
-            a_rl = self._normalize_actions(s_rl, a_rl_phys)
+            # ---- 统一动作归一到 [-1,1] ----
+            # 如 a_rl_in 已是 [-1,1] 也没关系（再次 clamp）
+            a_rl = self._normalize_actions(s_rl, a_rl_in)
 
             # 规范化观测
             s_rl_n  = self._obs_norm(s_rl)
@@ -172,19 +237,20 @@ class Trainer:
             # ====================== Critic 更新（独立图） ======================
             with torch.cuda.amp.autocast(enabled=self.use_amp):
                 with torch.no_grad():
-                    h2 = self._encode(s2_rl_n)                           # 目标网络分支
+                    h2 = self._encode(s2_rl_n)                           # 目标分支
                     a2, logp2, _ = self.policy.actor.sample(h2)
                     q1_t = self.q1_targ(h2, a2)
                     q2_t = self.q2_targ(h2, a2)
                     q_min = torch.min(q1_t, q2_t) - alpha_val * logp2.squeeze(-1)
-                    y = r_rl.squeeze(-1) + (1.0 - d_rl) * self.gamma * q_min
+                    y = r_rl.squeeze(-1) + (1.0 - d_rl.squeeze(-1)) * self.gamma * q_min
 
-                # 对 s_rl_n 使用 detach，**切断** critic 对 encoder 的梯度
+                # 对 s_rl_n 使用 detach，切断 critic 对 encoder 的梯度
                 h_q = self._encode(s_rl_n.detach())
                 q1 = self.q1(h_q, a_rl)
                 q2 = self.q2(h_q, a_rl)
-                loss_q = torch.nn.functional.mse_loss(q1, y.detach()) + \
-                         torch.nn.functional.mse_loss(q2, y.detach())
+                # Huber 更稳
+                loss_q = torch.nn.functional.huber_loss(q1, y.detach(), delta=1.0) + \
+                         torch.nn.functional.huber_loss(q2, y.detach(), delta=1.0)
 
             self.opt_q1.zero_grad(set_to_none=True)
             self.opt_q2.zero_grad(set_to_none=True)
@@ -198,9 +264,9 @@ class Trainer:
             self.scaler.step(self.opt_q2)
             self.scaler.update()
 
-            # ====================== Actor 更新（重新编码，独立图） ======================
+            # ====================== Actor 更新（独立图） ======================
             with torch.cuda.amp.autocast(enabled=self.use_amp):
-                # 重新计算 h_pi（不要复用 h_q），允许 encoder 的梯度从 Actor 分支回传
+                # 重新编码（不要复用 h_q）
                 h_pi = self._encode(s_rl_n)
                 a_pi, logp_pi, _ = self.policy.actor.sample(h_pi)
                 q1_pi = self.q1(h_pi, a_pi)
@@ -208,7 +274,7 @@ class Trainer:
                 q_pi_min = torch.min(q1_pi, q2_pi)
                 sac_actor = (alpha_val * logp_pi.squeeze(-1) - q_pi_min).mean()
 
-                # ====== AWBC：优势加权的行为克隆（替代硬 mask Q-filter） ======
+                # ====== AWBC：优势加权 BC（替代硬 mask Q-filter） ======
                 bc_loss = torch.zeros((), device=self.device)
                 w_mean = torch.zeros((), device=self.device)
                 if exp_buf is not None and B_demo > 0 and float(lambda_bc) > 0.0:
@@ -228,7 +294,7 @@ class Trainer:
                                                        self.q2(h_demo, a_demo_norm))
                                 adv = (q_exp_demo - q_pi_demo)                # (B_demo,)
                                 beta = self.awbc_beta
-                                w = torch.sigmoid(adv * beta).unsqueeze(-1)  # (B_demo,1) ∈ (0,1)
+                                w = torch.sigmoid(adv * beta).unsqueeze(-1)  # (B_demo,1)∈(0,1)
                                 w_mean = w.mean()
                         else:
                             w = 1.0
@@ -245,7 +311,7 @@ class Trainer:
             self.scaler.step(self.opt_actor)
             self.scaler.update()
 
-            # ====================== 温度 α（独立图，detach logp） ======================
+            # ====================== 温度 α（独立图；logp detach） ======================
             with torch.cuda.amp.autocast(enabled=self.use_amp):
                 alpha_loss = -(self.log_alpha * (logp_pi.squeeze(-1).detach() + self.target_entropy)).mean()
             self.opt_alpha.zero_grad(set_to_none=True)
@@ -257,11 +323,12 @@ class Trainer:
             self._polyak(self.q1, self.q1_targ, self.tau)
             self._polyak(self.q2, self.q2_targ, self.tau)
 
+            # 统计
             acc["loss_q"]     += float(loss_q.item())
             acc["loss_actor"] += float(loss_actor.item())
             acc["bc_loss"]    += float(bc_loss.item()) if torch.is_tensor(bc_loss) else 0.0
             acc["alpha"]      += float(self.log_alpha.exp().item())
-            acc["awbc_w"]     += float(w_mean.item()) if torch.is_tensor(w_mean) else 1.0
+            acc["awbc_w"]     += float(w_mean.item()) if torch.is_tensor(w_mean) else 0.0
             valid_steps += 1
 
         if valid_steps == 0:
