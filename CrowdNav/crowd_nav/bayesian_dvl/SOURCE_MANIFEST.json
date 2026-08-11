@@ -202,8 +202,8 @@
         "sha256": "caa86bd78733a327af746e81869ffc987767a15d9c2b38a852d195754e244060"
       },
       "crowd_nav/bayesian_dvl/tests/test_intent_cli.py": {
-        "bytes": 49981,
-        "sha256": "24a6453574d1225c0df097a11b338e3bd130611a81fe6f1c5d94c46289a141e5"
+        "bytes": 50469,
+        "sha256": "cd206a3d90e7a8882adc04f711ae1dcf51063d16dcaa5311cae184e0d44b7428"
       },
       "crowd_nav/bayesian_dvl/tests/test_intent_integration.py": {
         "bytes": 20733,
@@ -228,7 +228,7 @@
     }
   },
   "manifest_schema": "bdvl_intent_source_manifest_v1",
-  "manifest_sha256": "fafb41b69f7753a80ed011cc7989181864a611def6f2788f633a3d907c2b4783",
+  "manifest_sha256": "d0b77fceb2cc67ab4743d38f73766e9165a5cc254a2745f9919f72a22b19b4d2",
   "n_files": 53,
   "python": "3.8.10",
   "scene_registry_hash": "3e5cef6cc6a67dc8806fe8ce8768188b721be1f70ec4796cf42304c76772e21a",

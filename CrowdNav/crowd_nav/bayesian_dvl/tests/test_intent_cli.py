@@ -652,10 +652,17 @@ def test_c5_source_manifest_covers_the_whole_chain_and_detects_drift() -> None:
         "for mod in list(sys.modules.values()):\n"
         "    f = getattr(mod, '__file__', None)\n"
         "    if not f: continue\n"
+        # Some C-extension modules (torch._classes, torch._ops) carry a BARE
+        # relative __file__, which resolve() silently reinterprets against the
+        # CWD and makes look like a repo file. Require the path to really
+        # exist and to sit under a repo package, or the check reports phantom
+        # files whose presence depends on the torch build.
         "    p = Path(f).resolve()\n"
+        "    if not p.is_file(): continue\n"
         "    try: rel = p.relative_to(ROOT)\n"
         "    except ValueError: continue\n"
         "    if 'site-packages' in str(rel): continue\n"
+        "    if rel.parts[0] not in ('crowd_nav', 'crowd_sim'): continue\n"
         "    out.append(str(rel))\n"
         "print(json.dumps(sorted(set(out))))\n"
     )
