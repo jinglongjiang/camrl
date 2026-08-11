@@ -24,7 +24,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from crowd_nav.bayesian_dvl.config import ActionGridSpec, FROZEN_VALUES
+from crowd_nav.bayesian_dvl.intent_runtime_config import ActionGridSpec, FROZEN_VALUES
 from crowd_nav.bayesian_dvl.contracts import HumanObservation, RobotObservation
 from crowd_nav.bayesian_dvl.geometry_features import _robot_feature_vector, compute_action_features_array
 from crowd_nav.bayesian_dvl.iqn import expert_ranking_loss, quantile_huber_loss
@@ -290,6 +290,121 @@ class IntentBatch:
     mc_returns: torch.Tensor
     demo_mask: torch.Tensor                       # [B] bool
     expert_indices: Tuple[Tuple[int, ...], ...]   # per sample; () for online
+
+
+# --------------------------------------------------------------------- #
+# A3: ONE arm-independent raw IL corpus.
+#
+# The belief features are the ONLY arm-dependent part of a demo
+# transition, and they are a deterministic function of (observation
+# sequence, mode, episode_seed). ORCA itself never consults the belief --
+# it acts on the raw env state -- so an episode can be collected ONCE
+# without any belief at all, and each arm can regenerate its own features
+# on load. That replaces three near-identical corpora (~3.2 GB) with one.
+# --------------------------------------------------------------------- #
+
+@dataclass
+class RawStep:
+    robot: RobotObservation
+    humans: List[HumanObservation]
+    remaining_fraction: float
+    action_index: int
+    expert_action_indices: Tuple[int, ...]
+    reward: float
+    mc_return: Optional[float] = None
+
+
+@dataclass
+class RawEpisode:
+    scenario: str
+    episode_seed: int
+    is_heldout: bool
+    outcome: str
+    steps: List[RawStep]
+
+
+def materialize_arm_transitions(
+    raw: RawEpisode, mode: str, action_table: np.ndarray,
+    horizon: int = 8, n_samples: int = 60,
+) -> List[IntentTransition]:
+    """Regenerate one arm's demo transitions from a raw episode.
+
+    Replays the belief bank over the SAME observation sequence with an rng
+    seeded from the SAME episode_seed and consumed in the SAME order, so
+    ``mode="full"`` reproduces ``collect_orca_episode`` exactly (asserted
+    by test_c5_shared_raw_corpus_reproduces_per_arm_transitions)."""
+    if mode not in ("full", "mean", "cv", "uniform"):
+        raise IntentTrainError(f"unknown belief mode {mode!r}")
+    scene = _scene_for_scenario(raw.scenario, raw.is_heldout)
+    bank = IntentBeliefBank(make_candidate_fn(scene), dt=FROZEN_VALUES["dt"], speed=1.0)
+    rng = np.random.default_rng(raw.episode_seed)
+    out: List[IntentTransition] = []
+    for st in raw.steps:
+        bank.update({h.track_id: (h.px, h.py) for h in st.humans})
+        human_feats, human_mask = build_intent_human_feature_batch(
+            bank, st.robot, st.humans, mode=mode, rng=rng, horizon=horizon, n_samples=n_samples)
+        all_action_feats = compute_action_features_array(st.robot, action_table)
+        out.append(IntentTransition(
+            robot_features=_robot_feature_vector(st.robot, st.remaining_fraction),
+            human_features=human_feats, human_mask=human_mask,
+            action_index=st.action_index, action_features=all_action_feats[st.action_index],
+            all_action_features=all_action_feats, remaining_fraction=st.remaining_fraction,
+            source_role="demo", expert_action_indices=tuple(st.expert_action_indices),
+            reward=st.reward, mc_return=st.mc_return,
+        ))
+    return out
+
+
+def _scene_for_scenario(scenario: str, is_heldout: bool):
+    if scenario == "standard":
+        return circle_scene(radius=float(FROZEN_VALUES.get("circle_radius", 4.0)) or 4.0, n_sectors=8)
+    if scenario == "junction":
+        return public_junction_scene()
+    if scenario == "junction_crowd":
+        return public_junction_crowd_scene(is_heldout=is_heldout)
+    raise IntentTrainError(f"unknown scenario {scenario!r}")
+
+
+def collect_raw_orca_episode(
+    env_config_path: Path, scenario: str, episode_seed: int,
+    is_heldout: bool = False, gamma: float = 0.95,
+) -> RawEpisode:
+    """Collect ONE ORCA demonstration WITHOUT computing any belief
+    features -- arm-independent by construction."""
+    episode = _ScenarioEpisode(env_config_path, scenario, episode_seed, is_heldout=is_heldout)
+    env = episode.env
+    max_steps = int(round(FROZEN_VALUES["time_limit"] / FROZEN_VALUES["dt"])) + 1
+    action_table = np.asarray(
+        ActionGridSpec.from_env_config(str(env_config_path)).build_action_table(), dtype=np.float64)
+    tol = derive_action_equivalence_tolerance(action_table)
+
+    steps: List[RawStep] = []
+    outcome = None
+    for _ in range(max_steps):
+        episode.advance_hidden_state()
+        humans = [
+            HumanObservation(i, float(h.px), float(h.py), float(h.vx), float(h.vy), float(h.radius))
+            for i, h in enumerate(env.humans)
+        ]
+        robot_obs = RobotObservation.from_full_state(env.robot.get_full_state())
+        remaining = remaining_time_fraction(env.global_time, FROZEN_VALUES["time_limit"])
+        orca_action = env.robot.act([h.get_observable_state() for h in env.humans])
+        idx = nearest_action_index(orca_action.vx, orca_action.vy, action_table)
+        experts = build_action_equivalence_class(orca_action.vx, orca_action.vy, action_table, tol)
+        gvx, gvy = action_table[idx]
+        _, reward, terminated, truncated, info = env.step(ActionXY(float(gvx), float(gvy)))
+        steps.append(RawStep(robot=robot_obs, humans=humans, remaining_fraction=remaining,
+                              action_index=idx, expert_action_indices=experts, reward=float(reward)))
+        if terminated or truncated:
+            outcome = {"reach_goal": "success", "collision": "collision",
+                       "timeout": "timeout"}.get(info.get("event"), "timeout")
+            break
+    if outcome is None:
+        outcome = "timeout"
+    for st, g in zip(steps, compute_mc_returns([s.reward for s in steps], gamma)):
+        st.mc_return = g
+    return RawEpisode(scenario=scenario, episode_seed=episode_seed, is_heldout=is_heldout,
+                       outcome=outcome, steps=steps)
 
 
 def batch_to_tensors(transitions: Sequence[IntentTransition], device: str = "cpu") -> IntentBatch:
@@ -809,6 +924,24 @@ class IntentReplay:
     ONLINE_PERSIST_DROPS_ACTION_FEATURES = True
 
     @staticmethod
+    def _compact_humans(t: "IntentTransition"):
+        """A2: keep only the ROWS THE MASK MARKS VALID.
+
+        ``human_features`` is [MAX_HUMANS=20, 29] but every scenario runs 5
+        pedestrians, so 15 of 20 rows are structural zeros -- ~58% of a
+        persisted row. Store the valid rows plus the mask; the full
+        [20, 29] tensor is rebuilt exactly on load (padding is zeros by
+        construction, see build_intent_human_feature_batch)."""
+        mask = np.asarray(t.human_mask, dtype=bool)
+        return np.asarray(t.human_features, dtype=np.float32)[mask], mask
+
+    @staticmethod
+    def _expand_humans(rows: np.ndarray, mask: np.ndarray) -> np.ndarray:
+        full = np.zeros((len(mask), rows.shape[1]), dtype=np.float32)
+        full[np.asarray(mask, dtype=bool)] = rows
+        return full
+
+    @staticmethod
     def _strip_for_persist(t: "IntentTransition") -> "IntentTransition":
         """Drop ``all_action_features`` from an ONLINE row before saving.
 
@@ -823,7 +956,9 @@ class IntentReplay:
         a still-running training loop would lose the array it is using.
         """
         import dataclasses
-        return dataclasses.replace(t, all_action_features=None)
+        rows, mask = IntentReplay._compact_humans(t)
+        return dataclasses.replace(t, all_action_features=None,
+                                    human_features=rows, human_mask=mask)
 
     def state_dict(self, include_demo: bool = True) -> dict:
         """C4RF.3: ``include_demo=False`` omits the demo corpus, which is
@@ -837,6 +972,9 @@ class IntentReplay:
         online = self._online
         if self.ONLINE_PERSIST_DROPS_ACTION_FEATURES:
             online = [self._strip_for_persist(t) for t in online]
+        demo_rows = None
+        if include_demo:
+            demo_rows = [self._compact_humans(t) for t in self._demo]
         state = {
             "online": online,
             "online_action_feature_shape": (
@@ -846,7 +984,12 @@ class IntentReplay:
             "demo_included": bool(include_demo),
         }
         if include_demo:
-            state["demo"] = list(self._demo)
+            import dataclasses
+            state["demo"] = [
+                dataclasses.replace(t, human_features=rows, human_mask=mask)
+                for t, (rows, mask) in zip(self._demo, demo_rows)
+            ]
+        state["human_feature_rows_are_compacted"] = True
         return state
 
     def load_state_dict(self, state: dict) -> None:
@@ -856,15 +999,24 @@ class IntentReplay:
                 f"replay capacity mismatch: saved demo/online "
                 f"{state['demo_capacity']}/{state['online_capacity']} != "
                 f"{self.demo_capacity}/{self.online_capacity}")
+        compacted = state.get("human_feature_rows_are_compacted", False)
+
+        def _restore(t):
+            if not compacted:
+                return t
+            import dataclasses
+            return dataclasses.replace(
+                t, human_features=self._expand_humans(t.human_features, t.human_mask))
+
         if state.get("demo_included", True):
-            self._demo = list(state["demo"])
+            self._demo = [_restore(t) for t in state["demo"]]
         # else: the caller must have already populated the demo side from
         # the immutable corpus artifact BEFORE loading this state.
         elif not self._demo:
             raise IntentTrainError(
                 "checkpoint omits the demo corpus (demo_included=False) but the replay's demo side is "
                 "empty -- load the immutable IL corpus artifact first")
-        online = list(state["online"])
+        online = [_restore(t) for t in state["online"]]
         shape = state.get("online_action_feature_shape")
         if shape is not None:
             import dataclasses

@@ -33,7 +33,7 @@ from typing import Tuple
 
 import numpy as np
 
-from crowd_nav.bayesian_dvl.config import NORMALIZATION_CONSTANTS
+from crowd_nav.bayesian_dvl.intent_runtime_config import NORMALIZATION_CONSTANTS
 
 _C = NORMALIZATION_CONSTANTS
 

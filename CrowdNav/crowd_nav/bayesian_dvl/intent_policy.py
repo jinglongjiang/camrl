@@ -31,7 +31,7 @@ import numpy as np
 import torch
 
 from crowd_nav.bayesian_dvl import normalization as norm
-from crowd_nav.bayesian_dvl.config import (
+from crowd_nav.bayesian_dvl.intent_runtime_config import (
     FEATURE_SCHEMA_V5, NORMALIZATION_CONSTANTS, FROZEN_VALUES, TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC,
 )
 from crowd_nav.bayesian_dvl.contracts import HumanObservation, RobotObservation

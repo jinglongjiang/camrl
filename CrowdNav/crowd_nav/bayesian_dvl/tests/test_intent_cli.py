@@ -254,16 +254,16 @@ def test_c2_cli_resume_is_a_total_target_and_bit_identical_to_continuous() -> No
     with tempfile.TemporaryDirectory() as d:
         a, b = Path(d) / "runA", Path(d) / "runB"
         common = ["--il-episodes", "2", "--il-passes", "3", "--seed", "97201",
-                  "--il-corpus-dir", str(Path(d) / "corpus")]
+                  "--il-corpus-dir", str(Path(d) / "corpus"), "--keep-resume"]
         _cli("train", "--run-dir", str(a), "--target-online-episodes", "4", *common)
         _cli("train", "--run-dir", str(b), "--target-online-episodes", "2", *common)
         r_resume = _cli("resume", "--run-dir", str(b), "--target-online-episodes", "4", *common)
         assert "resumed:" in r_resume.stdout
         assert "online 2/" in r_resume.stdout, "resume must report the restored cursor"
 
-        from crowd_nav.bayesian_dvl.intent_train_cli import _read_resume_pointer
-        A = torch.load(str(_read_resume_pointer(a)), map_location="cpu", weights_only=False)
-        B = torch.load(str(_read_resume_pointer(b)), map_location="cpu", weights_only=False)
+        from crowd_nav.bayesian_dvl.intent_train_cli import _resume_path
+        A = torch.load(str(_resume_path(a)), map_location="cpu", weights_only=False)
+        B = torch.load(str(_resume_path(b)), map_location="cpu", weights_only=False)
         for key in ("model_state_dict",):
             for k in A[key]:
                 assert torch.equal(A[key][k].float(), B[key][k].float()), f"{key}[{k}] differs after resume"
@@ -303,10 +303,10 @@ def test_c2_final_ema_artifact_holds_ema_weights_not_raw() -> None:
     with tempfile.TemporaryDirectory() as d:
         run = Path(d) / "run"
         _cli("train", "--run-dir", str(run), "--target-online-episodes", "2",
-             "--il-episodes", "2", "--il-passes", "3", "--seed", "97201")
+             "--il-episodes", "2", "--il-passes", "3", "--seed", "97201", "--keep-resume")
         assert (run / "final_ema.pth").exists() and (run / "run_state.json").exists()
-        from crowd_nav.bayesian_dvl.intent_train_cli import _read_resume_pointer
-        raw = torch.load(str(_read_resume_pointer(run)), map_location="cpu", weights_only=False)
+        from crowd_nav.bayesian_dvl.intent_train_cli import _resume_path
+        raw = torch.load(str(_resume_path(run)), map_location="cpu", weights_only=False)
         fin = torch.load(str(run / "final_ema.pth"), map_location="cpu", weights_only=False)
         assert fin["extra"]["artifact_role"] == "final_ema"
         assert fin["checkpoint_schema"] == CHECKPOINT_SCHEMA_V6
@@ -519,7 +519,8 @@ def test_c4rf_il_corpus_is_immutable_shared_and_identity_checked() -> None:
         path = d / "corpus_full.pth"
         meta = build_il_corpus(_env_config_path(), cfg, "full", path, n_episodes=2)
         assert path.exists() and path.with_suffix(".manifest.json").exists()
-        assert meta["training_arm"] == "full" and meta["n_transitions"] > 0
+        assert meta["training_arm"] is None, "A3: the corpus records no arm"
+        assert meta["n_transitions"] > 0
         assert len(meta["corpus_sha256"]) == 64
         manifest = json.loads(path.with_suffix(".manifest.json").read_text())
         assert len(manifest["episode_identities"]) == meta["n_episodes"]
@@ -534,12 +535,14 @@ def test_c4rf_il_corpus_is_immutable_shared_and_identity_checked() -> None:
         assert len(t1) == len(t2) == meta["n_transitions"]
         assert all(t.source_role == "demo" and t.expert_action_indices for t in t1)
 
-        # an arm must never train on another arm's demonstrations
-        try:
-            load_il_corpus(path, cfg, "mean")
-            assert False, "expected IntentCLIError loading a full-arm corpus as the mean arm"
-        except IntentCLIError:
-            pass
+        # A3: the corpus is arm-INDEPENDENT -- every arm loads the SAME file
+        # and materializes its own features, so this must now SUCCEED and
+        # must give features that differ from the full arm's.
+        t_full, _ = load_il_corpus(path, cfg, "full")
+        t_mean, _ = load_il_corpus(path, cfg, "mean")
+        assert len(t_full) == len(t_mean)
+        assert not np.array_equal(t_full[0].human_features, t_mean[0].human_features), \
+            "each arm must materialize its OWN belief features from the shared corpus"
         # a different config must fail closed
         import dataclasses
         other = dataclasses.replace(cfg, learning_rate=cfg.learning_rate * 2)
@@ -553,8 +556,8 @@ def test_c4rf_il_corpus_is_immutable_shared_and_identity_checked() -> None:
             assert False, "expected IntentCLIError on a missing corpus"
         except IntentCLIError:
             pass
-        # per-arm path must differ per arm
-        assert il_corpus_path(d, "full", cfg) != il_corpus_path(d, "mean", cfg)
+        # A3: ONE shared path, independent of arm
+        assert il_corpus_path(d, "full", cfg) == il_corpus_path(d, "mean", cfg)
 
 
 def test_c4rf_ratio_monitor_state_is_fixed_before_the_abort_checkpoint() -> None:
@@ -571,13 +574,9 @@ def test_c4rf_ratio_monitor_state_is_fixed_before_the_abort_checkpoint() -> None
     save = body.index("_save_rolling()")
     assert sync < save, (
         "the live monitor state must be written into RunState BEFORE the abort checkpoint is saved")
-    # and the rolling save must place the POINTER only after the slot file
-    # is fully written, so a crash mid-save leaves the previous slot valid
-    roll = inspect.getsource(intent_train_cli.cmd_train)
-    r0 = roll.index("def _save_rolling(")
-    rb = roll[r0:r0 + 700]
-    assert rb.index("_save_checkpoint(") < rb.index("_write_resume_pointer("), (
-        "the pointer must be moved only AFTER the slot is fully written")
+    # A1: the single resume is written atomically (temp file + os.replace),
+    # so a crash mid-save leaves the previous file intact.
+    assert "os.replace" in inspect.getsource(intent_train_cli._atomic_write_bytes)
 
     # and the monitor itself round-trips the streak
     m = GradientRatioMonitor(0.05, 50.0, 3)
@@ -628,10 +627,53 @@ def test_c5_source_manifest_covers_the_whole_chain_and_detects_drift() -> None:
     )
     manifest = build_manifest(REPO_ROOT)
     assert manifest["manifest_schema"] == MANIFEST_SCHEMA
-    # groups may overlap (registry_hashed_sources re-lists main-chain and
-    # config files), and build_manifest de-duplicates across them, so the
-    # count is the size of the UNION -- not the sum of group lengths.
+    # groups may overlap and build_manifest de-duplicates across them, so
+    # the count is the size of the UNION -- not the sum of group lengths.
     assert manifest["n_files"] == len({r for v in GROUPS.values() for r in v})
+
+    # B6: the manifest describes the V6 RUNTIME CLOSURE and nothing else.
+    # Declaring a retired module would fail closed (it is not on this
+    # branch); silently OMITTING one the chain really loads is the failure
+    # that actually bites -- a partial sync then dies mid-run. So check the
+    # closure empirically, by importing the V6 entry points in a subprocess
+    # and comparing what Python actually loaded against what is declared.
+    declared_py = {r for v in GROUPS.values() for r in v if r.endswith(".py")}
+    probe = (
+        "import importlib, json, sys\n"
+        "from pathlib import Path\n"
+        "ROOT = Path(sys.argv[1]).resolve()\n"
+        "for m in ('crowd_nav.bayesian_dvl.intent_train_cli',\n"
+        "          'crowd_nav.bayesian_dvl.intent_evaluate',\n"
+        "          'crowd_nav.bayesian_dvl.intent_crowdnav_policy',\n"
+        "          'crowd_nav.bayesian_dvl.selftest',\n"
+        "          'crowd_nav.bayesian_dvl.source_manifest'):\n"
+        "    importlib.import_module(m)\n"
+        "out = []\n"
+        "for mod in list(sys.modules.values()):\n"
+        "    f = getattr(mod, '__file__', None)\n"
+        "    if not f: continue\n"
+        "    p = Path(f).resolve()\n"
+        "    try: rel = p.relative_to(ROOT)\n"
+        "    except ValueError: continue\n"
+        "    if 'site-packages' in str(rel): continue\n"
+        "    out.append(str(rel))\n"
+        "print(json.dumps(sorted(set(out))))\n"
+    )
+    res = subprocess.run([_sys.executable, "-c", probe, str(REPO_ROOT)],
+                         cwd=str(REPO_ROOT), capture_output=True, text=True)
+    assert res.returncode == 0, res.stderr[-2000:]
+    loaded = set(json.loads(res.stdout.strip().splitlines()[-1]))
+    undeclared = sorted(loaded - declared_py)
+    assert not undeclared, f"the V6 chain loads files the manifest does not declare: {undeclared}"
+
+    # and no retired module may be declared OR loaded
+    retired = {"belief.py", "counterfactual.py", "data_coverage.py", "oracle_regret.py",
+               "policy.py", "provenance.py", "replay.py", "rollout.py", "trainer.py",
+               "transition.py", "world_model.py", "config.py", "artifact.py"}
+    for rel in sorted(declared_py | loaded):
+        parts = rel.split("/")
+        if len(parts) >= 3 and parts[1] == "bayesian_dvl" and parts[-1] in retired:
+            assert False, f"retired module {rel} is back in the V6 manifest/closure"
     assert len(manifest["manifest_sha256"]) == 64
 
     # the provenance hashes must agree with the live code/config
@@ -662,38 +704,6 @@ def test_c5_source_manifest_covers_the_whole_chain_and_detects_drift() -> None:
             assert False, "expected SourceManifestError when declared sources are absent"
         except SourceManifestError:
             pass
-
-
-def test_c5_checkpoint_storage_is_two_slot_with_a_pointer() -> None:
-    # Independent audit: checkpoints embedding the online replay projected
-    # to >30 GB. Root cause was writing THREE full copies per save
-    # (resume_latest + slot A + slot B) when two-slot was meant to REPLACE
-    # the single latest. `resume_latest.json` is now a small pointer.
-    from crowd_nav.bayesian_dvl.intent_train_cli import (
-        RESUME_POINTER_NAME, SLOT_NAMES, _read_resume_pointer,
-    )
-    with tempfile.TemporaryDirectory() as d:
-        run = Path(d) / "run"
-        _cli("train", "--run-dir", str(run), "--target-online-episodes", "2",
-             "--il-episodes", "2", "--il-passes", "3", "--seed", "97201",
-             "--il-corpus-dir", str(Path(d) / "corpus"))
-
-        big = sorted(p.name for p in run.glob("*.pth") if p.stat().st_size > 1_000_000)
-        assert "resume_latest.pth" not in big, "the third full copy must be gone"
-        assert all(n in (*SLOT_NAMES, "final_ema.pth") for n in big), big
-        assert len([n for n in big if n in SLOT_NAMES]) <= 2, "at most two rolling slots"
-
-        ptr = run / RESUME_POINTER_NAME
-        assert ptr.exists() and ptr.stat().st_size < 1000, "the pointer must be tiny"
-        meta = json.loads(ptr.read_text())
-        assert meta["slot"] in SLOT_NAMES
-        assert (run / meta["slot"]).exists()
-        resolved = _read_resume_pointer(run)
-        assert resolved is not None and resolved.name == meta["slot"]
-        # the pointer records the cursor, so "where is this run" needs no
-        # GB-scale load
-        for k in ("online_episodes_done", "il_passes_done", "global_updates"):
-            assert k in meta
 
 
 def test_c5_online_rows_persist_without_dead_action_features() -> None:
@@ -737,3 +747,185 @@ def test_c5_online_rows_persist_without_dead_action_features() -> None:
                            torch.Generator().manual_seed(1), lambda_rank=380.0)
     assert abs(ra.loss - rb.loss) < 1e-9, (ra.loss, rb.loss)
     assert abs(ra.rank_loss - rb.rank_loss) < 1e-9
+
+
+def test_a1_single_atomic_resume_no_slots() -> None:
+    # A1: two-slot A/B still cost 2 x ~1.1 GB. _atomic_write_bytes already
+    # does temp-file + os.replace, so the old file survives intact until
+    # the new one is complete -- a second slot buys nothing.
+    from crowd_nav.bayesian_dvl.intent_train_cli import RESUME_NAME, _resume_path
+    with tempfile.TemporaryDirectory() as d:
+        run = Path(d) / "run"
+        _cli("train", "--run-dir", str(run), "--target-online-episodes", "2",
+             "--il-episodes", "2", "--il-passes", "3", "--seed", "97201",
+             "--il-corpus-dir", str(Path(d) / "corpus"), "--keep-resume")
+        big = sorted(p.name for p in run.glob("*.pth") if p.stat().st_size > 500_000)
+        assert big == [RESUME_NAME], f"exactly one full resume expected, got {big}"
+        assert not list(run.glob("resume_slot_*.pth")) and not list(run.glob("resume_latest.json"))
+        assert _resume_path(run).exists()
+        import inspect
+        from crowd_nav.bayesian_dvl import intent_train_cli
+        assert "os.replace" in inspect.getsource(intent_train_cli._atomic_write_bytes)
+
+
+def test_a2_replay_persists_only_valid_human_rows() -> None:
+    # A2: human_features is [MAX_HUMANS=20, 29] but scenarios run 5 people;
+    # 15 of 20 rows are structural zeros (~58% of a row).
+    env_config_path = _env_config_path()
+    demo = collect_orca_episode(env_config_path, "standard", 700001).transitions
+    buf = IntentReplay(demo_capacity=500, online_capacity=500)
+    buf.add_demo(demo, np.random.default_rng(0))
+    live_shape = buf._demo[0].human_features.shape
+    assert live_shape[0] == MAX_HUMANS
+
+    state = buf.state_dict(include_demo=True)
+    stored = state["demo"][0].human_features
+    n_valid = int(np.asarray(state["demo"][0].human_mask).sum())
+    assert stored.shape == (n_valid, live_shape[1]) and n_valid < MAX_HUMANS
+    # the live buffer must be untouched
+    assert buf._demo[0].human_features.shape == live_shape
+
+    back = IntentReplay(demo_capacity=500, online_capacity=500)
+    back.load_state_dict(state)
+    assert back._demo[0].human_features.shape == live_shape
+    assert np.array_equal(back._demo[0].human_features, buf._demo[0].human_features), \
+        "the padded [20,29] tensor must be rebuilt EXACTLY"
+
+
+def test_a3_one_raw_corpus_serves_every_arm() -> None:
+    # A3: three near-identical per-arm corpora -> ONE arm-independent raw
+    # corpus. ORCA never consults the belief, so an episode can be
+    # collected without any belief and each arm regenerates its features.
+    env_config_path = _env_config_path()
+    action_table = np.asarray(
+        ActionGridSpec.from_env_config(str(env_config_path)).build_action_table(), dtype=np.float64)
+    for scenario, seed in (("standard", 700001), ("junction_crowd", 1_100_000)):
+        reference = collect_orca_episode(env_config_path, scenario, seed, belief_mode="full").transitions
+        raw = collect_raw_orca_episode(env_config_path, scenario, seed)
+        assert len(raw.steps) == len(reference)
+        got = materialize_arm_transitions(raw, "full", action_table)
+        for a, b in zip(reference, got):
+            for f in ("robot_features", "human_features", "action_features", "all_action_features"):
+                assert np.array_equal(getattr(a, f), getattr(b, f)), f"{scenario}: {f} not reproduced"
+            assert a.action_index == b.action_index
+            assert a.expert_action_indices == b.expert_action_indices
+            assert a.reward == b.reward and a.mc_return == b.mc_return
+        # and the arms are genuinely different
+        mean = materialize_arm_transitions(raw, "mean", action_table)
+        cv = materialize_arm_transitions(raw, "cv", action_table)
+        assert not np.array_equal(got[0].human_features, mean[0].human_features)
+        assert not np.array_equal(mean[0].human_features, cv[0].human_features)
+    # a legacy per-arm corpus must fail closed
+    from crowd_nav.bayesian_dvl.intent_train_cli import load_il_corpus, il_corpus_path
+    cfg = load_intent_training_config(DEFAULT_TRAINING_CONFIG)
+    with tempfile.TemporaryDirectory() as d:
+        # the path must no longer depend on the arm
+        assert il_corpus_path(Path(d), "full", cfg) == il_corpus_path(Path(d), "mean", cfg)
+        bad = Path(d) / "v1.pth"
+        torch.save({"corpus_schema": "bdvl_intent_raw_il_corpus_v2", "training_arm": "full",
+                    "config_content_hash": cfg.content_hash(), "code_hash": "x"}, str(bad))
+        try:
+            load_il_corpus(bad, cfg, "full")
+            assert False, "expected IntentCLIError on a per-arm v1 corpus"
+        except IntentCLIError:
+            pass
+
+
+def test_a4_milestones_are_gated_and_carry_no_replay() -> None:
+    from crowd_nav.bayesian_dvl.intent_train_cli import MILESTONE_EPISODES, _save_milestone
+    assert MILESTONE_EPISODES == (2500, 5000, 7500, 10000)
+    import inspect
+    from crowd_nav.bayesian_dvl import intent_train_cli
+    src = inspect.getsource(_save_milestone)
+    # check the PAYLOAD, not the prose: no replay/buffer state may be stored
+    for banned in ("replay_buffer_state", "buffer.state_dict"):
+        assert banned not in src, f"a milestone must never carry {banned}"
+    assert '"artifact_role": "milestone_ema"' in src
+    train_src = inspect.getsource(intent_train_cli.cmd_train)
+    assert "if done in MILESTONE_EPISODES" in train_src, "milestones must be gated to the four counts"
+
+
+def test_a4_resume_is_reclaimed_only_after_final_ema_verifies() -> None:
+    from crowd_nav.bayesian_dvl.intent_train_cli import RESUME_NAME
+    import inspect
+    from crowd_nav.bayesian_dvl import intent_train_cli
+    src = inspect.getsource(intent_train_cli.cmd_train)
+    v = src.index("_save_final_ema(")
+    load = src.index("load_intent_checkpoint(str(final_path)", v)
+    unlink = src.index("resume_path.unlink", v)
+    assert v < load < unlink, "verify the artifact BEFORE reclaiming the only recovery copy"
+    # an INCOMPLETE run must keep its resume
+    with tempfile.TemporaryDirectory() as d:
+        run = Path(d) / "run"
+        r = _cli("train", "--run-dir", str(run), "--target-online-episodes", "2",
+                 "--il-episodes", "2", "--il-passes", "3", "--seed", "97201",
+                 "--il-corpus-dir", str(Path(d) / "corpus"))
+        assert "final_ema verified" in r.stdout
+        assert "run incomplete" in r.stdout, "a partial run must keep its resume"
+        assert (run / RESUME_NAME).exists()
+
+
+def test_a5_preflight_refuses_when_space_is_insufficient() -> None:
+    from crowd_nav.bayesian_dvl.intent_train_cli import (
+        RESUME_NAME, RESUME_TRANSIENT_FACTOR, SPACE_SAFETY_MARGIN,
+        count_incomplete_runs, estimate_run_bytes,
+    )
+    cfg = load_intent_training_config(DEFAULT_TRAINING_CONFIG)
+    one = estimate_run_bytes(cfg, concurrent_runs=1, plan_runs=1)
+    three = estimate_run_bytes(cfg, concurrent_runs=3, plan_runs=3)
+    assert one["shared_corpus"] > 0 and one["resume"] > 0
+    # the corpus is shared: it must NOT scale with run count
+    assert three["shared_corpus"] == one["shared_corpus"]
+    assert three["total"] > one["total"]
+    assert SPACE_SAFETY_MARGIN >= 1.2
+
+    # --- audit fix 1: the atomic save's transient peak must be budgeted ---
+    # _atomic_write_bytes keeps the OLD resume while writing the new .tmp,
+    # so an active run peaks at 2x. Budgeting 1x means the run dies at its
+    # first checkpoint -- the exact failure this gate exists to prevent.
+    assert RESUME_TRANSIENT_FACTOR >= 2.0
+    assert one["resume_peak"] == one["resume"] * RESUME_TRANSIENT_FACTOR
+    assert one["active"] == one["resume_peak"]
+    assert three["active"] == 3 * one["resume_peak"]
+
+    # --- audit fix 2: a SEQUENTIAL plan must not be charged for every run ---
+    # A4 deletes a run's resume once its final_ema verifies, so 15 runs one
+    # after another never hold 15 resumes. Charging plan_runs x per_run was
+    # a false negative that would block a launch the disk can easily take.
+    seq15 = estimate_run_bytes(cfg, concurrent_runs=1, plan_runs=15)
+    assert seq15["active"] == one["active"], "sequential runs must not multiply the resume footprint"
+    naive = one["shared_corpus"] + 15 * one["resume"]
+    assert seq15["total"] < naive, "15 sequential runs must cost far less than 15 resumes"
+    # only the small retained artifacts scale with the plan
+    assert seq15["retained"] == 15 * one["retained_per_run"]
+    assert seq15["retained"] < one["resume"], "milestones+final_ema are small next to a resume"
+
+    # already-existing incomplete runs DO occupy their resume and must count
+    stale = estimate_run_bytes(cfg, concurrent_runs=1, plan_runs=1, incomplete_runs=2)
+    assert stale["incomplete"] == 2 * one["resume"]
+    assert stale["total"] > one["total"]
+
+    # a corpus already on disk must not be double-counted
+    have = estimate_run_bytes(cfg, concurrent_runs=1, plan_runs=1, corpus_present=True)
+    assert have["shared_corpus"] == 0
+    assert have["total"] == one["total"] - one["shared_corpus"]
+
+    # count_incomplete_runs sees a leftover resume, and stops seeing it once
+    # the run reclaims it
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        assert count_incomplete_runs(root) == 0
+        for name in ("run_a", "run_b"):
+            (root / name).mkdir()
+            (root / name / RESUME_NAME).write_bytes(b"x")
+        assert count_incomplete_runs(root) == 2
+        (root / "run_a" / RESUME_NAME).unlink()
+        assert count_incomplete_runs(root) == 1
+        assert count_incomplete_runs(root / "does_not_exist") == 0
+
+    # a plan that cannot fit must be refused, not warned about -- and the
+    # thing that makes it not fit is CONCURRENCY, not the eventual total
+    r = _cli("preflight", "--concurrent-runs", "100000", expect_ok=False)
+    assert r.returncode != 0 and "insufficient disk" in r.stderr
+    r_ok = _cli("preflight", "--concurrent-runs", "1", "--plan-runs", "15")
+    assert "sufficient" in r_ok.stdout, "15 SEQUENTIAL runs must not be blocked by the plan total"

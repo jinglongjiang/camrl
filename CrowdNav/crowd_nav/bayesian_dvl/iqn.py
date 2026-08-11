@@ -14,7 +14,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from crowd_nav.bayesian_dvl.config import FROZEN_VALUES, derive_return_bounds
+from crowd_nav.bayesian_dvl.intent_runtime_config import FROZEN_VALUES, derive_return_bounds
 
 
 class CosineTauEmbedding(nn.Module):

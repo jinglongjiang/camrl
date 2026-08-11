@@ -15,7 +15,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from crowd_nav.bayesian_dvl.config import ACTION_FEATURE_DIM, FROZEN_VALUES, derive_return_bounds
+from crowd_nav.bayesian_dvl.intent_runtime_config import ACTION_FEATURE_DIM, FROZEN_VALUES, derive_return_bounds
 from crowd_nav.bayesian_dvl.iqn import IQNValueNetwork
 from crowd_nav.bayesian_dvl.set_encoder import ActionEncoder, HUMAN_FEATURE_DIM, ROBOT_FEATURE_DIM, SetEncoder
 

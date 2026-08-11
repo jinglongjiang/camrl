@@ -40,6 +40,7 @@ MANIFEST_SCHEMA = "bdvl_intent_source_manifest_v1"
 # actually imports. Kept explicit (not a glob) so an accidental new file
 # cannot silently join the chain without being declared.
 MAIN_CHAIN_SOURCES: List[str] = [
+    "crowd_nav/bayesian_dvl/__init__.py",
     "crowd_nav/bayesian_dvl/intent_tracker.py",
     "crowd_nav/bayesian_dvl/scene_candidates.py",
     "crowd_nav/bayesian_dvl/intent_policy.py",
@@ -56,29 +57,10 @@ MAIN_CHAIN_SOURCES: List[str] = [
     "crowd_nav/bayesian_dvl/ranking.py",
     "crowd_nav/bayesian_dvl/normalization.py",
     "crowd_nav/bayesian_dvl/contracts.py",
-    "crowd_nav/bayesian_dvl/config.py",
+    "crowd_nav/bayesian_dvl/intent_runtime_config.py",
     "crowd_nav/bayesian_dvl/statistics.py",
     "crowd_nav/bayesian_dvl/evaluate.py",
     "crowd_nav/bayesian_dvl/source_manifest.py",
-]
-
-# The retired SBK-HMM/R4 chain. NOT part of the V6 decision path, but its
-# modules ship in the same package and its regression tests import them,
-# so they are declared to keep the manifest an honest description of what
-# is actually present.
-LEGACY_CHAIN_SOURCES: List[str] = [
-    "crowd_nav/bayesian_dvl/__init__.py",
-    "crowd_nav/bayesian_dvl/belief.py",
-    "crowd_nav/bayesian_dvl/counterfactual.py",
-    "crowd_nav/bayesian_dvl/data_coverage.py",
-    "crowd_nav/bayesian_dvl/oracle_regret.py",
-    "crowd_nav/bayesian_dvl/policy.py",
-    "crowd_nav/bayesian_dvl/provenance.py",
-    "crowd_nav/bayesian_dvl/replay.py",
-    "crowd_nav/bayesian_dvl/rollout.py",
-    "crowd_nav/bayesian_dvl/trainer.py",
-    "crowd_nav/bayesian_dvl/transition.py",
-    "crowd_nav/bayesian_dvl/world_model.py",
 ]
 
 # Configs read at runtime.
@@ -104,16 +86,6 @@ EXTERNAL_DEPENDENCIES: List[str] = [
     # CrowdNav integration
     "crowd_nav/__init__.py",
     "crowd_nav/policy/policy_factory.py",                       # registers IntentBDVLPolicy
-    # legacy-chain regression tests import these
-    "crowd_nav/tools/select_bdvl_checkpoint.py",
-    "crowd_nav/tools/train_bdvl.py",
-    "crowd_nav/tools/collect_bdvl_r4_4_data.py",
-    "crowd_nav/tools/evaluate_bdvl.py",                         # transitive dep of select_bdvl_checkpoint
-    # config.nonstationary_protocol_source_sha256() OPENS this BY PATH (it
-    # is never imported), so neither an import tracer nor a narrow open
-    # tracer caught it -- the remote run did.
-    "crowd_nav/bayesian_pilot/__init__.py",
-    "crowd_nav/bayesian_pilot/protocol.py",
     # the simulator package, in full -- every module in the traced closure
     "crowd_sim/__init__.py",
     "crowd_sim/envs/__init__.py",
@@ -143,24 +115,27 @@ TESTS: List[str] = [
     "crowd_nav/bayesian_dvl/tests/test_intent_training.py",
     "crowd_nav/bayesian_dvl/tests/test_intent_cli.py",
     "crowd_nav/bayesian_dvl/tests/test_intent_integration.py",
-    "crowd_nav/bayesian_dvl/tests/test_legacy_chain.py",
 ]
 
-# config.build_frozen_registry() HASHES every entry of
-# BDVL_PRODUCTION_SOURCES, so any entry missing from a synced tree raises
-# FileNotFoundError deep inside registry construction. Deriving the group
-# from that constant (instead of restating it) makes it structurally
-# impossible for the two lists to drift apart -- which is exactly how the
-# remote run hit `audit_bdvl_r3r2_gradient.py`.
-def _production_sources() -> List[str]:
-    from crowd_nav.bayesian_dvl.config import BDVL_PRODUCTION_SOURCES
-    return list(BDVL_PRODUCTION_SOURCES)
-
-
+# B6: the manifest now covers the V6 RUNTIME CLOSURE ONLY.
+#
+# Two groups were removed rather than trimmed:
+#
+#   * ``legacy_chain`` -- belief/rollout/world_model/trainer/... are no
+#     longer on this branch at all, so hashing them could only fail closed.
+#   * ``registry_hashed_sources`` -- it derived from
+#     ``config.BDVL_PRODUCTION_SOURCES``, and B4 removed the V6 chain's
+#     dependency on ``config.py`` entirely (the six symbols V6 actually
+#     needs now live in ``intent_runtime_config.py``). Keeping the group
+#     would reintroduce the exact import the shrink deleted -- which is
+#     how this test failed: ModuleNotFoundError on a module that is
+#     correctly gone.
+#
+# The remaining groups are verified against the closure computed by
+# actually importing the V6 entry points (test_c5_source_manifest_...),
+# so a file that the chain really loads cannot be silently omitted.
 GROUPS = {
     "main_chain": MAIN_CHAIN_SOURCES,
-    "registry_hashed_sources": _production_sources(),
-    "legacy_chain": LEGACY_CHAIN_SOURCES,
     "configs": CONFIGS,
     "external_dependencies": EXTERNAL_DEPENDENCIES,
     "tests": TESTS,
@@ -201,7 +176,7 @@ def build_manifest(repo_root: Path = REPO_ROOT) -> Dict[str, object]:
 
     from crowd_nav.bayesian_dvl.intent_config import load_intent_training_config
     from crowd_nav.bayesian_dvl.intent_train_cli import code_sha256, scene_registry_sha256
-    from crowd_nav.bayesian_dvl.config import ActionGridSpec
+    from crowd_nav.bayesian_dvl.intent_runtime_config import ActionGridSpec
 
     cfg = load_intent_training_config(repo_root / "crowd_nav" / "configs" / "train_intent_bdvl.config")
     grid = ActionGridSpec.from_env_config(str(repo_root / "crowd_nav" / "configs" / "env_bayesian_dvl.config"))

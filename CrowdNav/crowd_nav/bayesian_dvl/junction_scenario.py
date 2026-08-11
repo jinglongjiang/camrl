@@ -30,7 +30,7 @@ from typing import Dict, Tuple
 
 import numpy as np
 
-from crowd_nav.bayesian_dvl.config import FROZEN_VALUES
+from crowd_nav.bayesian_dvl.intent_runtime_config import FROZEN_VALUES
 from crowd_nav.bayesian_dvl.contracts import HumanObservation, RobotObservation
 from crowd_nav.bayesian_dvl.scene_candidates import PublicScene, junction_scene
 from crowd_sim.envs.crowd_sim import CrowdSim

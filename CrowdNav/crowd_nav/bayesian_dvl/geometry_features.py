@@ -16,7 +16,7 @@ from __future__ import annotations
 import numpy as np
 
 from crowd_nav.bayesian_dvl import normalization as norm
-from crowd_nav.bayesian_dvl.config import NORMALIZATION_CONSTANTS
+from crowd_nav.bayesian_dvl.intent_runtime_config import NORMALIZATION_CONSTANTS
 from crowd_nav.bayesian_dvl.contracts import RobotObservation
 
 

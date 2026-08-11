@@ -6,11 +6,12 @@ Failures raise AssertionError; the runner prints a pass/fail count and
 exits non-zero on any failure, matching the project's existing selftest
 convention (see crowd_nav/bayesian_brne/selftest.py).
 
-Thin entry point (review point 1): the 259 test functions themselves live
-in ``crowd_nav/bayesian_dvl/tests/`` (``test_intent_tracker.py``,
+Thin entry point: the V6 test functions live in
+``crowd_nav/bayesian_dvl/tests/`` (``test_intent_tracker.py``,
 ``test_scene_candidates.py``, ``test_intent_policy.py``,
-``test_intent_training.py``, ``test_legacy_chain.py``), each a byte-exact
-split of what used to be one 5691-line monolithic file. This module only
+``test_intent_training.py``), covering the goal-intent V6 chain only --
+the retired SBK-HMM/R4 chain and its 220 tests were removed from this
+branch (Order B). This module only
 discovers and runs them -- it defines no tests of its own.
 """
 
@@ -24,7 +25,6 @@ from crowd_nav.bayesian_dvl.tests import (
     test_intent_policy,
     test_intent_tracker,
     test_intent_training,
-    test_legacy_chain,
     test_scene_candidates,
 )
 
@@ -35,7 +35,6 @@ _TEST_MODULES = (
     test_scene_candidates,
     test_intent_policy,
     test_intent_training,
-    test_legacy_chain,
 )
 
 

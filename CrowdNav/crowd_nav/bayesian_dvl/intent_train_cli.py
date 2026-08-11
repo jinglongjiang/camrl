@@ -43,7 +43,7 @@ from typing import Dict, List, Optional
 import numpy as np
 import torch
 
-from crowd_nav.bayesian_dvl.config import ActionGridSpec
+from crowd_nav.bayesian_dvl.intent_runtime_config import ActionGridSpec
 from crowd_nav.bayesian_dvl.intent_config import (
     DEFAULT_TRAINING_CONFIG, IntentConfigError, IntentTrainingConfig, load_intent_training_config,
 )
@@ -54,6 +54,7 @@ from crowd_nav.bayesian_dvl.intent_train import (
     FORMAL_EVAL_HELDOUT_SEEDS, FORMAL_SIX_SCENARIOS, PAPER_MAIN_BASE_SEED,
     PAPER_MAIN_EPISODES_PER_SCENARIO, EMAModel, GradientRatioMonitor, IntentReplay, paper_main_jobs,
     batch_to_tensors, collect_orca_episode, run_ablation_suite, run_formal_six_scenario_evaluation,
+    collect_raw_orca_episode, materialize_arm_transitions,
     run_il_update, run_online_training_step, summarize_scenario_results, train_step,
 )
 from crowd_nav.bayesian_dvl.junction_scenario import (
@@ -71,44 +72,112 @@ class IntentCLIError(RuntimeError):
 
 
 DEFAULT_ENV_CONFIG = Path("crowd_nav/configs/env_bayesian_dvl.config")
-IL_CORPUS_SCHEMA = "bdvl_intent_il_corpus_v1"
+IL_CORPUS_SCHEMA = "bdvl_intent_raw_il_corpus_v2"  # A3: arm-INDEPENDENT raw episodes
 STANDARD_IL_SEED_BASE = 700_001      # standard-scenario IL seeds
 STANDARD_ONLINE_SEED_BASE = 800_001  # standard-scenario online seeds
 FINAL_EMA_NAME = "final_ema.pth"
 RUN_STATE_NAME = "run_state.json"
-# C4RF.3 follow-up: TWO-SLOT rolling resume. `resume_latest.pth` used to be
-# a THIRD full copy alongside slots A and B -- at the frozen
-# replay_capacity=200000 that is 3 x ~1.4 GB = 4.3 GB per run (65 GB across
-# 15 runs), on a host with 2.5 GB free. It is now a tiny POINTER naming the
-# slot that was last written completely, so a run costs two slots, not three.
-RESUME_POINTER_NAME = "resume_latest.json"
-SLOT_NAMES = ("resume_slot_A.pth", "resume_slot_B.pth")
+# A1: ONE atomic full resume. The two-slot A/B scheme still cost 2 x ~1.1 GB
+# per run against 2.5 GB of free disk. _atomic_write_bytes already writes to
+# a temp file and os.replace()s it, which is atomic on the same filesystem --
+# the previous file survives intact until the new one is complete, so a
+# second slot buys nothing a crash could not already survive.
+RESUME_NAME = "resume_latest.pth"
 
 
-def _read_resume_pointer(run_dir: Path) -> Optional[Path]:
-    ptr = Path(run_dir) / RESUME_POINTER_NAME
-    if not ptr.exists():
-        legacy = Path(run_dir) / "resume_latest.pth"   # pre-pointer layout
-        return legacy if legacy.exists() else None
-    slot = json.loads(ptr.read_text()).get("slot")
-    if not slot:
-        return None
-    p = Path(run_dir) / slot
-    return p if p.exists() else None
+def _resume_path(run_dir: Path) -> Path:
+    return Path(run_dir) / RESUME_NAME
 
 
-def _write_resume_pointer(run_dir: Path, slot_name: str, state: "RunState") -> None:
-    """Written ONLY after the slot file is fully on disk, so a crash mid-save
-    leaves the pointer aimed at the previous, still-valid slot."""
-    ptr = Path(run_dir) / RESUME_POINTER_NAME
-    tmp = ptr.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps({
-        "slot": slot_name,
-        "online_episodes_done": state.online_episodes_done,
-        "il_passes_done": state.il_passes_done,
-        "global_updates": state.global_updates,
-    }, indent=2))
-    os.replace(str(tmp), str(ptr))
+# A4: only these four online-episode counts get a milestone, and a
+# milestone NEVER contains the replay (model + EMA + run identity only).
+MILESTONE_EPISODES = (2500, 5000, 7500, 10000)
+
+# A5: measured per-row/per-artifact costs used to size a run BEFORE it
+# starts. Gate behaviour: test_a5_preflight_refuses_when_space_is_insufficient.
+#
+# BYTES_PER_REPLAY_ROW is measured at FULL capacity (200k rows serialized
+# through the real _save_checkpoint path), not extrapolated from a small
+# pilot -- a 564-row pilot proves resume SEMANTICS, not resume COST, and
+# per-row overhead does not have to be linear. Reproduce with
+# scratchpad/stress_capacity.py (too slow/large for the standard suite:
+# ~25 s and 0.5 GB of transient disk).
+# Measured 2026-08-12 by serializing a FULL 200,000-row online ring through
+# _save_checkpoint: 0.254 GB final file, of which only 0.7 MB is fixed
+# (model + optimizer + run identity), i.e. 1268 B/row marginal. Reproduced
+# across two independent runs. The previous 3.7 KB came from extrapolating a
+# 564-row pilot and was ~3x too pessimistic. Valid for the production shape:
+# 5 pedestrians (JUNCTION_CROWD_HUMAN_NUM, and 5 in `standard`) of
+# MAX_HUMANS=20, with all_action_features stripped from online rows.
+BYTES_PER_REPLAY_ROW = 1268            # compacted online row  [MEASURED AT FULL CAPACITY]
+BYTES_PER_RAW_CORPUS_STEP = 700        # arm-independent raw step
+BYTES_PER_EMA_ARTIFACT = 0.35 * 1e6
+# During _atomic_write_bytes the previous resume and the new .tmp coexist,
+# so a saving run transiently occupies this multiple of one resume.
+RESUME_TRANSIENT_FACTOR = 2.0
+SPACE_SAFETY_MARGIN = 1.2
+
+
+def count_incomplete_runs(runs_root: Path) -> int:
+    """Runs that already hold a resume on disk. A4 deletes a run's resume
+    once its final_ema is verified, so a leftover resume marks a run that
+    is still occupying its full footprint -- crashed, paused, or running
+    under another process. Preflight must budget for these; they are
+    invisible to the plan the user is about to launch."""
+    root = Path(runs_root)
+    if not root.is_dir():
+        return 0
+    return sum(1 for p in root.glob("*/" + RESUME_NAME) if p.is_file())
+
+
+def estimate_run_bytes(cfg: IntentTrainingConfig, *, concurrent_runs: int = 1, plan_runs: int = 1,
+                       incomplete_runs: int = 0, corpus_present: bool = False) -> Dict[str, float]:
+    """Peak disk a training plan needs. A5: preflight refuses to start when
+    free space is under this x SPACE_SAFETY_MARGIN, instead of dying
+    part-way through a multi-hour run.
+
+    Two accounting errors this fixes (audit of the first A5 estimate):
+
+    (1) The atomic save was budgeted at ONE resume. ``_atomic_write_bytes``
+        writes ``resume_latest.pth.tmp`` and only then ``os.replace``s it,
+        so during every save the OLD file and the new temp file are BOTH
+        on disk. A run's peak is therefore ~2x its resume, not 1x --
+        measured as RESUME_TRANSIENT_FACTOR below. Under-budgeting this is
+        exactly the failure the gate exists to prevent: the run dies at its
+        first checkpoint, hours in.
+
+    (2) The total was ``plan_runs x per_run``, which contradicts A4's own
+        reclamation: a finished run DELETES its resume, so 15 sequential
+        runs never hold 15 resumes. Blocking a 3-run launch because 15 runs
+        are eventually planned is a false negative. What actually has to
+        fit at once is:
+
+            shared corpus
+          + concurrently ACTIVE runs, each at its transient (2x) peak
+          + already-existing INCOMPLETE runs, each at steady state (1x)
+          + retained small artifacts for the WHOLE plan (milestones +
+            final_ema are deliverables and are never reclaimed)
+    """
+    steps_per_episode = 40  # measured ~39-47 across scenarios
+    corpus = 0.0 if corpus_present else cfg.il_episodes_total * steps_per_episode * BYTES_PER_RAW_CORPUS_STEP
+    resume = cfg.replay_capacity * BYTES_PER_REPLAY_ROW
+    retained_per_run = (len(MILESTONE_EPISODES) + 1) * BYTES_PER_EMA_ARTIFACT  # milestones + final_ema
+    active = max(1, int(concurrent_runs)) * resume * RESUME_TRANSIENT_FACTOR
+    stale = max(0, int(incomplete_runs)) * resume
+    retained = max(1, int(plan_runs)) * retained_per_run
+    return {
+        "shared_corpus": corpus,          # ONE, shared by every arm and seed
+        "resume": resume,
+        "resume_peak": resume * RESUME_TRANSIENT_FACTOR,
+        "retained_per_run": retained_per_run,
+        "active_runs": max(1, int(concurrent_runs)),
+        "active": active,
+        "incomplete_runs": max(0, int(incomplete_runs)),
+        "incomplete": stale,
+        "plan_runs": max(1, int(plan_runs)),
+        "retained": retained,
+        "total": corpus + active + stale + retained,
+    }
 
 
 # --------------------------------------------------------------------- #
@@ -234,7 +303,10 @@ def _atomic_write_bytes(path: Path, write_fn) -> None:
 # --------------------------------------------------------------------- #
 
 def il_corpus_path(corpus_dir: Path, arm: str, cfg: IntentTrainingConfig) -> Path:
-    return Path(corpus_dir) / f"il_corpus_{arm}_{cfg.content_hash()[:12]}.pth"
+    """A3: ONE corpus shared by every arm -- the path no longer depends on
+    ``arm``. The parameter is kept so callers read naturally, and a
+    mismatch is impossible because the file stores no arm at all."""
+    return Path(corpus_dir) / f"il_corpus_raw_{cfg.content_hash()[:12]}.pth"
 
 
 def build_il_corpus(env_config_path: Path, cfg: IntentTrainingConfig, arm: str, out_path: Path,
@@ -245,17 +317,15 @@ def build_il_corpus(env_config_path: Path, cfg: IntentTrainingConfig, arm: str, 
         per = max(1, n_episodes // 2)
         plan = ([p for p in plan if p[0] == "standard"][:per]
                 + [p for p in plan if p[0] == "junction_crowd"][:per])
-    transitions, identities = [], []
+    episodes, identities = [], []
     for scenario, ep_seed in plan:
         _assert_not_formal_seed(ep_seed)
-        ep = collect_orca_episode(env_config_path, scenario, ep_seed, gamma=cfg.gamma,
-                                   belief_mode=arm, n_samples=cfg.future_n_samples,
-                                   horizon=cfg.future_horizon)
-        transitions.extend(ep.transitions)
-        identities.append([scenario, int(ep_seed), len(ep.transitions), ep.outcome])
+        raw = collect_raw_orca_episode(env_config_path, scenario, ep_seed, gamma=cfg.gamma)
+        episodes.append(raw)
+        identities.append([scenario, int(ep_seed), len(raw.steps), raw.outcome])
     payload = {
         "corpus_schema": IL_CORPUS_SCHEMA,
-        "training_arm": arm,
+        "training_arm": None,   # A3: arm-independent by construction
         "feature_schema": cfg.feature_schema,
         "training_contract_schema": cfg.training_contract_schema,
         "config_content_hash": cfg.content_hash(),
@@ -264,14 +334,14 @@ def build_il_corpus(env_config_path: Path, cfg: IntentTrainingConfig, arm: str, 
         "future_horizon": cfg.future_horizon,
         "future_n_samples": cfg.future_n_samples,
         "n_episodes": len(plan),
-        "n_transitions": len(transitions),
+        "n_transitions": sum(len(e.steps) for e in episodes),
         "episode_identities": identities,
-        "transitions": transitions,
+        "episodes": episodes,
     }
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     _atomic_write_bytes(out_path, lambda tmp: torch.save(payload, str(tmp)))
-    meta = {k: v for k, v in payload.items() if k not in ("transitions", "episode_identities")}
+    meta = {k: v for k, v in payload.items() if k not in ("episodes", "episode_identities")}
     meta["corpus_sha256"] = hashlib.sha256(out_path.read_bytes()).hexdigest()
     meta["path"] = str(out_path)
     out_path.with_suffix(".manifest.json").write_text(json.dumps(
@@ -288,18 +358,25 @@ def load_il_corpus(path: Path, cfg: IntentTrainingConfig, arm: str) -> tuple:
     payload = torch.load(str(path), map_location="cpu", weights_only=False)
     if payload.get("corpus_schema") != IL_CORPUS_SCHEMA:
         raise IntentCLIError(f"corpus schema {payload.get('corpus_schema')!r} != {IL_CORPUS_SCHEMA!r}")
-    if payload["training_arm"] != arm:
+    if payload.get("training_arm") is not None:
         raise IntentCLIError(
-            f"corpus was collected for arm {payload['training_arm']!r}, not {arm!r}; "
-            f"an arm must never be trained on another arm's belief features")
+            f"corpus {path} is a per-arm v1 corpus (arm={payload['training_arm']!r}); the V6 chain now "
+            f"uses ONE arm-independent raw corpus -- recollect it")
     if payload["config_content_hash"] != cfg.content_hash():
         raise IntentCLIError("corpus was collected under a different training config")
     if payload["code_hash"] != code_sha256():
         raise IntentCLIError("corpus was collected by different main-chain code")
-    meta = {k: v for k, v in payload.items() if k not in ("transitions", "episode_identities")}
+    meta = {k: v for k, v in payload.items() if k not in ("episodes", "episode_identities")}
     meta["corpus_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
     meta["path"] = str(path)
-    return payload["transitions"], meta
+    meta["materialized_arm"] = arm
+    grid = ActionGridSpec.from_env_config(str(DEFAULT_ENV_CONFIG))
+    action_table = np.asarray(grid.build_action_table(), dtype=np.float64)
+    transitions = []
+    for raw in payload["episodes"]:
+        transitions.extend(materialize_arm_transitions(
+            raw, arm, action_table, horizon=cfg.future_horizon, n_samples=cfg.future_n_samples))
+    return transitions, meta
 
 
 @dataclass
@@ -601,14 +678,40 @@ def cmd_preflight(args) -> int:
         raise IntentCLIError(f"seed roles OVERLAP -- fail closed: {inv['overlaps']}")
     print("  -> all seed roles mutually exclusive")
 
-    try:
-        import shutil
-        usage = shutil.disk_usage(str(Path(args.run_dir).parent if args.run_dir else "."))
-        print(f"disk free         : {usage.free / 1e9:.1f} GB")
-        if usage.free < 5e9:
-            print(f"  WARNING: under 5 GB free; a long multi-seed run writes many checkpoints")
-    except Exception as exc:  # noqa: BLE001 - diagnostic only
-        print(f"disk free         : unavailable ({exc})")
+    # A5: real peak-space gate, not a fixed-threshold warning.
+    import shutil
+    target = Path(args.run_dir).parent if args.run_dir else Path(".")
+    usage = shutil.disk_usage(str(target))
+    # What must fit AT ONCE -- not the plan total. Finished runs reclaim
+    # their resume (A4), so a sequential 15-run plan never holds 15 of them;
+    # blocking on plan_runs x per_run was a false negative. Concurrency and
+    # already-existing incomplete runs are what actually compete for disk.
+    corpus_present = il_corpus_path(Path(args.corpus_dir), "shared", cfg).is_file() \
+        if getattr(args, "corpus_dir", None) else False
+    incomplete = count_incomplete_runs(target)
+    est = estimate_run_bytes(cfg, concurrent_runs=args.concurrent_runs, plan_runs=args.plan_runs,
+                             incomplete_runs=incomplete, corpus_present=corpus_present)
+    need = est["total"] * SPACE_SAFETY_MARGIN
+    print(f"disk free         : {usage.free / 1e9:.2f} GB at {target}")
+    print(f"space estimate    : peak CONCURRENT footprint, not plan total")
+    print(f"  shared corpus      {est['shared_corpus'] / 1e9:.2f} GB"
+          f"{'  (already on disk)' if corpus_present else ''}")
+    print(f"  active runs        {est['active_runs']} x {est['resume_peak'] / 1e9:.2f} GB "
+          f"(resume {est['resume'] / 1e9:.2f} GB x{RESUME_TRANSIENT_FACTOR} while saving) "
+          f"= {est['active'] / 1e9:.2f} GB")
+    print(f"  incomplete runs    {est['incomplete_runs']} x {est['resume'] / 1e9:.2f} GB "
+          f"= {est['incomplete'] / 1e9:.2f} GB")
+    print(f"  retained artifacts {est['plan_runs']} run(s) x {est['retained_per_run'] / 1e6:.2f} MB "
+          f"= {est['retained'] / 1e9:.2f} GB")
+    print(f"  peak total         {est['total'] / 1e9:.2f} GB")
+    print(f"  required (x{SPACE_SAFETY_MARGIN}) : {need / 1e9:.2f} GB")
+    if usage.free < need:
+        raise IntentCLIError(
+            f"insufficient disk: {usage.free / 1e9:.2f} GB free but {need / 1e9:.2f} GB required for "
+            f"{est['active_runs']} concurrent run(s) + {est['incomplete_runs']} incomplete run(s). "
+            f"Free space, lower --concurrent-runs, or finish/clear the incomplete runs; refusing to "
+            f"start a multi-hour run that would die part-way.")
+    print(f"  -> sufficient")
 
     if args.write_inventory:
         Path(args.write_inventory).parent.mkdir(parents=True, exist_ok=True)
@@ -654,17 +757,13 @@ def cmd_train(args, resume: bool = False) -> int:
         art.state.pilot_overrides = json.dumps(overrides, sort_keys=True)
         print(f"PILOT RUN -- frozen budget overridden: {art.state.pilot_overrides}. "
               f"Results are engineering checks only, never formal results.")
-    resume_path = _read_resume_pointer(run_dir)
-    if resume and resume_path is None:
-        raise IntentCLIError(f"--resume requested but no valid resume slot exists under {run_dir}")
-    slot_index = {"n": 0}
+    resume_path = _resume_path(run_dir)
+    if resume and not resume_path.exists():
+        raise IntentCLIError(f"--resume requested but {resume_path} does not exist")
 
     def _save_rolling() -> None:
-        """Alternate A/B, then move the pointer. Two files total."""
-        name = SLOT_NAMES[slot_index["n"] % 2]
-        slot_index["n"] += 1
-        _save_checkpoint(run_dir / name, art, cfg, action_grid_hash, scene_hash)
-        _write_resume_pointer(run_dir, name, art.state)
+        """ONE atomic full resume (temp file + os.replace)."""
+        _save_checkpoint(resume_path, art, cfg, action_grid_hash, scene_hash)
     # NOTE: the actual _load_into happens AFTER the IL corpus is loaded --
     # C4RF.3 checkpoints omit the demo corpus, so the replay's demo side
     # must be populated from the immutable artifact first.
@@ -785,22 +884,42 @@ def cmd_train(args, resume: bool = False) -> int:
         if done % cfg.checkpoint_interval_episodes == 0:
             _sync_monitor()
             _save_rolling()
-            # milestones keep only the SMALL artifacts (model + EMA +
-            # manifest), never another copy of the replay.
+        # A4: milestones are GATED to four points and keep only the SMALL
+        # artifacts (model + EMA + run identity), never a copy of the
+        # replay. One per checkpoint interval would be 20 files per run.
+        if done in MILESTONE_EPISODES:
             _save_milestone(run_dir / f"milestone_ep{done:06d}.pth", art, cfg,
                              action_grid_hash, scene_hash)
 
     _sync_monitor()
     _save_rolling()
     (run_dir / RUN_STATE_NAME).write_text(art.state.to_json())
-    _save_final_ema(run_dir / FINAL_EMA_NAME, art, cfg, action_grid_hash, scene_hash)
+    final_path = run_dir / FINAL_EMA_NAME
+    _save_final_ema(final_path, art, cfg, action_grid_hash, scene_hash)
+    # A4: verify the deployment artifact loads and matches the live EMA
+    # BEFORE reclaiming the GB-scale resume. If this check fails the resume
+    # is kept, because it is the only way to recover the run.
+    verify = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    load_intent_checkpoint(str(final_path), verify,
+                            expected_action_grid_hash=action_grid_hash,
+                            expected_scene_registry_sha256=scene_hash)
+    reloaded = verify.state_dict()
+    if not all(torch.equal(reloaded[k].cpu().float(), art.ema.shadow[k].cpu().float()) for k in reloaded):
+        raise IntentCLIError(f"{final_path} does not match the live EMA; keeping the resume for recovery")
+    finished = art.state.online_episodes_done >= cfg.online_episodes_total
+    if finished and not args.keep_resume:
+        resume_path.unlink(missing_ok=True)
+        print(f"final_ema verified; reclaimed {RESUME_NAME}")
+    else:
+        print(f"final_ema verified; {RESUME_NAME} kept "
+              f"({'run incomplete' if not finished else '--keep-resume'})")
     m = art.monitor
     print(f"done[arm={arm}]: IL {art.state.il_passes_done}, online "
           f"{art.state.online_episodes_done}/{cfg.online_episodes_total}, updates {art.state.global_updates}")
     if m is not None and m.n_measured:
         print(f"gradient ratio: measured {m.n_measured}x, out-of-range {m.n_out_of_range}, "
               f"current streak {m.consecutive_out_of_range}/{m.sustained_updates}")
-    print(f"wrote {_read_resume_pointer(run_dir)} (2-slot rolling) and {run_dir / FINAL_EMA_NAME}")
+    print(f"wrote {resume_path} and {run_dir / FINAL_EMA_NAME}")
     return 0
 
 
@@ -929,6 +1048,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     pf = sub.add_parser("preflight")
     pf.add_argument("--run-dir", type=Path, default=None)
+    # A5-fix: two DIFFERENT numbers. --concurrent-runs drives the gate (what
+    # must fit at once); --plan-runs only sizes the small retained artifacts,
+    # because a finished run reclaims its resume and a sequential plan never
+    # holds them all.
+    pf.add_argument("--concurrent-runs", type=int, default=1,
+                    help="runs training SIMULTANEOUSLY on this disk -- this is what the space gate blocks on")
+    pf.add_argument("--plan-runs", type=int, default=1,
+                    help="total runs eventually planned; sizes retained milestones/final_ema only, "
+                         "NOT the resume footprint (finished runs reclaim their resume)")
+    pf.add_argument("--corpus-dir", type=Path, default=None,
+                    help="where the shared raw IL corpus lives; if it already exists it is not double-counted")
     pf.add_argument("--write-inventory", type=Path, default=None,
                     help="write the seed inventory + all provenance hashes to this JSON path")
 
@@ -942,7 +1072,9 @@ def build_parser() -> argparse.ArgumentParser:
         t.add_argument("--il-passes", type=int, default=None, help="PILOT ONLY: override the frozen IL pass count")
         t.add_argument("--il-corpus", type=Path, default=None, help="explicit IL corpus artifact path")
         t.add_argument("--il-corpus-dir", type=Path, default=None,
-                       help="directory holding per-arm IL corpora shared across optimizer seeds")
+                       help="directory holding the ONE raw IL corpus shared by every arm and seed")
+        t.add_argument("--keep-resume", action="store_true",
+                       help="keep the GB-scale resume after a completed run (default: reclaim it)")
         t.add_argument("--training-arm", type=str, default="full", choices=["full", "mean", "cv"],
                        help="C4R.6: train an INDEPENDENT ablation arm from scratch. "
                             "'uniform' is a supplementary inference-time control only and is not trained.")

@@ -37,7 +37,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import numpy as np
 import torch
 
-from crowd_nav.bayesian_dvl.config import FROZEN_VALUES
+from crowd_nav.bayesian_dvl.intent_runtime_config import FROZEN_VALUES
 from crowd_nav.bayesian_dvl.contracts import HumanObservation, RobotObservation
 from crowd_nav.bayesian_dvl.evaluate import (
     deterministic_records_sha256, read_episode_records_csv, write_episode_records_csv,

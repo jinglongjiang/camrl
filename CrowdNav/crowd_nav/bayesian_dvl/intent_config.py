@@ -183,7 +183,7 @@ def load_intent_training_config(path: Path = DEFAULT_TRAINING_CONFIG) -> IntentT
 
 def _validate(cfg: IntentTrainingConfig) -> None:
     # schema must match the CODE, not just be internally consistent
-    from crowd_nav.bayesian_dvl.config import FEATURE_SCHEMA_V5, TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC
+    from crowd_nav.bayesian_dvl.intent_runtime_config import FEATURE_SCHEMA_V5, TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC
     from crowd_nav.bayesian_dvl.intent_policy import CHECKPOINT_SCHEMA_V6
     if cfg.feature_schema != FEATURE_SCHEMA_V5:
         raise IntentConfigError(f"config feature_schema {cfg.feature_schema!r} != code's {FEATURE_SCHEMA_V5!r}")
