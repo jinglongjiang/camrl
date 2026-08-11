@@ -1,0 +1,303 @@
+"""Goal-conditioned Bayesian intent posterior -- BDVL final main chain,
+block 1 (guide/consolidation plan v1, 2026-08-11).
+
+This is the PREDICTIVE intent belief that the reactive kinematic SBK-HMM
+tracker (belief.py) could not provide: it maintains a Bayesian posterior
+over a set of PUBLIC candidate destinations, so BEFORE a pedestrian
+commits (e.g. at a junction) the posterior stays genuinely multimodal
+("could go to any reachable exit"), collapsing only once the observed
+motion disambiguates. Validated in reset_exp/step2_goal_intent.py:
+pre-fork L/R mass ~0.33 (vs the kinematic tracker's ~0.001), collapse
+0-1 step after the fork.
+
+LABEL-LEAKAGE CONTRACT (hard requirement, consolidation plan Decision 2):
+this module consumes ONLY observable pedestrian positions + PUBLIC
+candidate routes (derived from scene geometry/entries). The hidden true
+goal (a CrowdNav human's gx/gy) MUST NEVER be passed here -- it may only
+drive the simulated pedestrian and post-hoc scoring. ``update`` takes a
+position and nothing else; candidates are public and fixed at
+construction. The regression test ``test_intent_tracker_no_label_leakage``
+asserts that two pedestrians with IDENTICAL observed motion but DIFFERENT
+hidden goals produce the IDENTICAL belief.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Callable, Dict, List, Sequence, Tuple
+
+import numpy as np
+
+
+class IntentTrackerError(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class CandidateGoal:
+    """One PUBLIC candidate destination, described by a route of waypoints
+    (e.g. [junction, exit]). Never carries a hidden-truth label."""
+
+    name: str
+    waypoints: Tuple[Tuple[float, float], ...]
+
+    def __post_init__(self) -> None:
+        if len(self.waypoints) == 0:
+            raise IntentTrackerError(f"candidate {self.name!r} has no waypoints")
+        for i, wp in enumerate(self.waypoints):
+            arr = np.asarray(wp, dtype=np.float64)
+            if arr.shape != (2,):
+                raise IntentTrackerError(f"candidate {self.name!r} waypoint {i} must be a 2D coordinate, got shape {arr.shape}")
+            if not np.all(np.isfinite(arr)):
+                raise IntentTrackerError(f"candidate {self.name!r} waypoint {i} is not finite: {wp!r}")
+
+
+def _unit(v: np.ndarray) -> np.ndarray:
+    n = float(np.linalg.norm(v))
+    return v / n if n > 1e-9 else np.zeros(2)
+
+
+class GoalIntentTracker:
+    """Recursive Bayesian posterior over public candidate goals from
+    observed motion. Per-candidate waypoint progress is LATCHED (advances
+    only forward as the observed pedestrian passes waypoints), so the
+    preferred-velocity model is geometry-general -- not tied to a
+    monotonic-descent assumption."""
+
+    def __init__(
+        self,
+        candidates: Sequence[CandidateGoal],
+        dt: float,
+        speed: float,
+        sigma: float = 0.5,
+        persistence: float = 0.98,
+        wp_radius: float = 0.35,
+    ) -> None:
+        if len(candidates) == 0:
+            raise IntentTrackerError("GoalIntentTracker requires at least one candidate goal")
+        names = [c.name for c in candidates]
+        if len(set(names)) != len(names):
+            raise IntentTrackerError(f"candidate goal names must be unique, got {names}")
+        for nm, val in (("dt", dt), ("speed", speed), ("sigma", sigma), ("wp_radius", wp_radius)):
+            if not (np.isfinite(val) and val > 0):
+                raise IntentTrackerError(f"{nm} must be finite and positive, got {val}")
+        if not (0.0 < persistence <= 1.0):
+            raise IntentTrackerError(f"persistence must be in (0,1], got {persistence}")
+        self.candidates = list(candidates)
+        self._routes = [np.asarray(c.waypoints, dtype=np.float64) for c in self.candidates]
+        self.dt = float(dt)
+        self.speed = float(speed)
+        self.sigma = float(sigma)
+        self.persistence = float(persistence)
+        self.wp_radius = float(wp_radius)
+        n = len(self.candidates)
+        self._log_b = np.log(np.ones(n) / n)
+        self._wp_idx = [0] * n
+        self._last_pos = None
+        # False after a MISSED frame: the stored last position is then stale
+        # (a diff against it would divide a multi-frame displacement by a
+        # single dt -> fake huge velocity). The next observation re-baselines
+        # instead of computing a likelihood. Same stale-gap discipline as
+        # belief.py's kinematic tracker.
+        self._last_position_is_fresh = False
+
+    def _preferred_velocity_at(self, ci: int, position: np.ndarray, wp_idx: int) -> np.ndarray:
+        route = self._routes[ci]
+        if wp_idx >= len(route):
+            return np.zeros(2)
+        return self.speed * _unit(route[wp_idx] - position)
+
+    def _advance_waypoints(self, position: np.ndarray) -> None:
+        for ci in range(len(self.candidates)):
+            route = self._routes[ci]
+            while self._wp_idx[ci] < len(route) and float(np.linalg.norm(route[self._wp_idx[ci]] - position)) <= self.wp_radius:
+                self._wp_idx[ci] += 1
+
+    def note_missing(self) -> None:
+        """Record that a frame elapsed with NO observation of this track. The
+        stored last position becomes stale, so the next ``update`` re-baselines
+        (belief unchanged that frame) instead of dividing a multi-frame
+        displacement by a single dt."""
+        self._last_position_is_fresh = False
+
+    def update(self, observed_position: Sequence[float]) -> None:
+        """Ingest ONE observed pedestrian position (label-leakage-safe:
+        this is the only mutating input, and it is observable)."""
+        pos = np.asarray(observed_position, dtype=np.float64)
+        if pos.shape != (2,):
+            raise IntentTrackerError(f"observed_position must be shape (2,), got {pos.shape}")
+        if not np.all(np.isfinite(pos)):
+            raise IntentTrackerError(f"observed_position must be finite, got {observed_position!r}")
+        if self._last_pos is not None and self._last_position_is_fresh:
+            # normal single-step likelihood update. likelihood uses the
+            # waypoint each candidate was heading to over the LAST interval
+            # (current latched index, before this step's advancement)
+            v = (pos - self._last_pos) / self.dt
+            ll = np.array([
+                -float(np.sum((v - self._preferred_velocity_at(ci, self._last_pos, self._wp_idx[ci])) ** 2)) / (2 * self.sigma ** 2)
+                for ci in range(len(self.candidates))
+            ])
+            self._log_b = self._log_b + ll
+            self._log_b -= self._log_b.max()
+            b = np.exp(self._log_b)
+            b /= b.sum()
+            # light persistence smoothing toward uniform: goals are sticky
+            # but not frozen, so a beaten-down candidate stays recoverable
+            b = self.persistence * b + (1.0 - self.persistence) / len(self.candidates)
+            self._log_b = np.log(b)
+        # else: first observation OR the first frame after a gap -> re-baseline
+        # only (belief unchanged); the stored position was absent/stale so no
+        # valid single-step velocity exists.
+        self._advance_waypoints(pos)
+        self._last_pos = pos
+        self._last_position_is_fresh = True
+
+    def belief(self) -> np.ndarray:
+        b = np.exp(self._log_b - self._log_b.max())
+        return b / b.sum()
+
+    def roll_candidate_future(self, ci: int, position: Sequence[float], horizon: int) -> np.ndarray:
+        """Predicted future [horizon,2] if the pedestrian pursues candidate
+        ``ci`` from ``position``, latching forward through its remaining
+        route (starts from the tracker's current per-candidate progress)."""
+        if horizon < 1:
+            raise IntentTrackerError(f"horizon must be >= 1, got {horizon}")
+        route = self._routes[ci]
+        pos = np.asarray(position, dtype=np.float64).copy()
+        idx = self._wp_idx[ci]
+        out = []
+        for _ in range(horizon):
+            while idx < len(route) and float(np.linalg.norm(route[idx] - pos)) <= self.wp_radius:
+                idx += 1
+            v = np.zeros(2) if idx >= len(route) else self.speed * _unit(route[idx] - pos)
+            pos = pos + v * self.dt
+            out.append(pos.copy())
+        return np.array(out)
+
+    def sample_futures(
+        self,
+        position: Sequence[float],
+        velocity: Sequence[float],
+        horizon: int,
+        mode: str,
+        rng: np.random.Generator,
+        n_samples: int = 100,
+    ) -> List[np.ndarray]:
+        """Block 2 + the ablation interface. ``mode``:
+          full    -- sample candidates ~ posterior (multimodal futures)
+          mean    -- belief-weighted AVERAGE of the per-candidate futures
+          cv      -- ignore intent; extrapolate current velocity
+          uniform -- sample candidates ~ uniform (ignores the posterior)
+        """
+        if mode not in ("full", "mean", "cv", "uniform"):
+            raise IntentTrackerError(f"unknown mode {mode!r}, must be one of full/mean/cv/uniform")
+        if horizon < 1:
+            raise IntentTrackerError(f"horizon must be >= 1, got {horizon}")
+        if mode in ("full", "uniform") and n_samples <= 0:
+            raise IntentTrackerError(f"n_samples must be positive for mode {mode!r}, got {n_samples}")
+        pos = np.asarray(position, dtype=np.float64)
+        vel = np.asarray(velocity, dtype=np.float64)
+        if pos.shape != (2,) or vel.shape != (2,):
+            raise IntentTrackerError(f"position/velocity must be shape (2,), got {pos.shape}/{vel.shape}")
+        if not (np.all(np.isfinite(pos)) and np.all(np.isfinite(vel))):
+            raise IntentTrackerError("position/velocity must be finite")
+        if mode == "cv":
+            return [np.array([pos + vel * self.dt * (t + 1) for t in range(horizon)])]
+        if mode == "mean":
+            b = self.belief()
+            trajs = [self.roll_candidate_future(ci, pos, horizon) for ci in range(len(self.candidates))]
+            return [sum(b[ci] * trajs[ci] for ci in range(len(self.candidates)))]
+        # mode in ("full", "uniform") -- validated at the top
+        p = self.belief() if mode == "full" else np.ones(len(self.candidates)) / len(self.candidates)
+        return [self.roll_candidate_future(int(rng.choice(len(self.candidates), p=p)), pos, horizon) for _ in range(n_samples)]
+
+
+class IntentBeliefBank:
+    """Per-pedestrian intent trackers keyed by STABLE track_id (consolidation
+    plan Order 4, item 5). Identity is bound to track_id, NEVER to list
+    position -- feeding the same observations in a different dict order gives
+    the same per-track beliefs. Supports episode ``reset``, track loss, and
+    reappearance: a track missing for more than ``missing_timeout_steps``
+    consecutive updates is expired, so a later reappearance of that id starts
+    a fresh tracker; a shorter gap resumes the existing belief.
+
+    LABEL-LEAKAGE CONTRACT: ``candidate_fn(track_id, first_observed_position)``
+    receives ONLY a stable id and a PUBLIC observed entry position; it must
+    derive candidates from public scene geometry, never from a Human's hidden
+    gx/gy. The bank never accepts a Human object.
+    """
+
+    def __init__(
+        self,
+        candidate_fn: Callable[[int, np.ndarray], Sequence[CandidateGoal]],
+        dt: float,
+        speed: float,
+        missing_timeout_steps: int = 8,
+        **tracker_kwargs,
+    ) -> None:
+        if not callable(candidate_fn):
+            raise IntentTrackerError("candidate_fn must be callable(track_id, first_position) -> candidates")
+        if missing_timeout_steps < 1:
+            raise IntentTrackerError(f"missing_timeout_steps must be >= 1, got {missing_timeout_steps}")
+        self._candidate_fn = candidate_fn
+        self._dt = float(dt)
+        self._speed = float(speed)
+        self._missing_timeout = int(missing_timeout_steps)
+        self._tracker_kwargs = tracker_kwargs
+        self._trackers: Dict[int, GoalIntentTracker] = {}
+        self._missing: Dict[int, int] = {}
+        self._age: Dict[int, int] = {}
+
+    def reset(self) -> None:
+        self._trackers.clear()
+        self._missing.clear()
+        self._age.clear()
+
+    def update(self, observations: Dict[int, Sequence[float]]) -> None:
+        """``observations``: {track_id: observed_position[2]}. Order-invariant
+        (each track updates only from its own history)."""
+        seen = set(observations.keys())
+        for tid in list(self._trackers.keys()):
+            if tid not in seen:
+                self._missing[tid] = self._missing.get(tid, 0) + 1
+                if self._missing[tid] > self._missing_timeout:
+                    del self._trackers[tid]
+                    del self._missing[tid]
+                    del self._age[tid]
+                else:
+                    # within the timeout: keep the tracker but mark its stored
+                    # position stale so reappearance re-baselines (no fake
+                    # cross-gap velocity)
+                    self._trackers[tid].note_missing()
+        for tid, pos in observations.items():
+            position = np.asarray(pos, dtype=np.float64)
+            if tid not in self._trackers:
+                candidates = self._candidate_fn(tid, position)  # PUBLIC inputs only
+                self._trackers[tid] = GoalIntentTracker(
+                    candidates, dt=self._dt, speed=self._speed, **self._tracker_kwargs
+                )
+                self._age[tid] = 0
+            self._trackers[tid].update(position)
+            self._missing[tid] = 0
+            self._age[tid] += 1
+
+    def belief_for(self, track_id: int) -> np.ndarray:
+        if track_id not in self._trackers:
+            raise IntentTrackerError(f"no active track {track_id}")
+        return self._trackers[track_id].belief()
+
+    def tracker_for(self, track_id: int) -> GoalIntentTracker:
+        if track_id not in self._trackers:
+            raise IntentTrackerError(f"no active track {track_id}")
+        return self._trackers[track_id]
+
+    def track_age_for(self, track_id: int) -> int:
+        """Number of real `update` calls this track has received since it
+        was (re)acquired (resets to 0 on reappearance after expiry, keeps
+        counting through a short within-timeout gap)."""
+        if track_id not in self._age:
+            raise IntentTrackerError(f"no active track {track_id}")
+        return self._age[track_id]
+
+    def active_tracks(self) -> set:
+        return set(self._trackers.keys())
