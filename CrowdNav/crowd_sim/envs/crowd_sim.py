@@ -36,28 +36,11 @@ class CrowdSim(gym.Env):
         self.discomfort_dist = None
         self.discomfort_penalty_factor = None
 
-        # ------------ reward weights (shaping) ------------
-        self.w_prog = 1.0
-        self.w_goal = 1.0
-        self.w_coll = 1.0
-        self.w_soc  = 0.0
-        self.w_time = 0.0
-        self.w_shape = 0.0
-        self.w_align = 0.0
-        self.w_relv = 0.0
-        self.max_dist = 10.0
-        self.alpha = 10.0
-        self.v_safe = 0.5
-        self.soc_dist = 0.5
-
-        # ------------ industry/common additions ------------
-        self.w_ttc = 0.0
-        self.ttc_thresh = 2.0
-        self.w_speed = 0.0
-        self.speed_target = 0.6
-        self.noprog_eps = 0.02
-        self.noprog_patience = 20
-        self._no_prog_steps = 0
+        # ------------ reward (dense shaping) ------------
+        self.progress_reward = 0.0
+        self.time_penalty = 0.0
+        self.stand_penalty = 0.0
+        self.timeout_penalty = -0.25
 
         # ------------ sim config ------------
         self.config = None
@@ -98,34 +81,19 @@ class CrowdSim(gym.Env):
         self.time_step = config.getfloat('env', 'time_step')
         self.randomize_attributes = config.getboolean('env', 'randomize_attributes')
 
-        # reward (base)
-        self.success_reward = config.getfloat('reward', 'success_reward')
-        self.collision_penalty = config.getfloat('reward', 'collision_penalty')
-        self.discomfort_dist = config.getfloat('reward', 'discomfort_dist')
-        self.discomfort_penalty_factor = config.getfloat('reward', 'discomfort_penalty_factor')
-
-        # reward (weights)
+        # reward
         _g = config.getfloat
-        self.w_prog  = _g('reward', 'w_prog',  fallback=1.0)
-        self.w_goal  = _g('reward', 'w_goal',  fallback=1.0)
-        self.w_coll  = _g('reward', 'w_coll',  fallback=1.0)
-        self.w_soc   = _g('reward', 'w_soc',   fallback=0.0)
-        self.soc_dist= _g('reward', 'soc_dist',fallback=0.5)
-        self.alpha   = _g('reward', 'alpha',   fallback=10.0)
-        self.v_safe  = _g('reward', 'v_safe',  fallback=0.5)
-        self.w_relv  = _g('reward', 'w_relv',  fallback=0.0)
-        self.w_time  = _g('reward', 'w_time',  fallback=0.0)
-        self.w_shape = _g('reward', 'w_shape', fallback=0.0)
-        self.w_align = _g('reward', 'w_align', fallback=0.0)
-        self.max_dist= _g('reward', 'max_dist',fallback=10.0)
+        self.success_reward = _g('reward', 'success_reward')
+        self.collision_penalty = _g('reward', 'collision_penalty')
+        self.timeout_penalty = _g('reward', 'timeout_penalty', fallback=-0.25)
+        self.discomfort_dist = _g('reward', 'discomfort_dist')
+        self.discomfort_penalty_factor = _g('reward', 'discomfort_penalty_factor')
 
-        # additions
-        self.w_ttc   = _g('reward', 'w_ttc',   fallback=0.0)
-        self.ttc_thresh = _g('reward', 'ttc_thresh', fallback=2.0)
-        self.w_speed = _g('reward', 'w_speed', fallback=0.0)
-        self.speed_target = _g('reward', 'speed_target', fallback=0.6)
-        self.noprog_eps = _g('reward', 'noprog_eps', fallback=0.02)
-        self.noprog_patience = int(config.get('reward', 'noprog_patience', fallback='20'))
+        # dense shaping (统一参数名)
+        self.progress_reward = _g('reward', 'progress_reward', fallback=0.0)
+        self.time_penalty = _g('reward', 'time_penalty', fallback=0.0)
+        self.stand_penalty = _g('reward', 'stand_penalty', fallback=0.0)
+        logging.info(f'[DENSE-REWARD] progress_reward={self.progress_reward}, time_penalty={self.time_penalty}, stand_penalty={self.stand_penalty}')
 
         # sim
         if self.config.get('humans', 'policy') == 'orca':
@@ -439,87 +407,45 @@ class CrowdSim(gym.Env):
         curr_dist = norm(np.array(next_pos) - np.array(self.robot.get_goal_position()))
         progress = prev_dist - curr_dist
 
-        # ===== reward shaping =====
+        # ===== reward (精简版) =====
         reward = 0.0
         terminated = False
         truncated = False
 
-        # terminals
         if self.global_time >= self.time_limit - 1e-6:
-            reward += -self.w_goal * 0.1
+            # timeout
+            reward = self.timeout_penalty
             truncated = True
-            info = {"result": "timeout", "event": "timeout",
-                    "min_dist": max(dmin, 0.0), "dmin": max(dmin, 0.0), "ttc": float(ttc_min)}
+            info = {"event": "timeout", "dmin": max(dmin, 0.0)}
         elif collision:
-            reward += self.w_coll * self.collision_penalty
+            # collision
+            reward = self.collision_penalty
             terminated = True
-            info = {"result": "collision", "event": "collision",
-                    "min_dist": dmin, "dmin": dmin, "hid": closest_id, "ttc": 0.0}
+            info = {"event": "collision", "dmin": dmin}
         elif reaching_goal:
-            reward += self.w_goal * self.success_reward
+            # success
+            reward = self.success_reward
             terminated = True
-            info = {"result": "reach_goal", "event": "reach_goal",
-                    "min_dist": max(dmin, 0.0), "dmin": max(dmin, 0.0), "ttc": float(ttc_min)}
+            info = {"event": "reach_goal", "dmin": max(dmin, 0.0)}
         else:
-            # 1) progress
-            reward += self.w_prog * progress
-            # 2) time cost per step
-            reward += -self.w_time * self.time_step
-            # 3) social discomfort (quadratic, smooth)
+            # dense shaping
+            reward += self.progress_reward * progress
+            reward += self.time_penalty
+            # stand penalty
+            robot_speed = norm(np.array([action.vx, action.vy], dtype=float))
+            if robot_speed < 0.05:
+                reward += self.stand_penalty
+            # discomfort
             if dmin < self.discomfort_dist:
-                penalty_mag = abs(self.discomfort_penalty_factor) * (self.discomfort_dist - dmin) ** 2
-                reward -= self.w_soc * penalty_mag
-            # 4) TTC penalty
-            if self.w_ttc > 0.0 and np.isfinite(ttc_min) and ttc_min < self.ttc_thresh:
-                reward -= self.w_ttc * (self.ttc_thresh - ttc_min) / max(self.ttc_thresh, 1e-6)
-            # 5) global shape potential
-            if self.w_shape > 0.0:
-                reward += -self.w_shape * min(curr_dist / max(self.max_dist, 1e-6), 1.0)
-            # 6) align to goal direction (holonomic)
-            if self.w_align > 0.0 and self.robot.kinematics == 'holonomic':
-                desired = np.array(self.robot.get_goal_position()) - np.array([self.robot.px, self.robot.py])
-                if norm(desired) > 1e-6:
-                    desired /= norm(desired)
-                    a_vec = np.array([action.vx, action.vy], dtype=float)
-                    if norm(a_vec) > 1e-6:
-                        a_vec /= norm(a_vec)
-                        align = float(np.clip(desired @ a_vec, -1.0, 1.0))
-                        reward += self.w_align * align * 0.1
-            # 7) relative speed penalty（近距离高速接近）
-            if self.w_relv > 0.0 and closest_id >= 0:
-                h = self.humans[closest_id]
-                v_rel = norm(np.array([h.vx + rvx, h.vy + rvy]))
-                if dmin < self.soc_dist:
-                    reward += -self.w_relv * max(0.0, v_rel - self.v_safe)
-            # 8) target speed shaping —— 二次偏差惩罚
-            if self.w_speed > 0.0 and self.robot.kinematics == 'holonomic':
-                v_obs = norm(np.array([action.vx, action.vy], dtype=float))
-                v_pref = max(getattr(self.robot, 'v_pref', 1.0), 1e-6)
-                target = self.speed_target * v_pref
-                if curr_dist > 1.5 * self.robot.radius:
-                    dev = (v_obs - target) / v_pref
-                    reward -= self.w_speed * (dev * dev)
-
-            # no-progress early stop
-            if progress < self.noprog_eps:
-                self._no_prog_steps += 1
-            else:
-                self._no_prog_steps = 0
-            if self._no_prog_steps >= self.noprog_patience:
-                truncated = True
-                reward += -self.w_goal * 0.1
-                info = {"result": "no_progress", "event": "no_progress",
-                        "min_dist": max(dmin, 0.0), "dmin": max(dmin, 0.0), "ttc": float(ttc_min)}
-            else:
-                in_danger = (dmin < self.discomfort_dist) or (np.isfinite(ttc_min) and ttc_min < self.ttc_thresh)
-                info = {
-                    "result": "danger" if in_danger else "nothing",
-                    "event":  "danger" if in_danger else "nothing",
-                    "min_dist": max(dmin, 0.0),
-                    "dmin": max(dmin, 0.0),
-                    "ttc": float(ttc_min),
-                    "hid": closest_id
-                }
+                penalty = self.discomfort_penalty_factor * (self.discomfort_dist - dmin) * self.time_step
+                reward -= penalty
+            info = {"event": "nothing", "dmin": max(dmin, 0.0)}
+            # Debug: log first dense reward calculation
+            if not hasattr(self, '_dense_reward_logged'):
+                logging.info(f'[DENSE-REWARD-STEP] progress={progress:.4f}, progress_reward={self.progress_reward}, '
+                           f'time_penalty={self.time_penalty}, robot_speed={robot_speed:.3f}, '
+                           f'step_reward={reward:.4f}')
+                self._dense_reward_logged = True
 
         # ===== update world & next obs =====
         if update:
