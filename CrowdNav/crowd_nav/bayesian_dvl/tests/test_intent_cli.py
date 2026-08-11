@@ -930,6 +930,17 @@ def test_a5_preflight_refuses_when_space_is_insufficient() -> None:
         assert count_incomplete_runs(root) == 1
         assert count_incomplete_runs(root / "does_not_exist") == 0
 
+    # the gate runs BEFORE the first run, so the runs directory normally does
+    # not exist yet. statvfs needs an existing path; measuring the run dir's
+    # parent directly made preflight die with FileNotFoundError on a fresh
+    # checkout -- the exact situation it is meant to cover.
+    with tempfile.TemporaryDirectory() as d:
+        fresh = Path(d) / "not_created_yet" / "runs" / "run_a"
+        r_fresh = _cli("preflight", "--run-dir", str(fresh))
+        assert "disk free" in r_fresh.stdout, r_fresh.stdout[-1500:]
+        assert "sufficient" in r_fresh.stdout
+        assert not fresh.exists(), "preflight must not create the run dir as a side effect"
+
     # a plan that cannot fit must be refused, not warned about -- and the
     # thing that makes it not fit is CONCURRENCY, not the eventual total
     r = _cli("preflight", "--concurrent-runs", "100000", expect_ok=False)

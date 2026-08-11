@@ -681,7 +681,16 @@ def cmd_preflight(args) -> int:
     # A5: real peak-space gate, not a fixed-threshold warning.
     import shutil
     target = Path(args.run_dir).parent if args.run_dir else Path(".")
-    usage = shutil.disk_usage(str(target))
+    # statvfs needs a path that EXISTS, and preflight's whole point is to run
+    # BEFORE the first run -- when the runs directory usually does not exist
+    # yet. Measure the nearest existing ancestor instead: free space is a
+    # property of the filesystem, so any ancestor on the same mount gives the
+    # same answer. (Found on the 4090: preflight died with FileNotFoundError
+    # on a fresh checkout, i.e. exactly the case the gate exists for.)
+    probe = target.resolve()
+    while not probe.exists() and probe.parent != probe:
+        probe = probe.parent
+    usage = shutil.disk_usage(str(probe))
     # What must fit AT ONCE -- not the plan total. Finished runs reclaim
     # their resume (A4), so a sequential 15-run plan never holds 15 of them;
     # blocking on plan_runs x per_run was a false negative. Concurrency and
