@@ -146,8 +146,20 @@ TESTS: List[str] = [
     "crowd_nav/bayesian_dvl/tests/test_legacy_chain.py",
 ]
 
+# config.build_frozen_registry() HASHES every entry of
+# BDVL_PRODUCTION_SOURCES, so any entry missing from a synced tree raises
+# FileNotFoundError deep inside registry construction. Deriving the group
+# from that constant (instead of restating it) makes it structurally
+# impossible for the two lists to drift apart -- which is exactly how the
+# remote run hit `audit_bdvl_r3r2_gradient.py`.
+def _production_sources() -> List[str]:
+    from crowd_nav.bayesian_dvl.config import BDVL_PRODUCTION_SOURCES
+    return list(BDVL_PRODUCTION_SOURCES)
+
+
 GROUPS = {
     "main_chain": MAIN_CHAIN_SOURCES,
+    "registry_hashed_sources": _production_sources(),
     "legacy_chain": LEGACY_CHAIN_SOURCES,
     "configs": CONFIGS,
     "external_dependencies": EXTERNAL_DEPENDENCIES,
@@ -165,9 +177,13 @@ def build_manifest(repo_root: Path = REPO_ROOT) -> Dict[str, object]:
     repo_root = Path(repo_root)
     groups: Dict[str, Dict[str, Dict[str, object]]] = {}
     missing: List[str] = []
+    seen: set = set()
     for group, rels in GROUPS.items():
         entries = {}
         for rel in rels:
+            if rel in seen:
+                continue  # already declared by an earlier group
+            seen.add(rel)
             p = repo_root / rel
             if not p.exists():
                 missing.append(rel)
