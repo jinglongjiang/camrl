@@ -619,7 +619,10 @@ def test_c5_source_manifest_covers_the_whole_chain_and_detects_drift() -> None:
     )
     manifest = build_manifest(REPO_ROOT)
     assert manifest["manifest_schema"] == MANIFEST_SCHEMA
-    assert manifest["n_files"] == sum(len(v) for v in GROUPS.values())
+    # groups may overlap (registry_hashed_sources re-lists main-chain and
+    # config files), and build_manifest de-duplicates across them, so the
+    # count is the size of the UNION -- not the sum of group lengths.
+    assert manifest["n_files"] == len({r for v in GROUPS.values() for r in v})
     assert len(manifest["manifest_sha256"]) == 64
 
     # the provenance hashes must agree with the live code/config
