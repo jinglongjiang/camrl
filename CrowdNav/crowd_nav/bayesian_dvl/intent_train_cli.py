@@ -516,6 +516,19 @@ def cmd_preflight(args) -> int:
     table = grid.build_action_table()
     scene_hash = scene_registry_sha256(cfg)
     print("=== BDVL goal-intent preflight ===")
+    # Import-provenance guard. This machine has a SECOND CrowdNav checkout
+    # pip-installed (soc-nav-training/CrowdNav); `import crowd_nav` resolves
+    # there unless cwd is the intended repo. Launching a formal run from the
+    # wrong directory would silently train a DIFFERENT source tree, and the
+    # only symptom would be results that don't match the manifest.
+    import crowd_nav as _cn
+    resolved = Path(_cn.__file__).resolve().parent
+    expected = Path(__file__).resolve().parents[1]
+    print(f"crowd_nav package : {resolved}")
+    if resolved != expected:
+        raise IntentCLIError(
+            f"import provenance mismatch: `import crowd_nav` resolves to {resolved} but this CLI lives in "
+            f"{expected}. Run from the intended repo root, or fix the installed copy shadowing it.")
     print(f"python            : {platform.python_version()}   torch {torch.__version__}")
     print(f"config            : {cfg.source_path}")
     print(f"  sha256          : {cfg.source_sha256}")
