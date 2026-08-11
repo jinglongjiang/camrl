@@ -71,12 +71,41 @@ CONFIGS: List[str] = [
 # Files OUTSIDE the package that the chain or its tests depend on. All of
 # these were untracked; a partial sync silently breaks the paper-protocol
 # equivalence tests.
+# Determined EMPIRICALLY by tracing every crowd_nav/crowd_sim module
+# imported and every config opened while running representative
+# env-building tests -- not by guessing. The first version of this list
+# was incomplete and a remote acceptance run surfaced it as 36 failures
+# (orca.py's unset time_step, env.config's missing [policy] section, and
+# three untracked tools modules), so the closure is now declared in full.
 EXTERNAL_DEPENDENCIES: List[str] = [
+    # protocol definitions the tests read
     "crowd_nav/configs/policy_bayesian_fullcrowd_tail.config",  # Test5 [eval_envs]
     "crowd_nav/tools/evaluate_bdvl_paper_main.py",              # Test8 seed formula
+    "crowd_nav/configs/env.config",                             # [policy] -> ActionGridSpec
+    # CrowdNav integration
+    "crowd_nav/__init__.py",
     "crowd_nav/policy/policy_factory.py",                       # registers IntentBDVLPolicy
+    # legacy-chain regression tests import these
+    "crowd_nav/tools/select_bdvl_checkpoint.py",
+    "crowd_nav/tools/train_bdvl.py",
+    "crowd_nav/tools/collect_bdvl_r4_4_data.py",
+    # the simulator package, in full -- every module in the traced closure
+    "crowd_sim/__init__.py",
+    "crowd_sim/envs/__init__.py",
+    "crowd_sim/envs/crowd_sim.py",
+    "crowd_sim/envs/policy/__init__.py",
+    "crowd_sim/envs/policy/linear.py",
+    "crowd_sim/envs/policy/orca.py",                            # time_step default; rvo2 ctor
+    "crowd_sim/envs/policy/policy.py",
+    "crowd_sim/envs/policy/policy_factory.py",
+    "crowd_sim/envs/utils/__init__.py",
+    "crowd_sim/envs/utils/action.py",
+    "crowd_sim/envs/utils/agent.py",
+    "crowd_sim/envs/utils/human.py",
+    "crowd_sim/envs/utils/info.py",
     "crowd_sim/envs/utils/robot.py",                            # expects_joint_state dispatch
-    "crowd_sim/envs/crowd_sim.py",                              # the simulator itself
+    "crowd_sim/envs/utils/state.py",
+    "crowd_sim/envs/utils/utils.py",
 ]
 
 TESTS: List[str] = [
