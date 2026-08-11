@@ -24,6 +24,6 @@ class Human(Agent):
             self.px, self.py, self.vx, self.vy, self.radius
         ], dtype=np.float32)
         if not Human._obs_shape_printed:
-            print('[DEBUG] Human get_obs_array shape:', arr.shape)
+            # Debug print disabled
             Human._obs_shape_printed = True
         return arr

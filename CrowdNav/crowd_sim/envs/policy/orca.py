@@ -3,186 +3,187 @@ import rvo2
 from crowd_sim.envs.policy.policy import Policy
 from crowd_sim.envs.utils.action import ActionXY
 
+
 class ORCA(Policy):
     def __init__(self):
+        """
+        ORCA (Optimal Reciprocal Collision Avoidance)
+
+        SARL原版实现，配置参数可通过configure()设置
+        """
         super().__init__()
         self.name = 'ORCA'
         self.trainable = False
         self.multiagent_training = None
         self.kinematics = 'holonomic'
-
-        # —— ORCA 基本参数（可被 configure 覆盖）
-        self.safety_space = 0.05
-        self.neighbor_dist = 2.5          # ↑ 适度放大，配合不可见机器人更稳
-        self.max_neighbors = 8            # ↑ 稍多邻居可减少漏检
-        self.time_horizon = 4.0           # ↑ 略长的预见时间更保守
-        self.time_horizon_obst = 3.0
+        self.safety_space = 0.0
+        self.neighbor_dist = 10.0
+        self.max_neighbors = 10
+        self.time_horizon = 5.0
+        self.time_horizon_obst = 5.0
         self.radius = 0.3
-        self.max_speed = 1.2              # 不会超过各自 v_pref，这里给上限稍宽
-
-        # —— 标注期的额外安全（机器人侧）
-        self.label_inflate = 0.10         # ↑ 默认更保守
-        self.slow_k = 2.0                 # ↑ 临近终点提前减速
-        self.eps_noise = 0.03             # ↑ 轻微破对称，避免对向僵持
-
-        # 行人首选速度模式
-        self.human_pref_mode = 'goal'     # 'goal' | 'current' | 'zero'
-
-        # —— 新增：TTC 前馈减速参数（不重建 ORCA，仅缩放首选速度）
-        self.ttc_brake = 2.0              # < 2s 进入制动区
-        self.brake_min_ratio = 0.3        # 最低保留 30% 速度
-        self.ttc_eps = 1e-6
-
+        self.max_speed = 1.0
+        self.time_step = 0.25
         self.sim = None
-        self._sim_timestep = None
+
+        # Optimization #3: smoother TTC braking (enabled by default)
+        self.ttc_brake = True
+        self.ttc_threshold = 2.0
+        self.ttc_min_scale = 0.0
+        self.ttc_smoothing = 0.5
+        self._last_pref_vel = None
 
     def configure(self, config):
-        if hasattr(config, 'getfloat'):
-            g = config.getfloat; gi = config.getint; gs = config.get
-            sec = 'orca'
-            self.safety_space      = g(sec, 'safety_space',      fallback=self.safety_space)
-            self.neighbor_dist     = g(sec, 'neighbor_dist',     fallback=self.neighbor_dist)
-            self.max_neighbors     = gi(sec, 'max_neighbors',    fallback=self.max_neighbors)
-            self.time_horizon      = g(sec, 'time_horizon',      fallback=self.time_horizon)
-            self.time_horizon_obst = g(sec, 'time_horizon_obst', fallback=self.time_horizon_obst)
-            self.radius            = g(sec, 'radius',            fallback=self.radius)
-            self.max_speed         = g(sec, 'max_speed',         fallback=self.max_speed)
-            self.label_inflate     = g(sec, 'label_inflate',     fallback=self.label_inflate)
-            self.slow_k            = g(sec, 'slow_k',            fallback=self.slow_k)
-            self.eps_noise         = g(sec, 'eps_noise',         fallback=self.eps_noise)
-            self.human_pref_mode   = gs(sec, 'human_pref_mode',  fallback=self.human_pref_mode).strip().lower()
-            # 新增项支持从 config 读
-            self.ttc_brake         = g(sec, 'ttc_brake',         fallback=self.ttc_brake)
-            self.brake_min_ratio   = g(sec, 'brake_min_ratio',   fallback=self.brake_min_ratio)
+        """从config读取ORCA参数（Mamba增强：支持动态配置）"""
+        if not hasattr(config, 'has_option'):
+            return
+
+        # time_step可以从env或action_space读取
+        if config.has_option('env', 'time_step'):
+            self.time_step = config.getfloat('env', 'time_step')
+        elif config.has_option('action_space', 'time_step'):
+            self.time_step = config.getfloat('action_space', 'time_step')
+
+        # ORCA参数
+        if config.has_option('orca', 'neighbor_dist'):
+            self.neighbor_dist = config.getfloat('orca', 'neighbor_dist')
+        if config.has_option('orca', 'max_neighbors'):
+            self.max_neighbors = config.getint('orca', 'max_neighbors')
+        if config.has_option('orca', 'time_horizon'):
+            self.time_horizon = config.getfloat('orca', 'time_horizon')
+        if config.has_option('orca', 'time_horizon_obst'):
+            self.time_horizon_obst = config.getfloat('orca', 'time_horizon_obst')
+        if config.has_option('orca', 'radius'):
+            self.radius = config.getfloat('orca', 'radius')
+        if config.has_option('orca', 'max_speed'):
+            self.max_speed = config.getfloat('orca', 'max_speed')
+        if config.has_option('orca', 'safety_space'):
+            self.safety_space = config.getfloat('orca', 'safety_space')
+
+        # TTC braking options
+        if config.has_option('orca', 'ttc_brake'):
+            self.ttc_brake = config.getboolean('orca', 'ttc_brake')
+        if config.has_option('orca', 'ttc_threshold'):
+            self.ttc_threshold = config.getfloat('orca', 'ttc_threshold')
+        if config.has_option('orca', 'ttc_min_scale'):
+            self.ttc_min_scale = config.getfloat('orca', 'ttc_min_scale')
+        if config.has_option('orca', 'ttc_smoothing'):
+            self.ttc_smoothing = config.getfloat('orca', 'ttc_smoothing')
 
     def set_phase(self, phase):
         return
 
-    def _need_rebuild(self, n_agents):
-        return (self.sim is None
-                or self._sim_timestep is None
-                or abs(self._sim_timestep - float(self.time_step)) > 1e-9
-                or self.sim.getNumAgents() != n_agents)
-
-    def _goal_pref_vel(self, px, py, gx, gy, v_pref, radius):
-        """朝目标方向的首选速度（带临近目标的线性降速 + 单步距离限幅）"""
-        to_goal = np.array((gx - px, gy - py), dtype=float)
-        dist = np.linalg.norm(to_goal)
-        if dist < 1e-8:
-            return (0.0, 0.0)
-        dir_vec = to_goal / dist
-        v_lim = min(max(v_pref, 1e-6), self.max_speed, dist / max(self.time_step, 1e-6))
-        if dist < self.slow_k * radius:
-            v_lim *= dist / max(self.slow_k * radius, 1e-6)
-        return tuple(dir_vec * v_lim)
-
-    @staticmethod
-    def _ttc_lin(px, py, vx, vy, rx, ry, rad_sum):
-        """
-        线性 TTC 近似：相对位置 p=(px,py)，相对速度 v=(vx,vy)，接触半径 rad_sum。
-        返回 ttc（<=0 或不可解则 +inf）
-        """
-        p = np.array([px, py], dtype=float)
-        v = np.array([vx, vy], dtype=float)
-        vv = float(v @ v)
-        if vv < 1e-8:
-            return np.inf
-        R2 = rad_sum * rad_sum
-        b = 2.0 * float(p @ v)
-        c = float(p @ p) - R2
-        disc = b * b - 4.0 * vv * c
-        if disc <= 0.0:
-            return np.inf
-        t1 = (-b - np.sqrt(disc)) / (2.0 * vv)
-        if t1 <= 1e-6:
-            return np.inf
-        return float(t1)
-
-    def _ttc_min_to_humans(self, self_state, humans):
-        """
-        用当前速度估计与所有行人的最小 TTC（无需重建 ORCA；作为前馈制动触发）
-        """
-        ttc_min = np.inf
-        for h in humans:
-            px = h.px - self_state.px
-            py = h.py - self_state.py
-            vx = h.vx - self_state.vx
-            vy = h.vy - self_state.vy
-            rad_sum = (getattr(h, 'radius', 0.3) + getattr(self_state, 'radius', 0.3))
-            ttc = self._ttc_lin(px, py, vx, vy, 0.0, 0.0, rad_sum)
-            if ttc < ttc_min:
-                ttc_min = ttc
-        return ttc_min
-
     def predict(self, state):
         """
-        用 ORCA 给机器人算一帧速度标签。只输出机器人动作，不改真实环境的人群。
+        SARL原版ORCA实现
+
+        Create a rvo2 simulation at each time step and run one step.
+        Python-RVO2 API: https://github.com/sybrenstuvel/Python-RVO2/blob/master/src/rvo2.pyx
+
+        关键假设：
+        - 机器人知道自己的目标位置
+        - 人类的目标位置未知，假设preferred velocity为(0,0)
         """
         self_state = state.self_state
-        humans = state.human_states
-        n_agents = 1 + len(humans)
+        params = self.neighbor_dist, self.max_neighbors, self.time_horizon, self.time_horizon_obst
 
-        params = (self.neighbor_dist, self.max_neighbors, self.time_horizon, self.time_horizon_obst)
-
-        # —— 构建/复用 ORCA 模拟器
-        if self._need_rebuild(n_agents):
-            if self.sim is not None:
+        # 重建simulator（如果agent数量变化）
+        if self.sim is not None:
+            if self.sim.getNumAgents() != len(state.human_states) + 1:
                 del self.sim
-            self.sim = rvo2.PyRVOSimulator(self.time_step, *params, self.radius, self.max_speed)
-            self._sim_timestep = float(self.time_step)
+                self.sim = None
 
-            # 0号：机器人（半径叠加 safety + label_inflate，更保守）
+        if self.sim is None:
+            # 首次创建simulator
+            self.sim = rvo2.PyRVOSimulator(self.time_step, *params, self.radius, self.max_speed)
+            # addAgent(position, neighborDist, maxNeighbors, timeHorizon, timeHorizonObst, radius, maxSpeed, velocity)
             self.sim.addAgent(self_state.position, *params,
-                              self_state.radius + 0.01 + self.safety_space + self.label_inflate,
-                              max(self_state.v_pref, 1e-6), self_state.velocity)
-            # 1..N：行人（各自 v_pref 作为 maxSpeed）
-            for h in humans:
-                h_max = getattr(h, 'v_pref', self.max_speed)
-                self.sim.addAgent(h.position, *params,
-                                  h.radius + 0.01 + self.safety_space,
-                                  max(h_max, 1e-6), h.velocity)
+                            self_state.radius + 0.01 + self.safety_space,
+                            self_state.v_pref,  # maxSpeed使用机器人的v_pref
+                            self_state.velocity)
+            for human_state in state.human_states:
+                self.sim.addAgent(human_state.position, *params,
+                                human_state.radius + 0.01 + self.safety_space,
+                                self.max_speed,  # 人类maxSpeed使用默认值
+                                human_state.velocity)
         else:
-            # 同步位置与速度
+            # 更新agent位置和速度
             self.sim.setAgentPosition(0, self_state.position)
             self.sim.setAgentVelocity(0, self_state.velocity)
-            for i, h in enumerate(humans):
-                self.sim.setAgentPosition(i + 1, h.position)
-                self.sim.setAgentVelocity(i + 1, h.velocity)
+            for i, human_state in enumerate(state.human_states):
+                self.sim.setAgentPosition(i + 1, human_state.position)
+                self.sim.setAgentVelocity(i + 1, human_state.velocity)
 
-        # —— 1) 机器人目标向首选速度
-        pref_vel_robot = np.asarray(self._goal_pref_vel(
-            self_state.px, self_state.py, self_state.gx, self_state.gy,
-            max(self_state.v_pref, 1e-6), self_state.radius
-        ), dtype=float)
+        # 设置机器人的preferred velocity（朝向目标）
+        velocity = np.array((self_state.gx - self_state.px, self_state.gy - self_state.py))
+        speed = np.linalg.norm(velocity)
+        pref_vel = velocity / speed if speed > 1 else velocity
 
-        # —— 2) TTC 前馈减速（不重建 ORCA，只缩放幅值）
-        if len(humans) > 0 and self.ttc_brake > self.ttc_eps:
-            ttc_min = self._ttc_min_to_humans(self_state, humans)
-            if np.isfinite(ttc_min) and ttc_min < self.ttc_brake:
-                ratio = float(np.clip(ttc_min / max(self.ttc_brake, self.ttc_eps),
-                                      self.brake_min_ratio, 1.0))
-                pref_vel_robot *= ratio
+        if self.ttc_brake and len(state.human_states) > 0:
+            pref_vel = self._apply_ttc_brake(pref_vel, state)
 
-        # —— 3) 破对称（小抖动）
-        if self.eps_noise > 0.0:
-            ang = np.random.uniform(0, 2 * np.pi)
-            jitter = self.eps_noise * np.array([np.cos(ang), np.sin(ang)], dtype=float)
-            pref_vel_robot = pref_vel_robot + jitter
+        self.sim.setAgentPrefVelocity(0, tuple(pref_vel))
 
-        self.sim.setAgentPrefVelocity(0, tuple(pref_vel_robot.tolist()))
+        # 设置人类的preferred velocity（SARL原版：假设为(0,0)，因为不知道目标）
+        for i, human_state in enumerate(state.human_states):
+            self.sim.setAgentPrefVelocity(i + 1, (0, 0))
 
-        # —— 行人首选速度
-        for i, h in enumerate(humans):
-            if self.human_pref_mode == 'goal' and hasattr(h, 'gx') and hasattr(h, 'gy'):
-                hv = self._goal_pref_vel(h.px, h.py, h.gx, h.gy,
-                                         max(getattr(h, 'v_pref', self.max_speed), 1e-6), h.radius)
-            elif self.human_pref_mode == 'current':
-                hv = tuple(h.velocity)
-            else:
-                hv = (0.0, 0.0)
-            self.sim.setAgentPrefVelocity(i + 1, hv)
-
-        # —— 单步 ORCA
+        # 执行一步ORCA仿真
         self.sim.doStep()
-        vx, vy = self.sim.getAgentVelocity(0)
-        return ActionXY(float(vx), float(vy))
+
+        # 获取机器人的计算速度
+        action = ActionXY(*self.sim.getAgentVelocity(0))
+        self.last_state = state
+
+        return action
+
+    def _apply_ttc_brake(self, pref_vel, state):
+        min_ttc = self._compute_min_ttc(state)
+        if min_ttc is None or min_ttc >= self.ttc_threshold:
+            target = pref_vel
+        else:
+            ratio = np.clip(min_ttc / max(self.ttc_threshold, 1e-6), 0.0, 1.0)
+            ratio = max(ratio, self.ttc_min_scale)
+            target = pref_vel * ratio
+
+        if self._last_pref_vel is None:
+            smoothed = target
+        else:
+            alpha = np.clip(self.ttc_smoothing, 0.0, 1.0)
+            smoothed = alpha * target + (1.0 - alpha) * self._last_pref_vel
+
+        self._last_pref_vel = smoothed
+        return smoothed
+
+    def _compute_min_ttc(self, state):
+        self_state = state.self_state
+        min_ttc = None
+        for human_state in state.human_states:
+            rel_px = human_state.px - self_state.px
+            rel_py = human_state.py - self_state.py
+            rel_vx = human_state.vx - self_state.vx
+            rel_vy = human_state.vy - self_state.vy
+
+            a = rel_vx * rel_vx + rel_vy * rel_vy
+            if a < 1e-8:
+                continue
+
+            combined_radius = self_state.radius + human_state.radius + self.safety_space
+            b = 2.0 * (rel_px * rel_vx + rel_py * rel_vy)
+            c = rel_px * rel_px + rel_py * rel_py - combined_radius * combined_radius
+            disc = b * b - 4.0 * a * c
+            if disc <= 0.0:
+                continue
+
+            sqrt_disc = float(np.sqrt(disc))
+            t1 = (-b - sqrt_disc) / (2.0 * a)
+            t2 = (-b + sqrt_disc) / (2.0 * a)
+
+            if t2 < 0.0:
+                continue
+            ttc = t1 if t1 > 0.0 else t2
+
+            if min_ttc is None or ttc < min_ttc:
+                min_ttc = ttc
+
+        return min_ttc
