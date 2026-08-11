@@ -21,6 +21,14 @@
         "bytes": 0,
         "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
       },
+      "crowd_nav/bayesian_pilot/__init__.py": {
+        "bytes": 71,
+        "sha256": "30eff88086fce561028c57742cded5c6a22ae5c20570f4fc39e6ad384d2af131"
+      },
+      "crowd_nav/bayesian_pilot/protocol.py": {
+        "bytes": 8890,
+        "sha256": "5858cecb1754da43daab07f3dde0e5fe248748f1eb77cd5d3eb6c27026d7383d"
+      },
       "crowd_nav/configs/env.config": {
         "bytes": 1233,
         "sha256": "ed62b5c2d09f50e7e918ccb10a19ade9152f2c01edc6659a98816f1222f497a8"
@@ -36,6 +44,10 @@
       "crowd_nav/tools/collect_bdvl_r4_4_data.py": {
         "bytes": 34027,
         "sha256": "606e466cd73712619c1dd6a6f9bdd1a880cea1f8b35d13a1eb0438282b45473f"
+      },
+      "crowd_nav/tools/evaluate_bdvl.py": {
+        "bytes": 30883,
+        "sha256": "832962a77614271d4f0207fdda7b070f394457fe635b5198bf0f3a63caa16e88"
       },
       "crowd_nav/tools/evaluate_bdvl_paper_main.py": {
         "bytes": 10913,
@@ -114,6 +126,56 @@
         "sha256": "fbee6ffc321abbfed833d906b8c5e40a9f4d829f993edcb0ed1e6f9cb8ee7d77"
       }
     },
+    "legacy_chain": {
+      "crowd_nav/bayesian_dvl/__init__.py": {
+        "bytes": 247,
+        "sha256": "accc478ce4bea0b6149bb7dc1beac97e2411c2b4664241f2dc67f363910357be"
+      },
+      "crowd_nav/bayesian_dvl/belief.py": {
+        "bytes": 10800,
+        "sha256": "449be1ebde74d5c61bafbc1c67e3184872e26b33ec157675b8f51f0420dd11fd"
+      },
+      "crowd_nav/bayesian_dvl/counterfactual.py": {
+        "bytes": 21879,
+        "sha256": "57df3ad0cc15f5e982cb37ed09ddf747b745e8d094d7cfa607cc89a979eb4724"
+      },
+      "crowd_nav/bayesian_dvl/data_coverage.py": {
+        "bytes": 13470,
+        "sha256": "8e76bb784419aa00e20caadcc5b1721af67891bd26a6a54dacc57dfcb01fccc9"
+      },
+      "crowd_nav/bayesian_dvl/oracle_regret.py": {
+        "bytes": 11839,
+        "sha256": "aa33d71f3ad5a085707c2956343ad56926d25d44c5c1c05ef65496bea714466c"
+      },
+      "crowd_nav/bayesian_dvl/policy.py": {
+        "bytes": 64791,
+        "sha256": "043340fa7954b42d87b9f36b20e4fce405f166babc8d60425226e739f3ebb5b9"
+      },
+      "crowd_nav/bayesian_dvl/provenance.py": {
+        "bytes": 3195,
+        "sha256": "a3f241c8a5b7016ea9d9cf229a746e99a9f3f88d6b227f4020202c21dfbfe421"
+      },
+      "crowd_nav/bayesian_dvl/replay.py": {
+        "bytes": 10788,
+        "sha256": "e678b444c9310ef13c727eeff16277f1fbca9acd3be76a76befce14c339ffea6"
+      },
+      "crowd_nav/bayesian_dvl/rollout.py": {
+        "bytes": 7481,
+        "sha256": "dae5dcc0cb06bfa07e69ba9ee1b833062bd9b3c3c3a33c1250fc96ddcdde7799"
+      },
+      "crowd_nav/bayesian_dvl/trainer.py": {
+        "bytes": 40605,
+        "sha256": "5cded8cec48319b381e01f13e051e7feae4cdf76424447d8201ed46403aef72e"
+      },
+      "crowd_nav/bayesian_dvl/transition.py": {
+        "bytes": 13234,
+        "sha256": "08032f0da828186b3f8300da6de3a9ba84d1807b58ca244cfb6a09dd9b553bee"
+      },
+      "crowd_nav/bayesian_dvl/world_model.py": {
+        "bytes": 24958,
+        "sha256": "b3cd051a82e117b15058fd09518530d04bd37daddac7f75ff9ba25001131bc70"
+      }
+    },
     "main_chain": {
       "crowd_nav/bayesian_dvl/config.py": {
         "bytes": 42500,
@@ -188,8 +250,8 @@
         "sha256": "e9357f2036fa69dc838521c0aed0699b54fc8dee8b57a6dee2d607e480c0fc1c"
       },
       "crowd_nav/bayesian_dvl/source_manifest.py": {
-        "bytes": 9928,
-        "sha256": "d9a53b0438498bff99c879985f6bdd392e92a358782281179b7cb476f77e3e2b"
+        "bytes": 11160,
+        "sha256": "849fb5cd3e6cb10748234d492c126ecb3390179d04a4318674f7273dfe58bbaf"
       },
       "crowd_nav/bayesian_dvl/statistics.py": {
         "bytes": 25480,
@@ -240,8 +302,8 @@
     }
   },
   "manifest_schema": "bdvl_intent_source_manifest_v1",
-  "manifest_sha256": "87be7b6300b513b98c229129fd69c0872f718d6c6a48fa8d87c2c0141fec8dbd",
-  "n_files": 56,
+  "manifest_sha256": "e87273cce6b70645e4725f00ae306cfbe13d34a3c0a7b797d41b4e2cdc18a2aa",
+  "n_files": 71,
   "python": "3.8.10",
   "scene_registry_hash": "3e5cef6cc6a67dc8806fe8ce8768188b721be1f70ec4796cf42304c76772e21a",
   "training_contract_schema": "bdvl_intent_training_contract_demo_rank_online_mc_v2"

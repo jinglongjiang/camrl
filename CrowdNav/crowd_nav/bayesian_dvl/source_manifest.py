@@ -62,6 +62,25 @@ MAIN_CHAIN_SOURCES: List[str] = [
     "crowd_nav/bayesian_dvl/source_manifest.py",
 ]
 
+# The retired SBK-HMM/R4 chain. NOT part of the V6 decision path, but its
+# modules ship in the same package and its regression tests import them,
+# so they are declared to keep the manifest an honest description of what
+# is actually present.
+LEGACY_CHAIN_SOURCES: List[str] = [
+    "crowd_nav/bayesian_dvl/__init__.py",
+    "crowd_nav/bayesian_dvl/belief.py",
+    "crowd_nav/bayesian_dvl/counterfactual.py",
+    "crowd_nav/bayesian_dvl/data_coverage.py",
+    "crowd_nav/bayesian_dvl/oracle_regret.py",
+    "crowd_nav/bayesian_dvl/policy.py",
+    "crowd_nav/bayesian_dvl/provenance.py",
+    "crowd_nav/bayesian_dvl/replay.py",
+    "crowd_nav/bayesian_dvl/rollout.py",
+    "crowd_nav/bayesian_dvl/trainer.py",
+    "crowd_nav/bayesian_dvl/transition.py",
+    "crowd_nav/bayesian_dvl/world_model.py",
+]
+
 # Configs read at runtime.
 CONFIGS: List[str] = [
     "crowd_nav/configs/train_intent_bdvl.config",
@@ -89,6 +108,12 @@ EXTERNAL_DEPENDENCIES: List[str] = [
     "crowd_nav/tools/select_bdvl_checkpoint.py",
     "crowd_nav/tools/train_bdvl.py",
     "crowd_nav/tools/collect_bdvl_r4_4_data.py",
+    "crowd_nav/tools/evaluate_bdvl.py",                         # transitive dep of select_bdvl_checkpoint
+    # config.nonstationary_protocol_source_sha256() OPENS this BY PATH (it
+    # is never imported), so neither an import tracer nor a narrow open
+    # tracer caught it -- the remote run did.
+    "crowd_nav/bayesian_pilot/__init__.py",
+    "crowd_nav/bayesian_pilot/protocol.py",
     # the simulator package, in full -- every module in the traced closure
     "crowd_sim/__init__.py",
     "crowd_sim/envs/__init__.py",
@@ -123,6 +148,7 @@ TESTS: List[str] = [
 
 GROUPS = {
     "main_chain": MAIN_CHAIN_SOURCES,
+    "legacy_chain": LEGACY_CHAIN_SOURCES,
     "configs": CONFIGS,
     "external_dependencies": EXTERNAL_DEPENDENCIES,
     "tests": TESTS,
