@@ -76,6 +76,39 @@ STANDARD_IL_SEED_BASE = 700_001      # standard-scenario IL seeds
 STANDARD_ONLINE_SEED_BASE = 800_001  # standard-scenario online seeds
 FINAL_EMA_NAME = "final_ema.pth"
 RUN_STATE_NAME = "run_state.json"
+# C4RF.3 follow-up: TWO-SLOT rolling resume. `resume_latest.pth` used to be
+# a THIRD full copy alongside slots A and B -- at the frozen
+# replay_capacity=200000 that is 3 x ~1.4 GB = 4.3 GB per run (65 GB across
+# 15 runs), on a host with 2.5 GB free. It is now a tiny POINTER naming the
+# slot that was last written completely, so a run costs two slots, not three.
+RESUME_POINTER_NAME = "resume_latest.json"
+SLOT_NAMES = ("resume_slot_A.pth", "resume_slot_B.pth")
+
+
+def _read_resume_pointer(run_dir: Path) -> Optional[Path]:
+    ptr = Path(run_dir) / RESUME_POINTER_NAME
+    if not ptr.exists():
+        legacy = Path(run_dir) / "resume_latest.pth"   # pre-pointer layout
+        return legacy if legacy.exists() else None
+    slot = json.loads(ptr.read_text()).get("slot")
+    if not slot:
+        return None
+    p = Path(run_dir) / slot
+    return p if p.exists() else None
+
+
+def _write_resume_pointer(run_dir: Path, slot_name: str, state: "RunState") -> None:
+    """Written ONLY after the slot file is fully on disk, so a crash mid-save
+    leaves the pointer aimed at the previous, still-valid slot."""
+    ptr = Path(run_dir) / RESUME_POINTER_NAME
+    tmp = ptr.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps({
+        "slot": slot_name,
+        "online_episodes_done": state.online_episodes_done,
+        "il_passes_done": state.il_passes_done,
+        "global_updates": state.global_updates,
+    }, indent=2))
+    os.replace(str(tmp), str(ptr))
 
 
 # --------------------------------------------------------------------- #
@@ -621,9 +654,17 @@ def cmd_train(args, resume: bool = False) -> int:
         art.state.pilot_overrides = json.dumps(overrides, sort_keys=True)
         print(f"PILOT RUN -- frozen budget overridden: {art.state.pilot_overrides}. "
               f"Results are engineering checks only, never formal results.")
-    resume_path = run_dir / "resume_latest.pth"
-    if resume and not resume_path.exists():
-        raise IntentCLIError(f"--resume requested but {resume_path} does not exist")
+    resume_path = _read_resume_pointer(run_dir)
+    if resume and resume_path is None:
+        raise IntentCLIError(f"--resume requested but no valid resume slot exists under {run_dir}")
+    slot_index = {"n": 0}
+
+    def _save_rolling() -> None:
+        """Alternate A/B, then move the pointer. Two files total."""
+        name = SLOT_NAMES[slot_index["n"] % 2]
+        slot_index["n"] += 1
+        _save_checkpoint(run_dir / name, art, cfg, action_grid_hash, scene_hash)
+        _write_resume_pointer(run_dir, name, art.state)
     # NOTE: the actual _load_into happens AFTER the IL corpus is loaded --
     # C4RF.3 checkpoints omit the demo corpus, so the replay's demo side
     # must be populated from the immutable artifact first.
@@ -654,7 +695,7 @@ def cmd_train(args, resume: bool = False) -> int:
             reason = art.monitor.observe(result.gradient_ratio)
             _sync_monitor()
             if reason:
-                _save_checkpoint(resume_path, art, cfg, action_grid_hash, scene_hash)
+                _save_rolling()
                 raise IntentCLIError(f"ABORT (gradient ratio gate): {reason}")
 
     # ---------------- IL phase ----------------
@@ -713,7 +754,7 @@ def cmd_train(args, resume: bool = False) -> int:
                       f"|g|={result.grad_norm_preclip:.2f}{' CLIPPED' if result.clipped else ''}"
                       + (f" ratio={result.gradient_ratio:.3f}" if result.ratio_measured else ""))
         _sync_monitor()
-        _save_checkpoint(resume_path, art, cfg, action_grid_hash, scene_hash)
+        _save_rolling()
 
     # ---------------- online RL phase ----------------
     while art.state.online_episodes_done < target_online:
@@ -743,19 +784,14 @@ def cmd_train(args, resume: bool = False) -> int:
                   + (f" ratio={result.gradient_ratio:.3f}" if result.ratio_measured else ""))
         if done % cfg.checkpoint_interval_episodes == 0:
             _sync_monitor()
-            # C4RF.3: TWO-SLOT ROLLING full resume (A/B) instead of one
-            # permanent GB-scale copy per milestone. A crash mid-write can
-            # only damage the slot being written; the other stays valid.
-            slot = run_dir / (f"resume_latest_{'A' if (done // cfg.checkpoint_interval_episodes) % 2 == 0 else 'B'}.pth")
-            _save_checkpoint(slot, art, cfg, action_grid_hash, scene_hash)
-            _save_checkpoint(resume_path, art, cfg, action_grid_hash, scene_hash)
+            _save_rolling()
             # milestones keep only the SMALL artifacts (model + EMA +
             # manifest), never another copy of the replay.
             _save_milestone(run_dir / f"milestone_ep{done:06d}.pth", art, cfg,
                              action_grid_hash, scene_hash)
 
     _sync_monitor()
-    _save_checkpoint(resume_path, art, cfg, action_grid_hash, scene_hash)
+    _save_rolling()
     (run_dir / RUN_STATE_NAME).write_text(art.state.to_json())
     _save_final_ema(run_dir / FINAL_EMA_NAME, art, cfg, action_grid_hash, scene_hash)
     m = art.monitor
@@ -764,7 +800,7 @@ def cmd_train(args, resume: bool = False) -> int:
     if m is not None and m.n_measured:
         print(f"gradient ratio: measured {m.n_measured}x, out-of-range {m.n_out_of_range}, "
               f"current streak {m.consecutive_out_of_range}/{m.sustained_updates}")
-    print(f"wrote {resume_path} and {run_dir / FINAL_EMA_NAME}")
+    print(f"wrote {_read_resume_pointer(run_dir)} (2-slot rolling) and {run_dir / FINAL_EMA_NAME}")
     return 0
 
 

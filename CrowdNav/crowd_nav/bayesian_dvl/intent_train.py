@@ -101,6 +101,8 @@ class IntentTransition:
     mc_return: Optional[float] = None
 
     def __post_init__(self) -> None:
+        # all_action_features may be None ONLY transiently, while an online
+        # row is being serialised (see IntentReplay._strip_for_persist).
         if self.source_role not in ("demo", "online"):
             raise IntentTrainError(f"source_role must be 'demo' or 'online', got {self.source_role!r}")
         if self.source_role == "online" and self.expert_action_indices:
@@ -804,6 +806,25 @@ class IntentReplay:
         return out
 
     # ---- resume ----
+    ONLINE_PERSIST_DROPS_ACTION_FEATURES = True
+
+    @staticmethod
+    def _strip_for_persist(t: "IntentTransition") -> "IntentTransition":
+        """Drop ``all_action_features`` from an ONLINE row before saving.
+
+        It is 80x5 floats -- ~40% of a row -- and is provably never read
+        for online samples: ``train_step`` indexes ``all_action_feats``
+        ONLY at demo positions (online rows carry no expert set and get no
+        ranking loss). Persisting it multiplied every checkpoint by ~1.7x
+        for data that is dead weight. Restored as zeros on load so the
+        batch stacking shape is unchanged.
+
+        Uses dataclasses.replace -- it must NOT mutate the live object, or
+        a still-running training loop would lose the array it is using.
+        """
+        import dataclasses
+        return dataclasses.replace(t, all_action_features=None)
+
     def state_dict(self, include_demo: bool = True) -> dict:
         """C4RF.3: ``include_demo=False`` omits the demo corpus, which is
         IMMUTABLE once collected and is stored once as its own artifact.
@@ -813,8 +834,13 @@ class IntentReplay:
         the formal budget; keeping a permanent copy every 500 episodes
         across 15 formal runs projected to ~705 GB. The demo side is
         byte-identical in all of them."""
+        online = self._online
+        if self.ONLINE_PERSIST_DROPS_ACTION_FEATURES:
+            online = [self._strip_for_persist(t) for t in online]
         state = {
-            "online": list(self._online),
+            "online": online,
+            "online_action_feature_shape": (
+                list(self._online[0].all_action_features.shape) if self._online else None),
             "online_next": self._online_next, "demo_seen": self._demo_seen,
             "demo_capacity": self.demo_capacity, "online_capacity": self.online_capacity,
             "demo_included": bool(include_demo),
@@ -838,7 +864,17 @@ class IntentReplay:
             raise IntentTrainError(
                 "checkpoint omits the demo corpus (demo_included=False) but the replay's demo side is "
                 "empty -- load the immutable IL corpus artifact first")
-        self._online = list(state["online"])
+        online = list(state["online"])
+        shape = state.get("online_action_feature_shape")
+        if shape is not None:
+            import dataclasses
+            zeros = np.zeros(tuple(shape), dtype=np.float32)
+            online = [dataclasses.replace(t, all_action_features=zeros)
+                      if t.all_action_features is None else t for t in online]
+        elif any(t.all_action_features is None for t in online):
+            raise IntentTrainError(
+                "online rows were persisted without all_action_features but no shape was recorded")
+        self._online = online
         self._online_next = int(state["online_next"])
         self._demo_seen = int(state["demo_seen"])
 

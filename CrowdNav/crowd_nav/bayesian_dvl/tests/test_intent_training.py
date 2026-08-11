@@ -837,7 +837,9 @@ def test_intent_train_cli_end_to_end_collect_il_rl_resume_checkpoint_ablation() 
         # norm is reported per update.
         assert "demo/online=" in r.stdout, "online updates must report the demo/online mix"
         assert "|g|=" in r.stdout, "each update must report its pre-clip gradient norm"
-        assert (run / "resume_latest.pth").exists() and (run / "final_ema.pth").exists()
+        from crowd_nav.bayesian_dvl.intent_train_cli import _read_resume_pointer, RESUME_POINTER_NAME
+        assert (run / RESUME_POINTER_NAME).exists() and (run / "final_ema.pth").exists()
+        assert _read_resume_pointer(run) is not None and _read_resume_pointer(run).exists()
 
         r = subprocess.run(base + ["resume", "--run-dir", str(run),
                                     "--target-online-episodes", "4"] + pilot,

@@ -261,8 +261,9 @@ def test_c2_cli_resume_is_a_total_target_and_bit_identical_to_continuous() -> No
         assert "resumed:" in r_resume.stdout
         assert "online 2/" in r_resume.stdout, "resume must report the restored cursor"
 
-        A = torch.load(str(a / "resume_latest.pth"), map_location="cpu", weights_only=False)
-        B = torch.load(str(b / "resume_latest.pth"), map_location="cpu", weights_only=False)
+        from crowd_nav.bayesian_dvl.intent_train_cli import _read_resume_pointer
+        A = torch.load(str(_read_resume_pointer(a)), map_location="cpu", weights_only=False)
+        B = torch.load(str(_read_resume_pointer(b)), map_location="cpu", weights_only=False)
         for key in ("model_state_dict",):
             for k in A[key]:
                 assert torch.equal(A[key][k].float(), B[key][k].float()), f"{key}[{k}] differs after resume"
@@ -304,7 +305,8 @@ def test_c2_final_ema_artifact_holds_ema_weights_not_raw() -> None:
         _cli("train", "--run-dir", str(run), "--target-online-episodes", "2",
              "--il-episodes", "2", "--il-passes", "3", "--seed", "97201")
         assert (run / "final_ema.pth").exists() and (run / "run_state.json").exists()
-        raw = torch.load(str(run / "resume_latest.pth"), map_location="cpu", weights_only=False)
+        from crowd_nav.bayesian_dvl.intent_train_cli import _read_resume_pointer
+        raw = torch.load(str(_read_resume_pointer(run)), map_location="cpu", weights_only=False)
         fin = torch.load(str(run / "final_ema.pth"), map_location="cpu", weights_only=False)
         assert fin["extra"]["artifact_role"] == "final_ema"
         assert fin["checkpoint_schema"] == CHECKPOINT_SCHEMA_V6
@@ -566,9 +568,16 @@ def test_c4rf_ratio_monitor_state_is_fixed_before_the_abort_checkpoint() -> None
     obs = src.index("def _observe(")
     body = src[obs:obs + 1800]
     sync = body.index("_sync_monitor()")
-    save = body.index("_save_checkpoint(resume_path")
+    save = body.index("_save_rolling()")
     assert sync < save, (
         "the live monitor state must be written into RunState BEFORE the abort checkpoint is saved")
+    # and the rolling save must place the POINTER only after the slot file
+    # is fully written, so a crash mid-save leaves the previous slot valid
+    roll = inspect.getsource(intent_train_cli.cmd_train)
+    r0 = roll.index("def _save_rolling(")
+    rb = roll[r0:r0 + 700]
+    assert rb.index("_save_checkpoint(") < rb.index("_write_resume_pointer("), (
+        "the pointer must be moved only AFTER the slot is fully written")
 
     # and the monitor itself round-trips the streak
     m = GradientRatioMonitor(0.05, 50.0, 3)
@@ -653,3 +662,78 @@ def test_c5_source_manifest_covers_the_whole_chain_and_detects_drift() -> None:
             assert False, "expected SourceManifestError when declared sources are absent"
         except SourceManifestError:
             pass
+
+
+def test_c5_checkpoint_storage_is_two_slot_with_a_pointer() -> None:
+    # Independent audit: checkpoints embedding the online replay projected
+    # to >30 GB. Root cause was writing THREE full copies per save
+    # (resume_latest + slot A + slot B) when two-slot was meant to REPLACE
+    # the single latest. `resume_latest.json` is now a small pointer.
+    from crowd_nav.bayesian_dvl.intent_train_cli import (
+        RESUME_POINTER_NAME, SLOT_NAMES, _read_resume_pointer,
+    )
+    with tempfile.TemporaryDirectory() as d:
+        run = Path(d) / "run"
+        _cli("train", "--run-dir", str(run), "--target-online-episodes", "2",
+             "--il-episodes", "2", "--il-passes", "3", "--seed", "97201",
+             "--il-corpus-dir", str(Path(d) / "corpus"))
+
+        big = sorted(p.name for p in run.glob("*.pth") if p.stat().st_size > 1_000_000)
+        assert "resume_latest.pth" not in big, "the third full copy must be gone"
+        assert all(n in (*SLOT_NAMES, "final_ema.pth") for n in big), big
+        assert len([n for n in big if n in SLOT_NAMES]) <= 2, "at most two rolling slots"
+
+        ptr = run / RESUME_POINTER_NAME
+        assert ptr.exists() and ptr.stat().st_size < 1000, "the pointer must be tiny"
+        meta = json.loads(ptr.read_text())
+        assert meta["slot"] in SLOT_NAMES
+        assert (run / meta["slot"]).exists()
+        resolved = _read_resume_pointer(run)
+        assert resolved is not None and resolved.name == meta["slot"]
+        # the pointer records the cursor, so "where is this run" needs no
+        # GB-scale load
+        for k in ("online_episodes_done", "il_passes_done", "global_updates"):
+            assert k in meta
+
+
+def test_c5_online_rows_persist_without_dead_action_features() -> None:
+    # 80x5 floats per row -- ~40% of a row -- that train_step NEVER reads
+    # for online samples (it indexes all_action_feats only at demo
+    # positions, and online rows carry no expert set). Dropping them on
+    # persist must not change any training result.
+    env_config_path = _env_config_path()
+    action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
+    torch.manual_seed(0)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    demo = collect_orca_episode(env_config_path, "standard", 700001).transitions
+    online = collect_online_episode(env_config_path, model, action_table, "standard", 700002,
+                                     epsilon=1.0, explore_rng=np.random.default_rng(3)).transitions
+
+    a = IntentReplay(demo_capacity=1000, online_capacity=1000)
+    a.add_demo(demo, np.random.default_rng(0))
+    a.add_online(online)
+    live = a._online[0].all_action_features
+    state = a.state_dict(include_demo=False)
+
+    # persisting must NOT mutate the live in-memory rows
+    assert a._online[0].all_action_features is live is not None, "state_dict must not damage the live buffer"
+    assert state["online"][0].all_action_features is None
+    assert state["online_action_feature_shape"] == list(live.shape)
+
+    b = IntentReplay(demo_capacity=1000, online_capacity=1000)
+    b.add_demo(demo, np.random.default_rng(0))
+    b.load_state_dict(state)
+    assert b.n_online == a.n_online
+    restored = b._online[0].all_action_features
+    assert restored is not None and restored.shape == live.shape
+    assert not restored.any(), "restored as zeros (never read for online rows)"
+
+    # and a batch drawn from the restored buffer trains identically
+    rng_a, rng_b = np.random.default_rng(5), np.random.default_rng(5)
+    opt = torch.optim.Adam(model.parameters(), lr=0.0)
+    ra = intent_train_step(model, opt, batch_to_tensors(a.sample(64, rng_a, demo_ratio=0.2)),
+                           torch.Generator().manual_seed(1), lambda_rank=380.0)
+    rb = intent_train_step(model, opt, batch_to_tensors(b.sample(64, rng_b, demo_ratio=0.2)),
+                           torch.Generator().manual_seed(1), lambda_rank=380.0)
+    assert abs(ra.loss - rb.loss) < 1e-9, (ra.loss, rb.loss)
+    assert abs(ra.rank_loss - rb.rank_loss) < 1e-9
