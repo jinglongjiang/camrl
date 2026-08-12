@@ -831,12 +831,15 @@ def test_intent_train_cli_end_to_end_collect_il_rl_resume_checkpoint_ablation() 
                                     "--target-online-episodes", "2", "--keep-resume"] + pilot,
                             cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=900)
         assert r.returncode == 0, f"stdout={r.stdout}\nstderr={r.stderr}"
-        assert "IL corpus:" in r.stdout and "IL[" in r.stdout and "online[" in r.stdout
+        assert "IL corpus:" in r.stdout and "IL[" in r.stdout and "RL[" in r.stdout
         # C4R.2/C4R.3 must be visible in a real run: online batches carry
         # demo rows (so ranking supervision survives IL), and the gradient
         # norm is reported per update.
         assert "demo/online=" in r.stdout, "online updates must report the demo/online mix"
         assert "|g|=" in r.stdout, "each update must report its pre-clip gradient norm"
+        assert "outcome=" in r.stdout and "ROLL@" in r.stdout
+        assert (run / "train.log").exists() and (run / "metrics.jsonl").exists()
+        assert (run / "curves.png").exists()
         from crowd_nav.bayesian_dvl.intent_train_cli import RESUME_NAME
         assert (run / RESUME_NAME).exists() and (run / "final_ema.pth").exists()
 

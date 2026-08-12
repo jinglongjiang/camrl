@@ -59,10 +59,14 @@ from crowd_nav.bayesian_dvl.intent_train import (
 )
 from crowd_nav.bayesian_dvl.junction_scenario import (
     JUNCTION_CROWD_HELDOUT_SEEDS, JUNCTION_CROWD_IL_SEEDS, JUNCTION_CROWD_ONLINE_SEEDS,
-    JUNCTION_CROWD_TRAIN_SEEDS, JUNCTION_HELDOUT_SEEDS, JUNCTION_TRAIN_SEEDS, SCENARIO_REGISTRY_ID,
+    JUNCTION_CROWD_TRAIN_SEEDS, JUNCTION_CROWD_VALIDATION_SEEDS,
+    JUNCTION_HELDOUT_SEEDS, JUNCTION_TRAIN_SEEDS, SCENARIO_REGISTRY_ID,
     public_junction_crowd_scene,
 )
 from crowd_nav.bayesian_dvl.intent_evaluate import run_persistent_evaluation, summarize_csv
+from crowd_nav.bayesian_dvl.intent_monitor import (
+    TrainingMonitor, run_development_validation, summarize_development,
+)
 from crowd_nav.bayesian_dvl.model import DistributionalValueModel
 from crowd_nav.bayesian_dvl.scene_candidates import circle_scene, square_scene
 
@@ -222,7 +226,7 @@ def code_sha256() -> str:
     names = [
         "intent_tracker.py", "scene_candidates.py", "intent_policy.py", "junction_scenario.py",
         "intent_train.py", "intent_config.py", "intent_train_cli.py", "geometry_features.py",
-        "set_encoder.py", "iqn.py", "model.py", "ranking.py", "normalization.py",
+        "intent_monitor.py", "set_encoder.py", "iqn.py", "model.py", "ranking.py", "normalization.py",
     ]
     digest = hashlib.sha256()
     for name in sorted(names):
@@ -585,6 +589,7 @@ def seed_inventory(cfg: IntentTrainingConfig) -> Dict[str, object]:
         "formal_eval_heldout": FORMAL_EVAL_HELDOUT_SEEDS,
         "junction_crowd_il": JUNCTION_CROWD_IL_SEEDS,
         "junction_crowd_online": JUNCTION_CROWD_ONLINE_SEEDS,
+        "junction_crowd_validation": JUNCTION_CROWD_VALIDATION_SEEDS,
         "training_seeds": cfg.training_seeds,
         "validation_seeds": cfg.validation_seeds,
     }
@@ -843,6 +848,23 @@ def cmd_train(args, resume: bool = False) -> int:
               f"{art.state.online_episodes_done}/{cfg.online_episodes_total}, "
               f"updates {art.state.global_updates}")
 
+    telemetry = TrainingMonitor(
+        run_dir=run_dir,
+        online_cursor=art.state.online_episodes_done,
+        il_cursor=art.state.il_passes_done,
+        resume=resume,
+        rolling_windows=cfg.monitor_rolling_windows,
+        # Tiny 1-4 episode subprocess tests should not pay TensorBoard's
+        # multi-second import/startup cost. Formal runs and the >=20 episode
+        # CUDA acceptance pilot exercise the real writer.
+        tensorboard_enabled=cfg.tensorboard_enabled and (not art.state.is_pilot or target_online >= 20),
+    )
+    telemetry.log(
+        f"RUN arm={arm} seed={seed} device={device} code={art.state.code_hash[:12]} "
+        f"config={cfg.content_hash()[:12]} target_online={target_online} "
+        f"pilot={art.state.is_pilot}"
+    )
+
     if art.state.il_passes_done < total_il_passes:
         result = None
         while art.state.il_passes_done < total_il_passes:
@@ -856,11 +878,14 @@ def cmd_train(args, resume: bool = False) -> int:
             art.state.il_passes_done += 1
             art.state.global_updates += 1
             _observe(result)
+            telemetry.record_il(art.state.il_passes_done, total_il_passes, result)
             if art.state.il_passes_done % max(1, total_il_passes // 10) == 0:
-                print(f"IL[{art.state.il_passes_done}/{total_il_passes}] loss={result.loss:.4f} "
-                      f"(mc={result.mc_loss:.4f} rank={result.rank_loss:.4f}) "
-                      f"|g|={result.grad_norm_preclip:.2f}{' CLIPPED' if result.clipped else ''}"
-                      + (f" ratio={result.gradient_ratio:.3f}" if result.ratio_measured else ""))
+                telemetry.log(
+                    f"IL[{art.state.il_passes_done}/{total_il_passes}] loss={result.loss:.4f} "
+                    f"mc={result.mc_loss:.4f} rank={result.rank_loss:.4f} "
+                    f"|g|={result.grad_norm_preclip:.2f}{' CLIPPED' if result.clipped else ''}"
+                    + (f" ratio={result.gradient_ratio:.3f}" if result.ratio_measured else "")
+                )
         _sync_monitor()
         _save_rolling()
 
@@ -884,12 +909,43 @@ def cmd_train(args, resume: bool = False) -> int:
         art.state.online_episodes_done += 1
         _observe(result)
         done = art.state.online_episodes_done
-        if done % max(1, min(cfg.checkpoint_interval_episodes, max(1, target_online // 10))) == 0:
-            print(f"online[{done}/{target_online}] {scenario} eps={epsilon:.3f} loss={result.loss:.4f} "
-                  f"(mc={result.mc_loss:.4f} rank={result.rank_loss:.4f}) "
-                  f"demo/online={result.n_demo}/{result.n_online} "
-                  f"|g|={result.grad_norm_preclip:.2f}{' CLIPPED' if result.clipped else ''}"
-                  + (f" ratio={result.gradient_ratio:.3f}" if result.ratio_measured else ""))
+        rolling = telemetry.record_online(done, target_online, result)
+        display_window = 50 if 50 in rolling else max(rolling)
+        roll = rolling[display_window]
+        telemetry.log(
+            f"RL[{done}/{target_online}] {scenario} seed={ep_seed} eps={epsilon:.3f} "
+            f"outcome={result.outcome} return={result.episode_return:.3f} steps={result.episode_steps} "
+            f"loss={result.loss:.4f} mc={result.mc_loss:.4f} rank={result.rank_loss:.4f} "
+            f"demo/online={result.n_demo}/{result.n_online} |g|={result.grad_norm_preclip:.2f}"
+            f"{' CLIPPED' if result.clipped else ''} "
+            f"ROLL@{display_window} SR={roll['success_rate']:.3f} CR={roll['collision_rate']:.3f} "
+            f"TR={roll['timeout_rate']:.3f} R={roll['mean_return']:.3f}"
+            + (f" ratio={result.gradient_ratio:.3f}" if result.ratio_measured else "")
+        )
+        if done % cfg.monitor_plot_interval_episodes == 0:
+            telemetry.plot()
+
+        should_validate = (
+            done % cfg.development_eval_interval_episodes == 0
+            or (done == target_online and target_online >= 20)
+        )
+        if should_validate and not telemetry.has_validation(done):
+            evaluation_model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5).to(device)
+            art.ema.copy_to(evaluation_model)
+            dev_rows = run_development_validation(
+                args.env_config,
+                evaluation_model,
+                action_table,
+                cfg.validation_seeds,
+                JUNCTION_CROWD_VALIDATION_SEEDS,
+                belief_mode=arm,
+                n_samples=cfg.future_n_samples,
+                horizon=cfg.future_horizon,
+                device=str(device),
+            )
+            telemetry.record_validation(summarize_development(done, dev_rows))
+            telemetry.plot()
+            del evaluation_model
         if done % cfg.checkpoint_interval_episodes == 0:
             _sync_monitor()
             _save_rolling()
@@ -928,7 +984,8 @@ def cmd_train(args, resume: bool = False) -> int:
     if m is not None and m.n_measured:
         print(f"gradient ratio: measured {m.n_measured}x, out-of-range {m.n_out_of_range}, "
               f"current streak {m.consecutive_out_of_range}/{m.sustained_updates}")
-    print(f"wrote {resume_path} and {run_dir / FINAL_EMA_NAME}")
+    telemetry.log(f"COMPLETE wrote {resume_path} and {run_dir / FINAL_EMA_NAME}")
+    telemetry.close()
     return 0
 
 

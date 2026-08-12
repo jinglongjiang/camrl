@@ -260,6 +260,9 @@ JUNCTION_CROWD_HELDOUT_SEEDS: Tuple[int, ...] = tuple(range(96901, 97001))   # 1
 # blocks are large enough for the full budget with NO reuse and NO overlap.
 JUNCTION_CROWD_IL_SEEDS: Tuple[int, ...] = tuple(range(1_100_000, 1_102_500))       # 2500
 JUNCTION_CROWD_ONLINE_SEEDS: Tuple[int, ...] = tuple(range(1_200_000, 1_205_000))   # 5000
+# Development-only navigation-health checks during training. These are
+# neither optimizer seeds nor paper/formal held-out identities.
+JUNCTION_CROWD_VALIDATION_SEEDS: Tuple[int, ...] = tuple(range(1_300_000, 1_300_010))
 
 
 def _assert_crowd_seed_ranges_disjoint() -> None:
@@ -270,6 +273,7 @@ def _assert_crowd_seed_ranges_disjoint() -> None:
         "crowd_heldout": set(JUNCTION_CROWD_HELDOUT_SEEDS),
         "crowd_il": set(JUNCTION_CROWD_IL_SEEDS),
         "crowd_online": set(JUNCTION_CROWD_ONLINE_SEEDS),
+        "crowd_validation": set(JUNCTION_CROWD_VALIDATION_SEEDS),
     }
     names = sorted(blocks)
     for i, a in enumerate(names):
@@ -314,8 +318,8 @@ class JunctionCrowdEpisodeConfig:
             # TRAIN accepts the mechanism block plus the two large formal
             # blocks (IL and online), which are mutually disjoint.
             role_set = (set(JUNCTION_CROWD_TRAIN_SEEDS) | set(JUNCTION_CROWD_IL_SEEDS)
-                        | set(JUNCTION_CROWD_ONLINE_SEEDS))
-            label = "train (mechanism|il|online)"
+                        | set(JUNCTION_CROWD_ONLINE_SEEDS) | set(JUNCTION_CROWD_VALIDATION_SEEDS))
+            label = "train (mechanism|il|online|validation)"
         if self.episode_seed not in role_set:
             raise JunctionScenarioError(
                 f"episode_seed {self.episode_seed} is not in the frozen crowd {label} seed range"

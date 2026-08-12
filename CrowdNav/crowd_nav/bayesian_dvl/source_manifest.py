@@ -48,6 +48,7 @@ MAIN_CHAIN_SOURCES: List[str] = [
     "crowd_nav/bayesian_dvl/intent_train.py",
     "crowd_nav/bayesian_dvl/intent_config.py",
     "crowd_nav/bayesian_dvl/intent_train_cli.py",
+    "crowd_nav/bayesian_dvl/intent_monitor.py",
     "crowd_nav/bayesian_dvl/intent_evaluate.py",
     "crowd_nav/bayesian_dvl/intent_crowdnav_policy.py",
     "crowd_nav/bayesian_dvl/geometry_features.py",
@@ -115,6 +116,7 @@ TESTS: List[str] = [
     "crowd_nav/bayesian_dvl/tests/test_intent_training.py",
     "crowd_nav/bayesian_dvl/tests/test_intent_cli.py",
     "crowd_nav/bayesian_dvl/tests/test_intent_integration.py",
+    "crowd_nav/bayesian_dvl/tests/test_intent_monitor.py",
 ]
 
 # B6: the manifest now covers the V6 RUNTIME CLOSURE ONLY.

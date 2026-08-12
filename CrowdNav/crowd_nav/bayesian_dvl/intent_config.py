@@ -81,6 +81,11 @@ class IntentTrainingConfig:
     ema_decay: float
     # [checkpoint]
     checkpoint_interval_episodes: int
+    # [monitoring]
+    monitor_rolling_windows: Tuple[int, ...]
+    monitor_plot_interval_episodes: int
+    development_eval_interval_episodes: int
+    tensorboard_enabled: bool
     # [seeds]
     training_seeds: Tuple[int, ...]
     validation_seeds: Tuple[int, ...]
@@ -118,6 +123,13 @@ def _seed_tuple(raw: str, field_name: str) -> Tuple[int, ...]:
     return seeds
 
 
+def _positive_int_tuple(raw: str, field_name: str) -> Tuple[int, ...]:
+    values = _seed_tuple(raw, field_name)
+    if any(v <= 0 for v in values):
+        raise IntentConfigError(f"{field_name} must contain only positive integers, got {values}")
+    return values
+
+
 def load_intent_training_config(path: Path = DEFAULT_TRAINING_CONFIG) -> IntentTrainingConfig:
     """Read + HARD-VALIDATE the formal config. Fails closed on anything
     inconsistent rather than silently training under a broken budget."""
@@ -126,7 +138,7 @@ def load_intent_training_config(path: Path = DEFAULT_TRAINING_CONFIG) -> IntentT
     if not parser.read(str(path)):
         raise IntentConfigError(f"training config not found: {path}")
     for section in ("schema", "il", "online", "optim", "exploration", "ranking", "iqn", "belief", "ema",
-                    "checkpoint", "seeds"):
+                    "checkpoint", "monitoring", "seeds"):
         if not parser.has_section(section):
             raise IntentConfigError(f"training config {path} is missing required section [{section}]")
 
@@ -172,6 +184,11 @@ def load_intent_training_config(path: Path = DEFAULT_TRAINING_CONFIG) -> IntentT
         max_candidate_goals=gi("belief", "max_candidate_goals"),
         ema_decay=gf("ema", "ema_decay"),
         checkpoint_interval_episodes=gi("checkpoint", "checkpoint_interval_episodes"),
+        monitor_rolling_windows=_positive_int_tuple(
+            g("monitoring", "rolling_windows"), "rolling_windows"),
+        monitor_plot_interval_episodes=gi("monitoring", "plot_interval_episodes"),
+        development_eval_interval_episodes=gi("monitoring", "development_eval_interval_episodes"),
+        tensorboard_enabled=parser.getboolean("monitoring", "tensorboard_enabled"),
         training_seeds=_seed_tuple(g("seeds", "training_seeds"), "training_seeds"),
         validation_seeds=_seed_tuple(g("seeds", "validation_seeds"), "validation_seeds"),
         source_path=str(path),
@@ -207,6 +224,8 @@ def _validate(cfg: IntentTrainingConfig) -> None:
         ("future_horizon", cfg.future_horizon), ("future_n_samples", cfg.future_n_samples),
         ("missing_timeout_steps", cfg.missing_timeout_steps), ("max_candidate_goals", cfg.max_candidate_goals),
         ("checkpoint_interval_episodes", cfg.checkpoint_interval_episodes),
+        ("monitor_plot_interval_episodes", cfg.monitor_plot_interval_episodes),
+        ("development_eval_interval_episodes", cfg.development_eval_interval_episodes),
         ("demo_capacity", cfg.demo_capacity),
         ("ranking_batch_size", cfg.ranking_batch_size),
         ("gradient_diagnostic_interval", cfg.gradient_diagnostic_interval),
@@ -248,7 +267,8 @@ def _validate(cfg: IntentTrainingConfig) -> None:
     # seed roles must be mutually exclusive AND disjoint from every frozen
     # scenario/eval block (plan section 4.2: no reusing an eval seed for training)
     from crowd_nav.bayesian_dvl.junction_scenario import (
-        JUNCTION_CROWD_HELDOUT_SEEDS, JUNCTION_CROWD_TRAIN_SEEDS, JUNCTION_HELDOUT_SEEDS, JUNCTION_TRAIN_SEEDS,
+        JUNCTION_CROWD_HELDOUT_SEEDS, JUNCTION_CROWD_TRAIN_SEEDS, JUNCTION_CROWD_VALIDATION_SEEDS,
+        JUNCTION_HELDOUT_SEEDS, JUNCTION_TRAIN_SEEDS,
     )
     from crowd_nav.bayesian_dvl.intent_train import FORMAL_EVAL_HELDOUT_SEEDS
     blocks = {
@@ -258,6 +278,7 @@ def _validate(cfg: IntentTrainingConfig) -> None:
         "junction_heldout": set(JUNCTION_HELDOUT_SEEDS),
         "crowd_train": set(JUNCTION_CROWD_TRAIN_SEEDS),
         "crowd_heldout": set(JUNCTION_CROWD_HELDOUT_SEEDS),
+        "crowd_validation": set(JUNCTION_CROWD_VALIDATION_SEEDS),
         "formal_eval": set(FORMAL_EVAL_HELDOUT_SEEDS),
     }
     names = sorted(blocks)

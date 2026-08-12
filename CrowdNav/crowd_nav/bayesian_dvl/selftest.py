@@ -22,6 +22,7 @@ import inspect
 from crowd_nav.bayesian_dvl.tests import (
     test_intent_cli,
     test_intent_integration,
+    test_intent_monitor,
     test_intent_policy,
     test_intent_tracker,
     test_intent_training,
@@ -31,6 +32,7 @@ from crowd_nav.bayesian_dvl.tests import (
 _TEST_MODULES = (
     test_intent_cli,
     test_intent_integration,
+    test_intent_monitor,
     test_intent_tracker,
     test_scene_candidates,
     test_intent_policy,

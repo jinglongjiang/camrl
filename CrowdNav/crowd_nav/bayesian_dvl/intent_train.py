@@ -16,7 +16,7 @@ compatibility shim for the old one.
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -118,6 +118,12 @@ class IntentTransition:
 class EpisodeCollectionResult:
     transitions: List[IntentTransition]
     outcome: str  # success | collision | timeout
+    episode_return: float = 0.0
+    steps: int = 0
+    navigation_time: float = 0.0
+    path_length: float = 0.0
+    path_ratio: float = 0.0
+    min_clearance: float = float("inf")
 
 
 def _make_standard_env(env_config_path: Path, n_humans: int = 5):
@@ -445,6 +451,19 @@ class TrainStepResult:
     weighted_rank_grad_norm: float = 0.0
     gradient_ratio: float = 0.0
     ratio_measured: bool = False
+    # Populated by ``run_online_training_step``. Keeping these on the
+    # existing result preserves the public ``result.loss`` contract while
+    # making navigation quality observable at every online episode.
+    outcome: str = ""
+    episode_return: float = 0.0
+    episode_steps: int = 0
+    navigation_time: float = 0.0
+    path_length: float = 0.0
+    path_ratio: float = 0.0
+    min_clearance: float = float("inf")
+    scenario: str = ""
+    episode_seed: int = -1
+    epsilon: float = 0.0
 
 
 def train_step(
@@ -769,6 +788,12 @@ def collect_online_episode(
     max_steps = int(round(FROZEN_VALUES["time_limit"] / FROZEN_VALUES["dt"])) + 1
 
     transitions: List[IntentTransition] = []
+    start = np.asarray([robot.px, robot.py], dtype=np.float64)
+    goal = np.asarray([robot.gx, robot.gy], dtype=np.float64)
+    initial_goal_distance = float(np.linalg.norm(goal - start))
+    previous_position = start.copy()
+    path_length = 0.0
+    min_clearance = float("inf")
     outcome = None
     for step in range(max_steps):
         episode.advance_hidden_state()
@@ -805,6 +830,12 @@ def collect_online_episode(
         ))
         gvx, gvy = action_table[executed_idx]
         _, reward, terminated, truncated, info = env.step(ActionXY(float(gvx), float(gvy)))
+        current_position = np.asarray([robot.px, robot.py], dtype=np.float64)
+        path_length += float(np.linalg.norm(current_position - previous_position))
+        previous_position = current_position
+        for human in env.humans:
+            center_distance = float(np.hypot(robot.px - human.px, robot.py - human.py))
+            min_clearance = min(min_clearance, center_distance - float(robot.radius) - float(human.radius))
         event = info.get("event")
         transitions[-1].reward = float(reward)
         if terminated or truncated:
@@ -816,7 +847,18 @@ def collect_online_episode(
     returns = compute_mc_returns([t.reward for t in transitions], gamma)
     for t, g in zip(transitions, returns):
         t.mc_return = g
-    return EpisodeCollectionResult(transitions=transitions, outcome=outcome)
+    episode_return = float(sum(t.reward for t in transitions))
+    steps = len(transitions)
+    return EpisodeCollectionResult(
+        transitions=transitions,
+        outcome=outcome,
+        episode_return=episode_return,
+        steps=steps,
+        navigation_time=float(env.global_time),
+        path_length=path_length,
+        path_ratio=path_length / max(initial_goal_distance, 1e-12),
+        min_clearance=min_clearance,
+    )
 
 
 class IntentReplay:
@@ -1071,7 +1113,19 @@ def run_online_training_step(
             ranking_margin=ranking_margin, lambda_rank=lambda_rank, ranking_batch_size=ranking_batch_size,
             grad_clip_norm=grad_clip_norm, measure_gradient_ratio=measure_gradient_ratio,
         )
-    return result
+    return replace(
+        result,
+        outcome=episode.outcome,
+        episode_return=episode.episode_return,
+        episode_steps=episode.steps,
+        navigation_time=episode.navigation_time,
+        path_length=episode.path_length,
+        path_ratio=episode.path_ratio,
+        min_clearance=episode.min_clearance,
+        scenario=scenario,
+        episode_seed=int(episode_seed),
+        epsilon=float(epsilon),
+    )
 
 
 def run_il_update(

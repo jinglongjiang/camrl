@@ -37,6 +37,9 @@ def test_c2_formal_config_is_the_single_source_of_truth() -> None:
     assert 0.0 < cfg.demo_sample_ratio < 1.0
     assert cfg.demo_capacity > 0 and cfg.ranking_batch_size <= cfg.batch_size
     assert cfg.gradient_diagnostic_interval > 0 and cfg.grad_clip_norm > 0
+    assert cfg.monitor_rolling_windows == (25, 50, 200)
+    assert cfg.monitor_plot_interval_episodes == 50
+    assert cfg.development_eval_interval_episodes == 500
     # provenance
     assert len(cfg.source_sha256) == 64 and len(cfg.content_hash()) == 64
     # the CLI module must not hard-code formal hyperparameters
@@ -80,6 +83,8 @@ def test_c2_config_validation_fails_closed() -> None:
             ("ranking_batch_size exceeds batch", lambda c: c.set("ranking", "ranking_batch_size", "99999")),
             ("inverted gradient ratio gate", lambda c: c.set("ranking", "rank_gradient_ratio_min", "999")),
             ("zero diagnostic interval", lambda c: c.set("ranking", "gradient_diagnostic_interval", "0")),
+            ("zero plot interval", lambda c: c.set("monitoring", "plot_interval_episodes", "0")),
+            ("bad rolling window", lambda c: c.set("monitoring", "rolling_windows", "25, 0")),
         ]
         for label, mutate in cases:
             p = write(mutate)
