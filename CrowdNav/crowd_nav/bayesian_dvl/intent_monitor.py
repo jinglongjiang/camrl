@@ -189,12 +189,25 @@ class TrainingMonitor:
         if not self.metrics_path.exists():
             return []
         rows = []
-        for line_no, line in enumerate(self.metrics_path.read_text().splitlines(), 1):
+        lines = self.metrics_path.read_text().splitlines()
+        for line_no, line in enumerate(lines, 1):
             if not line.strip():
                 continue
             try:
                 rows.append(json.loads(line))
             except json.JSONDecodeError as exc:
+                # A power loss can interrupt the one append currently in
+                # progress. Only a malformed FINAL line is recoverable;
+                # corruption in the middle remains a hard failure.
+                if line_no == len(lines):
+                    tmp = self.metrics_path.with_suffix(".jsonl.tmp")
+                    with tmp.open("w", encoding="utf-8") as fh:
+                        for row in rows:
+                            fh.write(json.dumps(row, sort_keys=True) + "\n")
+                        fh.flush()
+                        os.fsync(fh.fileno())
+                    os.replace(tmp, self.metrics_path)
+                    break
                 raise IntentMonitorError(f"invalid JSON in {self.metrics_path}:{line_no}: {exc}") from exc
         return rows
 

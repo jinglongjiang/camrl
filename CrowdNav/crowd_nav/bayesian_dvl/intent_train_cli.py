@@ -865,6 +865,38 @@ def cmd_train(args, resume: bool = False) -> int:
         f"pilot={art.state.is_pilot}"
     )
 
+    def _development_due(done: int) -> bool:
+        return done > 0 and (
+            done % cfg.development_eval_interval_episodes == 0
+            or (done == target_online and target_online >= 20)
+        )
+
+    def _run_development_if_due(done: int) -> None:
+        if not _development_due(done) or telemetry.has_validation(done):
+            return
+        evaluation_model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5).to(device)
+        art.ema.copy_to(evaluation_model)
+        dev_rows = run_development_validation(
+            args.env_config,
+            evaluation_model,
+            action_table,
+            cfg.validation_seeds,
+            JUNCTION_CROWD_VALIDATION_SEEDS,
+            belief_mode=arm,
+            n_samples=cfg.future_n_samples,
+            horizon=cfg.future_horizon,
+            device=str(device),
+        )
+        telemetry.record_validation(summarize_development(done, dev_rows))
+        telemetry.plot()
+        del evaluation_model
+
+    # A crash can happen after the periodic checkpoint is durable but
+    # before its development evaluation finishes. Resume must fill that
+    # missing read-only record without replaying a training episode.
+    if resume:
+        _run_development_if_due(art.state.online_episodes_done)
+
     if art.state.il_passes_done < total_il_passes:
         result = None
         while art.state.il_passes_done < total_il_passes:
@@ -925,30 +957,15 @@ def cmd_train(args, resume: bool = False) -> int:
         if done % cfg.monitor_plot_interval_episodes == 0:
             telemetry.plot()
 
-        should_validate = (
-            done % cfg.development_eval_interval_episodes == 0
-            or (done == target_online and target_online >= 20)
-        )
-        if should_validate and not telemetry.has_validation(done):
-            evaluation_model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5).to(device)
-            art.ema.copy_to(evaluation_model)
-            dev_rows = run_development_validation(
-                args.env_config,
-                evaluation_model,
-                action_table,
-                cfg.validation_seeds,
-                JUNCTION_CROWD_VALIDATION_SEEDS,
-                belief_mode=arm,
-                n_samples=cfg.future_n_samples,
-                horizon=cfg.future_horizon,
-                device=str(device),
-            )
-            telemetry.record_validation(summarize_development(done, dev_rows))
-            telemetry.plot()
-            del evaluation_model
-        if done % cfg.checkpoint_interval_episodes == 0:
+        should_validate = _development_due(done)
+        # Save BEFORE the read-only validation. A power loss there now
+        # loses zero completed training episodes; resume fills the missing
+        # validation row from the durable checkpoint.
+        if done % cfg.checkpoint_interval_episodes == 0 or should_validate:
             _sync_monitor()
             _save_rolling()
+        if should_validate:
+            _run_development_if_due(done)
         # A4: milestones are GATED to four points and keep only the SMALL
         # artifacts (model + EMA + run identity), never a copy of the
         # replay. One per checkpoint interval would be 20 files per run.

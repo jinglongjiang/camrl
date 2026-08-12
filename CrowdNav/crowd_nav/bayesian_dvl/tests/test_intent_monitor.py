@@ -88,6 +88,32 @@ def test_monitor_fails_when_checkpoint_is_ahead_of_durable_metrics() -> None:
             pass
 
 
+def test_monitor_recovers_only_a_truncated_final_jsonl_line() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        run = Path(d)
+        first = TrainingMonitor(run, 0, 0, False, (2,), tensorboard_enabled=False)
+        first.record_online(1, 1, _result("success"))
+        first.close()
+        with (run / "metrics.jsonl").open("a") as fh:
+            fh.write('{"record_type":"online","online_episode":2')
+        recovered = TrainingMonitor(run, 1, 0, True, (2,), tensorboard_enabled=False)
+        assert [r["online_episode"] for r in recovered.records if r["record_type"] == "online"] == [1]
+        recovered.close()
+        assert len((run / "metrics.jsonl").read_text().splitlines()) == 1
+
+
+def test_cli_checkpoints_before_development_and_resume_fills_a_missing_record() -> None:
+    import inspect
+    from crowd_nav.bayesian_dvl import intent_train_cli
+
+    source = inspect.getsource(intent_train_cli.cmd_train)
+    marker = source.index("# Save BEFORE the read-only validation")
+    checkpoint = source.index("_save_rolling()", marker)
+    validation = source.index("_run_development_if_due(done)", checkpoint)
+    assert checkpoint < validation
+    assert "if resume:\n        _run_development_if_due(art.state.online_episodes_done)" in source
+
+
 def test_online_training_result_keeps_navigation_outcome_and_episode_metrics() -> None:
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
