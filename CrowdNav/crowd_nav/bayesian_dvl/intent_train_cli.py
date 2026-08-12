@@ -34,6 +34,7 @@ import hashlib
 import json
 import os
 import platform
+import shutil
 import subprocess
 import sys
 import time
@@ -93,6 +94,34 @@ RESUME_NAME = "resume_latest.pth"
 
 def _resume_path(run_dir: Path) -> Path:
     return Path(run_dir) / RESUME_NAME
+
+
+def _reset_run_dir_for_fresh_train(run_dir: Path) -> bool:
+    """Implement the CLI contract: ``train`` starts clean, ``resume`` continues.
+
+    Only the exact run directory is removed.  Guard obvious dangerous
+    targets so a malformed ``--run-dir`` can never erase the checkout,
+    home directory, filesystem root, or a symlink target.
+    """
+    run_dir = Path(run_dir)
+    resolved = run_dir.resolve(strict=False)
+    forbidden = {
+        Path("/").resolve(),
+        Path.home().resolve(),
+        Path.cwd().resolve(),
+        Path(__file__).resolve().parents[2],  # CrowdNav repository root
+    }
+    if resolved in forbidden or len(resolved.parts) < 3:
+        raise IntentCLIError(f"unsafe --run-dir for automatic reset: {run_dir} -> {resolved}")
+    if run_dir.is_symlink():
+        raise IntentCLIError(f"refusing to reset symlink run directory: {run_dir}")
+    existed = run_dir.exists()
+    if existed:
+        if not run_dir.is_dir():
+            raise IntentCLIError(f"--run-dir exists but is not a directory: {run_dir}")
+        shutil.rmtree(run_dir)
+    run_dir.mkdir(parents=True, exist_ok=False)
+    return existed
 
 
 # A4: only these four online-episode counts get a milestone, and a
@@ -751,10 +780,11 @@ def cmd_train(args, resume: bool = False) -> int:
     cfg = load_intent_training_config(args.config)
     device = resolve_device(args.device)
     run_dir = Path(args.run_dir)
-    if not resume and run_dir.exists() and any(run_dir.iterdir()):
-        raise IntentCLIError(
-            f"fresh training requested in non-empty run directory {run_dir}; use resume or a new run dir")
-    run_dir.mkdir(parents=True, exist_ok=True)
+    if resume:
+        run_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        reset_existing = _reset_run_dir_for_fresh_train(run_dir)
+        print(f"fresh train: {'cleared and recreated' if reset_existing else 'created'} run directory {run_dir}")
     grid = ActionGridSpec.from_env_config(str(args.env_config))
     action_table = np.asarray(grid.build_action_table(), dtype=np.float64)
     action_grid_hash = grid.table_hash()
@@ -842,6 +872,8 @@ def cmd_train(args, resume: bool = False) -> int:
 
         def _report_il_data(done, total, scenario, episode_seed, raw) -> None:
             outcomes[raw.outcome] += 1
+            if done != 1 and done != total and done % 50 != 0:
+                return
             elapsed = time.monotonic() - collection_started
             eta = elapsed * (total - done) / done
             append_durable_log(

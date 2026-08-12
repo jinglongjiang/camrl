@@ -846,11 +846,16 @@ def test_intent_train_cli_end_to_end_collect_il_rl_resume_checkpoint_ablation() 
         from crowd_nav.bayesian_dvl.intent_train_cli import RESUME_NAME
         assert (run / RESUME_NAME).exists() and (run / "final_ema.pth").exists()
 
-        # A fresh launch must reject an occupied run directory immediately.
+        # `train` means a clean restart: it removes only its run directory
+        # and does not force the user to clean an interrupted run manually.
+        sentinel = run / "stale_from_previous_attempt.txt"
+        sentinel.write_text("stale")
         duplicate = subprocess.run(base + ["train", "--run-dir", str(run),
                                            "--target-online-episodes", "2"] + pilot,
-                                   cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=60)
-        assert duplicate.returncode != 0 and "non-empty run directory" in duplicate.stderr
+                                   cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=900)
+        assert duplicate.returncode == 0, f"stdout={duplicate.stdout}\nstderr={duplicate.stderr}"
+        assert "cleared and recreated" in duplicate.stdout and not sentinel.exists()
+        assert (run / "resume_latest.pth").exists(), "fresh restart must produce a new recovery checkpoint"
 
         # Resume must never silently recollect a missing 5000-episode corpus.
         from crowd_nav.bayesian_dvl.intent_config import DEFAULT_TRAINING_CONFIG, load_intent_training_config
