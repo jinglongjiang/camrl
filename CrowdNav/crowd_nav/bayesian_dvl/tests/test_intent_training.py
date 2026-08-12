@@ -831,6 +831,7 @@ def test_intent_train_cli_end_to_end_collect_il_rl_resume_checkpoint_ablation() 
                                     "--target-online-episodes", "2", "--keep-resume"] + pilot,
                             cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=900)
         assert r.returncode == 0, f"stdout={r.stdout}\nstderr={r.stderr}"
+        assert "IL-DATA[1/2]" in r.stdout and "ORCA-SR=" in r.stdout
         assert "IL corpus:" in r.stdout and "IL[" in r.stdout and "RL[" in r.stdout
         # C4R.2/C4R.3 must be visible in a real run: online batches carry
         # demo rows (so ranking supervision survives IL), and the gradient
@@ -839,9 +840,33 @@ def test_intent_train_cli_end_to_end_collect_il_rl_resume_checkpoint_ablation() 
         assert "|g|=" in r.stdout, "each update must report its pre-clip gradient norm"
         assert "outcome=" in r.stdout and "ROLL@" in r.stdout
         assert (run / "train.log").exists() and (run / "metrics.jsonl").exists()
+        assert "IL-DATA[1/2]" in (run / "train.log").read_text(), \
+            "the durable log must start during corpus collection, not after it"
         assert (run / "curves.png").exists()
         from crowd_nav.bayesian_dvl.intent_train_cli import RESUME_NAME
         assert (run / RESUME_NAME).exists() and (run / "final_ema.pth").exists()
+
+        # A fresh launch must reject an occupied run directory immediately.
+        duplicate = subprocess.run(base + ["train", "--run-dir", str(run),
+                                           "--target-online-episodes", "2"] + pilot,
+                                   cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=60)
+        assert duplicate.returncode != 0 and "non-empty run directory" in duplicate.stderr
+
+        # Resume must never silently recollect a missing 5000-episode corpus.
+        from crowd_nav.bayesian_dvl.intent_config import DEFAULT_TRAINING_CONFIG, load_intent_training_config
+        from crowd_nav.bayesian_dvl.intent_train_cli import il_corpus_path
+        cfg = load_intent_training_config(DEFAULT_TRAINING_CONFIG)
+        corpus = il_corpus_path(Path(d) / "il_corpus", "full", cfg)
+        corpus = corpus.with_name(corpus.stem + "_pilot2.pth")
+        held = corpus.with_suffix(".held")
+        corpus.replace(held)
+        try:
+            missing = subprocess.run(base + ["resume", "--run-dir", str(run),
+                                             "--target-online-episodes", "4"] + pilot,
+                                     cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=60)
+            assert missing.returncode != 0 and "shared IL corpus is missing" in missing.stderr
+        finally:
+            held.replace(corpus)
 
         r = subprocess.run(base + ["resume", "--run-dir", str(run),
                                     "--target-online-episodes", "4"] + pilot,

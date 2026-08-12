@@ -36,9 +36,11 @@ import os
 import platform
 import subprocess
 import sys
+import time
+from collections import Counter
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 import numpy as np
 import torch
@@ -65,7 +67,7 @@ from crowd_nav.bayesian_dvl.junction_scenario import (
 )
 from crowd_nav.bayesian_dvl.intent_evaluate import run_persistent_evaluation, summarize_csv
 from crowd_nav.bayesian_dvl.intent_monitor import (
-    TrainingMonitor, run_development_validation, summarize_development,
+    TrainingMonitor, append_durable_log, run_development_validation, summarize_development,
 )
 from crowd_nav.bayesian_dvl.model import DistributionalValueModel
 from crowd_nav.bayesian_dvl.scene_candidates import circle_scene, square_scene
@@ -314,7 +316,8 @@ def il_corpus_path(corpus_dir: Path, arm: str, cfg: IntentTrainingConfig) -> Pat
 
 
 def build_il_corpus(env_config_path: Path, cfg: IntentTrainingConfig, arm: str, out_path: Path,
-                    n_episodes: Optional[int] = None) -> dict:
+                    n_episodes: Optional[int] = None,
+                    progress_callback: Optional[Callable[[int, int, str, int, object], None]] = None) -> dict:
     """Collect the arm's IL corpus ONCE and write it with full identity."""
     plan = il_episode_plan(cfg)
     if n_episodes is not None:
@@ -322,11 +325,13 @@ def build_il_corpus(env_config_path: Path, cfg: IntentTrainingConfig, arm: str, 
         plan = ([p for p in plan if p[0] == "standard"][:per]
                 + [p for p in plan if p[0] == "junction_crowd"][:per])
     episodes, identities = [], []
-    for scenario, ep_seed in plan:
+    for done, (scenario, ep_seed) in enumerate(plan, 1):
         _assert_not_formal_seed(ep_seed)
         raw = collect_raw_orca_episode(env_config_path, scenario, ep_seed, gamma=cfg.gamma)
         episodes.append(raw)
         identities.append([scenario, int(ep_seed), len(raw.steps), raw.outcome])
+        if progress_callback is not None:
+            progress_callback(done, len(plan), scenario, int(ep_seed), raw)
     payload = {
         "corpus_schema": IL_CORPUS_SCHEMA,
         "training_arm": None,   # A3: arm-independent by construction
@@ -746,6 +751,9 @@ def cmd_train(args, resume: bool = False) -> int:
     cfg = load_intent_training_config(args.config)
     device = resolve_device(args.device)
     run_dir = Path(args.run_dir)
+    if not resume and run_dir.exists() and any(run_dir.iterdir()):
+        raise IntentCLIError(
+            f"fresh training requested in non-empty run directory {run_dir}; use resume or a new run dir")
     run_dir.mkdir(parents=True, exist_ok=True)
     grid = ActionGridSpec.from_env_config(str(args.env_config))
     action_table = np.asarray(grid.build_action_table(), dtype=np.float64)
@@ -823,10 +831,38 @@ def cmd_train(args, resume: bool = False) -> int:
         corpus_file = corpus_file.with_name(corpus_file.stem + f"_pilot{args.il_episodes}.pth")
 
     if not corpus_file.exists():
-        print(f"collecting IL corpus for arm={arm} -> {corpus_file}")
-        meta = build_il_corpus(args.env_config, cfg, arm, corpus_file, n_episodes=args.il_episodes)
-        print(f"  {meta['n_episodes']} episodes, {meta['n_transitions']} transitions, "
-              f"sha256 {meta['corpus_sha256'][:12]}")
+        if resume:
+            raise IntentCLIError(
+                f"resume checkpoint exists but its shared IL corpus is missing at {corpus_file}; "
+                "restore the hash-matched corpus instead of recollecting it")
+        append_durable_log(run_dir, f"IL-DATA START total={args.il_episodes or cfg.il_episodes_total} "
+                           f"destination={corpus_file}")
+        collection_started = time.monotonic()
+        outcomes: Counter = Counter()
+
+        def _report_il_data(done, total, scenario, episode_seed, raw) -> None:
+            outcomes[raw.outcome] += 1
+            elapsed = time.monotonic() - collection_started
+            eta = elapsed * (total - done) / done
+            append_durable_log(
+                run_dir,
+                f"IL-DATA[{done}/{total}] {scenario} seed={episode_seed} outcome={raw.outcome} "
+                f"steps={len(raw.steps)} ORCA-SR={outcomes['success'] / done:.3f} "
+                f"CR={outcomes['collision'] / done:.3f} TR={outcomes['timeout'] / done:.3f} "
+                f"elapsed={elapsed / 60.0:.1f}m eta={eta / 60.0:.1f}m",
+            )
+
+        meta = build_il_corpus(
+            args.env_config, cfg, arm, corpus_file, n_episodes=args.il_episodes,
+            progress_callback=_report_il_data,
+        )
+        append_durable_log(
+            run_dir,
+            f"IL-DATA COMPLETE episodes={meta['n_episodes']} transitions={meta['n_transitions']} "
+            f"sha256={meta['corpus_sha256'][:12]}",
+        )
+    else:
+        append_durable_log(run_dir, f"IL-DATA REUSE source={corpus_file}")
     demo_transitions, art.il_corpus_ref = load_il_corpus(corpus_file, cfg, arm)
     art.buffer.add_demo(demo_transitions, art.reservoir_rng)
     print(f"IL corpus: {art.il_corpus_ref['n_episodes']} episodes -> {art.buffer.n_demo} demo "

@@ -24,6 +24,25 @@ class IntentMonitorError(RuntimeError):
     pass
 
 
+def append_durable_log(run_dir: Path, message: str) -> None:
+    """Append one fsync'd line before ``TrainingMonitor`` exists.
+
+    Formal runs spend substantial time collecting the shared ORCA corpus
+    before the model monitor can be constructed.  Those episodes must be
+    visible in the same ``train.log`` instead of creating a multi-hour
+    silent interval at startup.
+    """
+    run_dir = Path(run_dir)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    line = f"[{timestamp}] {message}"
+    with (run_dir / "train.log").open("a", encoding="utf-8") as handle:
+        handle.write(line + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    print(line, flush=True)
+
+
 @dataclass(frozen=True)
 class DevelopmentSummary:
     online_episode: int

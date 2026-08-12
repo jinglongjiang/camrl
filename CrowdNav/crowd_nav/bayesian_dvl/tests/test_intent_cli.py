@@ -522,8 +522,15 @@ def test_c4rf_il_corpus_is_immutable_shared_and_identity_checked() -> None:
     with tempfile.TemporaryDirectory() as d:
         d = Path(d)
         path = d / "corpus_full.pth"
-        meta = build_il_corpus(_env_config_path(), cfg, "full", path, n_episodes=2)
+        progress = []
+        meta = build_il_corpus(
+            _env_config_path(), cfg, "full", path, n_episodes=2,
+            progress_callback=lambda done, total, scenario, seed, raw: progress.append(
+                (done, total, scenario, seed, raw.outcome, len(raw.steps))),
+        )
         assert path.exists() and path.with_suffix(".manifest.json").exists()
+        assert [row[:2] for row in progress] == [(1, 2), (2, 2)]
+        assert all(row[2] in ("standard", "junction_crowd") and row[5] > 0 for row in progress)
         assert meta["training_arm"] is None, "A3: the corpus records no arm"
         assert meta["n_transitions"] > 0
         assert len(meta["corpus_sha256"]) == 64
