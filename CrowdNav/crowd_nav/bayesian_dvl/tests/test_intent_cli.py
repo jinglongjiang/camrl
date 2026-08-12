@@ -517,7 +517,9 @@ def test_c4rf_checkpoint_omits_the_immutable_demo_corpus() -> None:
 
 def test_c4rf_il_corpus_is_immutable_shared_and_identity_checked() -> None:
     # C4RF.2: collect once per ARM, share across the 5 optimizer seeds.
-    from crowd_nav.bayesian_dvl.intent_train_cli import build_il_corpus, load_il_corpus, il_corpus_path
+    from crowd_nav.bayesian_dvl.intent_train_cli import (
+        COMPATIBLE_RAW_IL_CORPUS_CODE_HASHES, build_il_corpus, il_corpus_path, load_il_corpus,
+    )
     cfg = load_intent_training_config(DEFAULT_TRAINING_CONFIG)
     with tempfile.TemporaryDirectory() as d:
         d = Path(d)
@@ -541,8 +543,15 @@ def test_c4rf_il_corpus_is_immutable_shared_and_identity_checked() -> None:
             assert outcome in ("success", "collision", "timeout")
 
         # a second load is byte-identical -> the 5 seeds really share it
-        t1, m1 = load_il_corpus(path, cfg, "full")
+        materialize_progress = []
+        t1, m1 = load_il_corpus(
+            path, cfg, "full",
+            progress_callback=lambda done, total, n_transitions: materialize_progress.append(
+                (done, total, n_transitions)),
+        )
         t2, m2 = load_il_corpus(path, cfg, "full")
+        assert [row[:2] for row in materialize_progress] == [(1, 2), (2, 2)]
+        assert materialize_progress[-1][2] == meta["n_transitions"]
         assert m1["corpus_sha256"] == m2["corpus_sha256"] == meta["corpus_sha256"]
         assert len(t1) == len(t2) == meta["n_transitions"]
         assert all(t.source_role == "demo" and t.expert_action_indices for t in t1)
@@ -561,6 +570,22 @@ def test_c4rf_il_corpus_is_immutable_shared_and_identity_checked() -> None:
         try:
             load_il_corpus(path, other, "full")
             assert False, "expected IntentCLIError on a config-hash mismatch"
+        except IntentCLIError:
+            pass
+        # Only the explicitly audited telemetry-only predecessor may reuse
+        # this raw corpus. An arbitrary stale producer remains fail-closed.
+        payload = torch.load(str(path), map_location="cpu", weights_only=False)
+        payload["code_hash"] = next(iter(COMPATIBLE_RAW_IL_CORPUS_CODE_HASHES))
+        compatible_hash = d / "compatible_hash.pth"
+        torch.save(payload, str(compatible_hash))
+        compatible, _ = load_il_corpus(compatible_hash, cfg, "full")
+        assert len(compatible) == meta["n_transitions"]
+        payload["code_hash"] = "0" * 64
+        bad_hash = d / "bad_hash.pth"
+        torch.save(payload, str(bad_hash))
+        try:
+            load_il_corpus(bad_hash, cfg, "full")
+            assert False, "expected IntentCLIError on an unknown producer hash"
         except IntentCLIError:
             pass
         try:

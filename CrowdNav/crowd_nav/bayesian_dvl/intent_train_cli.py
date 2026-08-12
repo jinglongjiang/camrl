@@ -80,6 +80,13 @@ class IntentCLIError(RuntimeError):
 
 DEFAULT_ENV_CONFIG = Path("crowd_nav/configs/env_bayesian_dvl.config")
 IL_CORPUS_SCHEMA = "bdvl_intent_raw_il_corpus_v2"  # A3: arm-INDEPENDENT raw episodes
+# The formal raw corpus was collected immediately before materialization
+# progress reporting was added.  Its producer differs only in CLI telemetry
+# and fresh-run directory handling, so it is safe to reuse.  No other stale
+# main-chain hash is accepted.
+COMPATIBLE_RAW_IL_CORPUS_CODE_HASHES = frozenset({
+    "129fc80c7897ed3a448652b08dbebc2e7cf5df39136db267fc9c1a306da8874c",
+})
 STANDARD_IL_SEED_BASE = 700_001      # standard-scenario IL seeds
 STANDARD_ONLINE_SEED_BASE = 800_001  # standard-scenario online seeds
 FINAL_EMA_NAME = "final_ema.pth"
@@ -387,7 +394,12 @@ def build_il_corpus(env_config_path: Path, cfg: IntentTrainingConfig, arm: str, 
     return meta
 
 
-def load_il_corpus(path: Path, cfg: IntentTrainingConfig, arm: str) -> tuple:
+def load_il_corpus(
+    path: Path,
+    cfg: IntentTrainingConfig,
+    arm: str,
+    progress_callback: Optional[Callable[[int, int, int], None]] = None,
+) -> tuple:
     """Load + HARD-VALIDATE an IL corpus. Fails closed on any identity
     mismatch rather than training an arm on another arm's demonstrations."""
     path = Path(path)
@@ -402,8 +414,11 @@ def load_il_corpus(path: Path, cfg: IntentTrainingConfig, arm: str) -> tuple:
             f"uses ONE arm-independent raw corpus -- recollect it")
     if payload["config_content_hash"] != cfg.content_hash():
         raise IntentCLIError("corpus was collected under a different training config")
-    if payload["code_hash"] != code_sha256():
-        raise IntentCLIError("corpus was collected by different main-chain code")
+    corpus_code_hash = payload["code_hash"]
+    current_code_hash = code_sha256()
+    if (corpus_code_hash != current_code_hash
+            and corpus_code_hash not in COMPATIBLE_RAW_IL_CORPUS_CODE_HASHES):
+        raise IntentCLIError("corpus was collected by incompatible main-chain code")
     meta = {k: v for k, v in payload.items() if k not in ("episodes", "episode_identities")}
     meta["corpus_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
     meta["path"] = str(path)
@@ -411,9 +426,12 @@ def load_il_corpus(path: Path, cfg: IntentTrainingConfig, arm: str) -> tuple:
     grid = ActionGridSpec.from_env_config(str(DEFAULT_ENV_CONFIG))
     action_table = np.asarray(grid.build_action_table(), dtype=np.float64)
     transitions = []
-    for raw in payload["episodes"]:
+    episodes = payload["episodes"]
+    for done, raw in enumerate(episodes, 1):
         transitions.extend(materialize_arm_transitions(
             raw, arm, action_table, horizon=cfg.future_horizon, n_samples=cfg.future_n_samples))
+        if progress_callback is not None:
+            progress_callback(done, len(episodes), len(transitions))
     return transitions, meta
 
 
@@ -895,7 +913,31 @@ def cmd_train(args, resume: bool = False) -> int:
         )
     else:
         append_durable_log(run_dir, f"IL-DATA REUSE source={corpus_file}")
-    demo_transitions, art.il_corpus_ref = load_il_corpus(corpus_file, cfg, arm)
+    append_durable_log(
+        run_dir,
+        f"IL-MATERIALIZE START arm={arm} episodes={args.il_episodes or cfg.il_episodes_total} "
+        f"source={corpus_file}",
+    )
+    materialize_started = time.monotonic()
+
+    def _report_il_materialize(done: int, total: int, n_transitions: int) -> None:
+        if done != 1 and done != total and done % 50 != 0:
+            return
+        elapsed = time.monotonic() - materialize_started
+        eta = elapsed * (total - done) / done
+        append_durable_log(
+            run_dir,
+            f"IL-MATERIALIZE[{done}/{total}] arm={arm} transitions={n_transitions} "
+            f"elapsed={elapsed / 60.0:.1f}m eta={eta / 60.0:.1f}m",
+        )
+
+    demo_transitions, art.il_corpus_ref = load_il_corpus(
+        corpus_file, cfg, arm, progress_callback=_report_il_materialize)
+    append_durable_log(
+        run_dir,
+        f"IL-MATERIALIZE COMPLETE arm={arm} episodes={art.il_corpus_ref['n_episodes']} "
+        f"transitions={len(demo_transitions)} elapsed={(time.monotonic() - materialize_started) / 60.0:.1f}m",
+    )
     art.buffer.add_demo(demo_transitions, art.reservoir_rng)
     print(f"IL corpus: {art.il_corpus_ref['n_episodes']} episodes -> {art.buffer.n_demo} demo "
           f"transitions in reservoir (capacity {cfg.demo_capacity}, "
