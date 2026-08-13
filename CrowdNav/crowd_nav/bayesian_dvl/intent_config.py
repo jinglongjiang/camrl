@@ -63,9 +63,6 @@ class IntentTrainingConfig:
     lambda_rank: float
     ranking_batch_size: int
     gradient_diagnostic_interval: int
-    rank_gradient_ratio_min: float
-    rank_gradient_ratio_max: float
-    gradient_ratio_sustained_updates: int
     # [iqn]
     iqn_train_quantiles: int
     iqn_eval_quantiles: int
@@ -89,6 +86,24 @@ class IntentTrainingConfig:
     # [seeds]
     training_seeds: Tuple[int, ...]
     validation_seeds: Tuple[int, ...]
+    # Order 2/3: gradient balance + health, config-driven (never class defaults)
+    lambda_init: float = 1.0
+    target_ratio: float = 0.25
+    ema_beta: float = 0.9
+    lambda_min: float = 1e-4
+    lambda_max: float = 128.0
+    lambda_max_change_factor: float = 2.0
+    balancer_epsilon: float = 1e-12
+    balancer_rank_floor: float = 1e-12
+    health_window: int = 20
+    health_ratio_min: float = 0.05
+    health_ratio_max: float = 0.75
+    health_ratio_violation_fraction: float = 0.60
+    health_clip_window: int = 500
+    health_clip_fraction: float = 0.80
+    health_saturation_fraction: float = 0.20
+    health_cosine_threshold: float = -0.5
+    health_cosine_fraction: float = 0.80
     # provenance
     source_path: str = ""
     source_sha256: str = ""
@@ -170,9 +185,6 @@ def load_intent_training_config(path: Path = DEFAULT_TRAINING_CONFIG) -> IntentT
         lambda_rank=gf("ranking", "lambda_rank"),
         ranking_batch_size=gi("ranking", "ranking_batch_size"),
         gradient_diagnostic_interval=gi("ranking", "gradient_diagnostic_interval"),
-        rank_gradient_ratio_min=gf("ranking", "rank_gradient_ratio_min"),
-        rank_gradient_ratio_max=gf("ranking", "rank_gradient_ratio_max"),
-        gradient_ratio_sustained_updates=gi("ranking", "gradient_ratio_sustained_updates"),
         iqn_train_quantiles=gi("iqn", "iqn_train_quantiles"),
         iqn_eval_quantiles=gi("iqn", "iqn_eval_quantiles"),
         future_horizon=gi("belief", "future_horizon"),
@@ -191,6 +203,23 @@ def load_intent_training_config(path: Path = DEFAULT_TRAINING_CONFIG) -> IntentT
         tensorboard_enabled=parser.getboolean("monitoring", "tensorboard_enabled"),
         training_seeds=_seed_tuple(g("seeds", "training_seeds"), "training_seeds"),
         validation_seeds=_seed_tuple(g("seeds", "validation_seeds"), "validation_seeds"),
+        lambda_init=gf("gradient_balance", "lambda_init"),
+        target_ratio=gf("gradient_balance", "target_ratio"),
+        ema_beta=gf("gradient_balance", "ema_beta"),
+        lambda_min=gf("gradient_balance", "lambda_min"),
+        lambda_max=gf("gradient_balance", "lambda_max"),
+        lambda_max_change_factor=gf("gradient_balance", "lambda_max_change_factor"),
+        balancer_epsilon=gf("gradient_balance", "balancer_epsilon"),
+        balancer_rank_floor=gf("gradient_balance", "balancer_rank_floor"),
+        health_window=gi("gradient_health", "health_window"),
+        health_ratio_min=gf("gradient_health", "health_ratio_min"),
+        health_ratio_max=gf("gradient_health", "health_ratio_max"),
+        health_ratio_violation_fraction=gf("gradient_health", "health_ratio_violation_fraction"),
+        health_clip_window=gi("gradient_health", "health_clip_window"),
+        health_clip_fraction=gf("gradient_health", "health_clip_fraction"),
+        health_saturation_fraction=gf("gradient_health", "health_saturation_fraction"),
+        health_cosine_threshold=gf("gradient_health", "health_cosine_threshold"),
+        health_cosine_fraction=gf("gradient_health", "health_cosine_fraction"),
         source_path=str(path),
         source_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
     )
@@ -200,14 +229,16 @@ def load_intent_training_config(path: Path = DEFAULT_TRAINING_CONFIG) -> IntentT
 
 def _validate(cfg: IntentTrainingConfig) -> None:
     # schema must match the CODE, not just be internally consistent
-    from crowd_nav.bayesian_dvl.intent_runtime_config import FEATURE_SCHEMA_V5, TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC
+    from crowd_nav.bayesian_dvl.intent_runtime_config import (
+        FEATURE_SCHEMA_V5, TRAINING_CONTRACT_V3_ADAPTIVE_GRADIENT_BALANCE,
+    )
     from crowd_nav.bayesian_dvl.intent_policy import CHECKPOINT_SCHEMA_V6
     if cfg.feature_schema != FEATURE_SCHEMA_V5:
         raise IntentConfigError(f"config feature_schema {cfg.feature_schema!r} != code's {FEATURE_SCHEMA_V5!r}")
-    if cfg.training_contract_schema != TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC:
+    if cfg.training_contract_schema != TRAINING_CONTRACT_V3_ADAPTIVE_GRADIENT_BALANCE:
         raise IntentConfigError(
             f"config training_contract_schema {cfg.training_contract_schema!r} != "
-            f"code's {TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC!r}")
+            f"code's {TRAINING_CONTRACT_V3_ADAPTIVE_GRADIENT_BALANCE!r}")
     if cfg.checkpoint_schema != CHECKPOINT_SCHEMA_V6:
         raise IntentConfigError(f"config checkpoint_schema {cfg.checkpoint_schema!r} != code's {CHECKPOINT_SCHEMA_V6!r}")
 
@@ -242,10 +273,27 @@ def _validate(cfg: IntentTrainingConfig) -> None:
     if cfg.ranking_batch_size > cfg.batch_size:
         raise IntentConfigError(
             f"ranking_batch_size {cfg.ranking_batch_size} cannot exceed batch_size {cfg.batch_size}")
-    if not (0 < cfg.rank_gradient_ratio_min < cfg.rank_gradient_ratio_max):
+    # Order 2/3 validation: the balancer and the health gate are now the
+    # production mechanism, so their parameters must be sane or fail closed.
+    if not (0 < cfg.lambda_min <= cfg.lambda_init <= cfg.lambda_max):
         raise IntentConfigError(
-            f"require 0 < rank_gradient_ratio_min < rank_gradient_ratio_max, got "
-            f"{cfg.rank_gradient_ratio_min}/{cfg.rank_gradient_ratio_max}")
+            f"require 0 < lambda_min <= lambda_init <= lambda_max, got "
+            f"{cfg.lambda_min}/{cfg.lambda_init}/{cfg.lambda_max}")
+    if cfg.target_ratio <= 0 or not (0 < cfg.ema_beta < 1) or cfg.lambda_max_change_factor <= 1:
+        raise IntentConfigError(
+            f"bad balancer params: target_ratio={cfg.target_ratio} ema_beta={cfg.ema_beta} "
+            f"max_change={cfg.lambda_max_change_factor}")
+    if not (0 < cfg.health_ratio_min < cfg.health_ratio_max):
+        raise IntentConfigError(
+            f"require 0 < health_ratio_min < health_ratio_max, got "
+            f"{cfg.health_ratio_min}/{cfg.health_ratio_max}")
+    if cfg.health_window <= 0 or cfg.health_clip_window <= 0:
+        raise IntentConfigError("health windows must be positive")
+    for name in ("health_ratio_violation_fraction", "health_clip_fraction",
+                 "health_saturation_fraction", "health_cosine_fraction"):
+        v = getattr(cfg, name)
+        if not (0 < v <= 1):
+            raise IntentConfigError(f"{name} must be in (0,1], got {v}")
     if not 0.0 < cfg.gamma <= 1.0:
         raise IntentConfigError(f"gamma must be in (0,1], got {cfg.gamma}")
     if not 0.0 < cfg.ema_decay < 1.0:
@@ -270,7 +318,10 @@ def _validate(cfg: IntentTrainingConfig) -> None:
         JUNCTION_CROWD_HELDOUT_SEEDS, JUNCTION_CROWD_TRAIN_SEEDS, JUNCTION_CROWD_VALIDATION_SEEDS,
         JUNCTION_HELDOUT_SEEDS, JUNCTION_TRAIN_SEEDS,
     )
-    from crowd_nav.bayesian_dvl.intent_train import FORMAL_EVAL_HELDOUT_SEEDS
+    from crowd_nav.bayesian_dvl.intent_train import (
+        FORMAL_EVAL_HELDOUT_SEEDS, STANDARD_DEV_DIAGNOSTIC_SEEDS,
+        STANDARD_SELECTION_DEV_SEEDS, JUNCTION_SELECTION_DEV_SEEDS,
+    )
     blocks = {
         "training_seeds": set(cfg.training_seeds),
         "validation_seeds": set(cfg.validation_seeds),
@@ -280,6 +331,9 @@ def _validate(cfg: IntentTrainingConfig) -> None:
         "crowd_heldout": set(JUNCTION_CROWD_HELDOUT_SEEDS),
         "crowd_validation": set(JUNCTION_CROWD_VALIDATION_SEEDS),
         "formal_eval": set(FORMAL_EVAL_HELDOUT_SEEDS),
+        "standard_dev_diagnostic": set(STANDARD_DEV_DIAGNOSTIC_SEEDS),
+        "standard_selection_dev": set(STANDARD_SELECTION_DEV_SEEDS),
+        "junction_selection_dev": set(JUNCTION_SELECTION_DEV_SEEDS),
     }
     names = sorted(blocks)
     for i, a in enumerate(names):

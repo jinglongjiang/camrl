@@ -33,6 +33,7 @@ import torch
 from crowd_nav.bayesian_dvl import normalization as norm
 from crowd_nav.bayesian_dvl.intent_runtime_config import (
     FEATURE_SCHEMA_V5, NORMALIZATION_CONSTANTS, FROZEN_VALUES, TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC,
+    TRAINING_CONTRACT_V3_ADAPTIVE_GRADIENT_BALANCE,
 )
 from crowd_nav.bayesian_dvl.contracts import HumanObservation, RobotObservation
 from crowd_nav.bayesian_dvl.geometry_features import _robot_feature_vector, compute_action_features_array
@@ -297,7 +298,7 @@ def save_intent_checkpoint(
     payload = {
         "checkpoint_schema": CHECKPOINT_SCHEMA_V6,
         "feature_schema": FEATURE_SCHEMA_V5,
-        "training_contract_schema": TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC,
+        "training_contract_schema": TRAINING_CONTRACT_V3_ADAPTIVE_GRADIENT_BALANCE,
         "model_state_dict": model.state_dict(),
         "action_grid_hash": action_grid_hash,
         "scene_registry_sha256": scene_registry_sha256,
@@ -332,10 +333,16 @@ def load_intent_checkpoint(
         raise IntentPolicyError(f"checkpoint schema {checkpoint['checkpoint_schema']!r} != {CHECKPOINT_SCHEMA_V6!r}, fail closed, no compat loading")
     if checkpoint["feature_schema"] != FEATURE_SCHEMA_V5:
         raise IntentPolicyError(f"feature schema {checkpoint['feature_schema']!r} != {FEATURE_SCHEMA_V5!r}, fail closed")
-    if checkpoint["training_contract_schema"] != TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC:
+    if checkpoint["training_contract_schema"] == TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC:
+        raise IntentPolicyError(
+            f"checkpoint {path} was trained under the RETIRED {TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC!r} "
+            f"contract (fixed lambda_rank=380). Its optimizer state, EMA and replay were produced under a "
+            f"measurably unbalanced objective -- weighted ranking gradient 80-350x the MC gradient. Refusing: "
+            f"retrain under {TRAINING_CONTRACT_V3_ADAPTIVE_GRADIENT_BALANCE!r}, do not resume.")
+    if checkpoint["training_contract_schema"] != TRAINING_CONTRACT_V3_ADAPTIVE_GRADIENT_BALANCE:
         raise IntentPolicyError(
             f"training contract {checkpoint['training_contract_schema']!r} != "
-            f"{TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC!r}, fail closed -- the loss semantics these weights were "
+            f"{TRAINING_CONTRACT_V3_ADAPTIVE_GRADIENT_BALANCE!r}, fail closed -- the loss semantics these weights were "
             f"fit under differ from what this code implements, and no shape check can detect that"
         )
     if expected_action_grid_hash is not None and checkpoint["action_grid_hash"] != expected_action_grid_hash:

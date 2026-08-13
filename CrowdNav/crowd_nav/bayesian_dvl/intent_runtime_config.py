@@ -135,6 +135,21 @@ FEATURE_SCHEMA_V5 = "bdvl_z_state_goal_intent_v5"
 #                  future only, spread == 0
 TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC = "bdvl_intent_training_contract_demo_rank_online_mc_v2"
 
+# Order 4: V3 is the SAME loss decomposition (demo -> L_MC + lambda*L_rank,
+# online -> L_MC only), but lambda is no longer a frozen constant: it is set
+# by AdaptiveRankBalancer from an EMA of past per-term gradient norms.
+#
+# This is an OBJECTIVE change, so it gets its own contract even though the
+# network shape is unchanged (feature schema V5 and checkpoint schema V6
+# both still hold -- they describe tensor shapes, not what was optimised).
+# A V2 checkpoint must be refused for resume: its optimizer state, EMA and
+# replay were all produced under lambda=380, which measurably drove the
+# weighted ranking gradient to 80-350x the MC gradient. Continuing from it
+# under V3 would produce a run that is neither, and could not be described
+# in a paper.
+TRAINING_CONTRACT_V3_ADAPTIVE_GRADIENT_BALANCE = (
+    "bdvl_intent_training_contract_adaptive_gradient_balance_v3")
+
 
 FROZEN_VALUES: Dict[str, object] = {
     "dt": 0.25,

@@ -407,3 +407,66 @@ def test_c4r_final_ema_records_its_training_arm() -> None:
     from crowd_nav.bayesian_dvl import intent_train_cli
     src = inspect.getsource(intent_train_cli._save_final_ema)
     assert '"training_arm"' in src, "final_ema must record its training arm"
+
+
+def test_order1r_clearance_uses_the_simulator_swept_dmin() -> None:
+    """Order 1R: the reported clearance must be CrowdSim's swept ``dmin``
+    for the interval the action just covered.
+
+    The bug this pins: clearance used to be a snapshot taken BEFORE the
+    action (robot vs pre-step human positions), and the loop ``break``ed on
+    termination, so the interval in which the collision actually happened
+    was never measured. CrowdSim declares a collision exactly when its
+    swept dmin goes negative, so the old metric could report "no negative
+    clearance" for an episode that ended in a collision -- which is what
+    made every earlier "zero negative clearance" reading meaningless.
+
+    Constructed so the two disagree in the direction that matters: the
+    humans are placed FAR away (pre-action snapshot would be large and
+    positive) while the simulator reports a negative swept dmin.
+    """
+    from crowd_nav.bayesian_dvl.intent_evaluate import _run_one_episode, IntentEvaluateError
+    from crowd_nav.bayesian_dvl.intent_train import _ScenarioEpisode
+    from crowd_nav.bayesian_dvl.intent_policy import HUMAN_FEATURE_DIM_V5
+
+    torch.manual_seed(0)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model.eval()
+    action_table = np.asarray(
+        ActionGridSpec.from_env_config(str(_env_config_path())).build_action_table(), dtype=np.float64)
+
+    def run(patch_step):
+        ep = _ScenarioEpisode(_env_config_path(), "standard", 700_001)
+        env = ep.env
+        # push every human far away so a PRE-ACTION snapshot is large
+        for h in env.humans:
+            h.px, h.py = 50.0, 50.0
+        real_step = env.step
+
+        def stepped(action):
+            obs, reward, term, trunc, info = real_step(action)
+            return patch_step(obs, reward, term, trunc, dict(info))
+
+        env.step = stepped
+        return _run_one_episode(env, ep.robot, ep.scene, model, action_table, "full", 0, n_samples=6)
+
+    # a negative swept dmin must surface as a negative min_clearance, even
+    # though the pre-action snapshot was ~70 m
+    m = run(lambda o, r, te, tr, info: (o, r, True, tr, {**info, "event": "collision", "dmin": -0.037}))
+    assert m.outcome == "collision"
+    assert m.min_clearance < 0, f"swept penetration must be reported, got {m.min_clearance}"
+    assert abs(m.min_clearance - (-0.037)) < 1e-9, m.min_clearance
+    # and it must count as a discomfort step
+    assert m.discomfort_frequency > 0
+
+    # a positive swept dmin is reported as-is, NOT as the far-away snapshot
+    m2 = run(lambda o, r, te, tr, info: (o, r, True, tr, {**info, "event": "reach_goal", "dmin": 0.11}))
+    assert m2.outcome == "success"
+    assert abs(m2.min_clearance - 0.11) < 1e-9, m2.min_clearance
+
+    # missing dmin must FAIL CLOSED -- a silent fallback would reinstate the bug
+    try:
+        run(lambda o, r, te, tr, info: (o, r, True, tr, {"event": "reach_goal"}))
+        assert False, "expected IntentEvaluateError when env.step() returns no dmin"
+    except IntentEvaluateError:
+        pass

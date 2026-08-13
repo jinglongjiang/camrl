@@ -60,7 +60,7 @@ class IntentEvaluateError(ValueError):
 
 
 # The three result KINDS must never share a directory (plan C3.3).
-RESULT_KINDS = ("paper_main", "heldout_junction", "ablation")
+RESULT_KINDS = ("paper_main", "heldout_junction", "ablation", "dev_standard")
 
 
 def initial_state_hash(robot, humans) -> str:
@@ -138,14 +138,32 @@ def _run_one_episode(
         speeds.append(float(np.hypot(vx, vy)))
         headings.append(float(np.arctan2(vy, vx)))
 
-        clearance = min(
-            (float(np.hypot(robot_obs.px - h.px, robot_obs.py - h.py)) - robot_obs.radius - h.radius)
-            for h in humans) if humans else float("inf")
+        _, _reward, terminated, truncated, info = env.step(ActionXY(float(vx), float(vy)))
+
+        # Order 1R: clearance MUST come from the simulator's SWEPT separation
+        # for the interval this action just covered, not from a snapshot
+        # taken before the action.
+        #
+        # The previous version measured `robot_obs` against the humans'
+        # pre-step positions and then `break`ed on termination, so the
+        # interval in which a collision actually happened was never
+        # measured. CrowdSim decides `collision` precisely when its swept
+        # `dmin` (point_to_segment_dist over the relative motion, minus both
+        # radii) goes negative -- so the old metric could not report a
+        # negative clearance even for an episode that ended in a collision,
+        # and every "zero negative clearance" reading was an artifact.
+        #
+        # Fails closed: silently falling back to the pre-action snapshot
+        # would reintroduce exactly the bug this replaces.
+        if "dmin" not in info:
+            raise IntentEvaluateError(
+                "env.step() returned no 'dmin'; the swept clearance is required and there is no safe "
+                f"fallback (info keys: {sorted(info)})")
+        clearance = float(info["dmin"])
         min_clearance = min(min_clearance, clearance)
         if clearance < discomfort_dist:
             discomfort_steps += 1
 
-        _, _reward, terminated, truncated, info = env.step(ActionXY(float(vx), float(vy)))
         cur = np.array([env.robot.px, env.robot.py], dtype=np.float64)
         path_length += float(np.linalg.norm(cur - prev))
         prev = cur

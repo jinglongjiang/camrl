@@ -18,6 +18,7 @@ def _result(outcome: str, episode_seed: int = 1):
         path_length=2.9,
         path_ratio=0.97,
         min_clearance=0.12,
+        discomfort_frequency=0.25,
         scenario="standard",
         episode_seed=episode_seed,
         epsilon=0.2,
@@ -61,7 +62,7 @@ def test_monitor_resume_truncates_rows_ahead_of_checkpoint_without_duplicates() 
         first.record_validation(DevelopmentSummary(
             online_episode=2, n=2, success_rate=0.5, collision_rate=0.5, timeout_rate=0.0,
             mean_return=0.0, mean_navigation_time=3.0, mean_path_ratio=1.0,
-            mean_min_clearance=0.1, by_scenario={},
+            mean_min_clearance=0.1, mean_discomfort_frequency=0.25, by_scenario={},
         ))
         first.close()
 

@@ -1054,7 +1054,22 @@ def test_c0_checkpoint_schema_v6_rejects_retired_v5_and_wrong_training_contract(
         save_intent_checkpoint(model, path, action_grid_hash="h", scene_registry_sha256="s")
         raw = torch.load(path, weights_only=False)
         assert raw["checkpoint_schema"] == CHECKPOINT_SCHEMA_V6
-        assert raw["training_contract_schema"] == TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC
+        assert raw["training_contract_schema"] == TRAINING_CONTRACT_V3_ADAPTIVE_GRADIENT_BALANCE
+
+        # Order 4: a V2 checkpoint (fixed lambda_rank=380) must be refused
+        # BY NAME, not with a generic schema message. Its optimizer state,
+        # EMA and replay were produced under a measurably unbalanced
+        # objective, so resuming from it would give a run that is neither
+        # contract and cannot be described in a paper.
+        v2 = dict(raw)
+        v2["training_contract_schema"] = TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC
+        v2_path = str(Path(d) / "v2.pth")
+        torch.save(v2, v2_path)
+        try:
+            load_intent_checkpoint(v2_path, DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5))
+            assert False, "expected IntentPolicyError: retired V2 training contract"
+        except IntentPolicyError as exc:
+            assert "RETIRED" in str(exc) and "380" in str(exc), str(exc)
 
         model2 = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
         load_intent_checkpoint(path, model2, expected_action_grid_hash="h", expected_scene_registry_sha256="s")
@@ -1333,3 +1348,325 @@ def test_c1_crowd_geometry_forces_conflict_while_belief_is_ambiguous() -> None:
         f"got {n_at_risk}/{len(seeds)} (clearances={[round(c, 3) for c in clearances]})")
     assert n_overlap >= len(seeds) * 3 // 4, (
         f"conflict must overlap the still-ambiguous window in most episodes, got {n_overlap}/{len(seeds)}")
+
+
+def test_order1r_online_clearance_is_swept_dmin_and_telemetry_only() -> None:
+    """Order 1R (training side): online/development clearance must be the
+    simulator's SWEPT ``dmin`` -- the same quantity intent_evaluate.py uses.
+
+    Replaces the post-step END-POINT centre distance, which missed the
+    closest approach inside the interval and disagreed with the evaluator's
+    definition, so "online clearance" and "eval clearance" were never the
+    same number.
+
+    Also pins the boundary: this is TELEMETRY ONLY. Outcome, reward, MC
+    returns and the replay transitions must be bit-identical with and
+    without the dmin instrumentation.
+    """
+    from crowd_nav.bayesian_dvl.intent_train import collect_online_episode, IntentTrainError
+    from crowd_nav.bayesian_dvl.intent_policy import HUMAN_FEATURE_DIM_V5
+
+    env_config = _env_config_path()
+    action_table = np.asarray(
+        ActionGridSpec.from_env_config(str(env_config)).build_action_table(), dtype=np.float64)
+
+    def fresh_model():
+        torch.manual_seed(0)
+        m = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+        m.eval()
+        return m
+
+    def run(dmin_seq=None, drop_dmin=False, nan_dmin=False):
+        """Patch ONLY info['dmin']; the simulator itself is untouched."""
+        import crowd_nav.bayesian_dvl.intent_train as IT
+        real_ep = IT._ScenarioEpisode
+        box = {}
+
+        class Patched(real_ep):
+            def __init__(self, *a, **kw):
+                super().__init__(*a, **kw)
+                real_step = self.env.step
+                box["i"] = 0
+
+                def stepped(action):
+                    obs, reward, term, trunc, info = real_step(action)
+                    info = dict(info)
+                    if drop_dmin:
+                        info.pop("dmin", None)
+                    elif nan_dmin:
+                        info["dmin"] = float("nan")
+                    elif dmin_seq is not None:
+                        info["dmin"] = float(dmin_seq[min(box["i"], len(dmin_seq) - 1)])
+                    box["i"] += 1
+                    return obs, reward, term, trunc, info
+
+                self.env.step = stepped
+
+        IT._ScenarioEpisode = Patched
+        try:
+            return collect_online_episode(env_config, fresh_model(), action_table, "standard", 800_001,
+                                          epsilon=0.0, explore_rng=np.random.default_rng(0), gamma=0.99)
+        finally:
+            IT._ScenarioEpisode = real_ep
+
+    # --- a negative swept dmin must be recorded, and must drive discomfort
+    seq = [0.9, 0.5, -0.04] + [0.9] * 200
+    r = run(dmin_seq=seq)
+    assert r.min_clearance <= -0.04 + 1e-9, f"swept penetration must surface, got {r.min_clearance}"
+    assert r.discomfort_frequency > 0.0
+
+    # --- multi-step: the minimum and the discomfort COUNT must both be right
+    seq2 = [0.9, 0.30, 0.05, 0.42, 0.11] + [0.9] * 200
+    r2 = run(dmin_seq=seq2)
+    n = r2.steps
+    expected_min = min(seq2[:n])
+    assert abs(r2.min_clearance - expected_min) < 1e-9, (r2.min_clearance, expected_min)
+    below = sum(1 for x in seq2[:n] if x < 0.2)
+    assert abs(r2.discomfort_frequency - below / n) < 1e-9, (r2.discomfort_frequency, below, n)
+
+    # --- fail closed
+    for kwargs in ({"drop_dmin": True}, {"nan_dmin": True}):
+        try:
+            run(**kwargs)
+            assert False, f"expected IntentTrainError for {kwargs}"
+        except IntentTrainError:
+            pass
+
+    # --- TELEMETRY ONLY: identical dmin patches must not move anything else
+    a = run(dmin_seq=[0.9] * 250)
+    b = run(dmin_seq=[0.01] * 250)   # wildly different clearance telemetry
+    assert a.outcome == b.outcome
+    assert a.steps == b.steps
+    assert abs(a.episode_return - b.episode_return) < 1e-12
+    assert len(a.transitions) == len(b.transitions)
+    for ta, tb in zip(a.transitions, b.transitions):
+        assert ta.action_index == tb.action_index
+        assert ta.reward == tb.reward
+        assert ta.mc_return == tb.mc_return
+        assert ta.source_role == tb.source_role
+        assert np.array_equal(ta.human_features, tb.human_features)
+    # ...while the telemetry itself DID change
+    assert a.min_clearance != b.min_clearance
+
+
+def test_order2_adaptive_balancer_matches_hand_computation_and_is_lagged() -> None:
+    """Order 2: lambda must follow the frozen formula EXACTLY, and must be
+    LAGGED so the health ratio is not tautological."""
+    from crowd_nav.bayesian_dvl.intent_train import AdaptiveRankBalancer, IntentTrainError
+
+    b = AdaptiveRankBalancer()
+    assert (b.lambda_value, b.target_ratio, b.ema_beta) == (1.0, 0.25, 0.9)
+    assert (b.lambda_min, b.lambda_max, b.max_change_factor) == (1e-4, 128.0, 2.0)
+
+    # --- hand-computed EMA + target, with the x2 rate limit applied
+    mc_seq = [4.0, 6.0, 5.0, 5.0, 5.0]
+    rk_seq = [0.02, 0.03, 0.02, 0.02, 0.02]
+    ema_mc = ema_rk = None
+    lam = 1.0
+    for mc, rk in zip(mc_seq, rk_seq):
+        ema_mc = mc if ema_mc is None else 0.9 * ema_mc + 0.1 * mc
+        ema_rk = rk if ema_rk is None else 0.9 * ema_rk + 0.1 * rk
+        want = 0.25 * ema_mc / (ema_rk + 1e-12)
+        want = min(max(want, lam / 2.0), lam * 2.0)
+        lam = min(max(want, 1e-4), 128.0)
+        got = b.observe(mc, rk)
+        assert abs(got - lam) < 1e-9, (got, lam)
+
+    # --- LAGGED: the ratio a step produces uses the lambda decided BEFORE
+    # it. If lambda were computed from the same batch, r_t would be the
+    # target identically and the gate could only ever fail on saturation.
+    b2 = AdaptiveRankBalancer()
+    lam_used = b2.lambda_value                      # decided before the step
+    mc, rk = 4.0, 0.02
+    r_t = lam_used * rk / max(mc, 1e-12)            # what the step actually produced
+    b2.observe(mc, rk)                              # only NOW does lambda move
+    assert abs(r_t - 1.0 * 0.02 / 4.0) < 1e-12
+    assert r_t != b2.target_ratio, "a lagged ratio must not equal the target by construction"
+    assert b2.lambda_value != lam_used
+
+    # --- rate limit: never more than x2 or /2 per observation
+    b3 = AdaptiveRankBalancer()
+    prev = b3.lambda_value
+    for _ in range(12):
+        cur = b3.observe(1e3, 1e-6)                 # demands an enormous lambda
+        assert cur <= prev * 2.0 + 1e-12
+        prev = cur
+    assert b3.lambda_value <= 128.0
+
+    # --- vanishing MC gradient must pin lambda to the FLOOR, never let the
+    # auxiliary term take over the update
+    b4 = AdaptiveRankBalancer()
+    for _ in range(40):
+        b4.observe(0.0, 0.5)
+    assert b4.lambda_value == b4.lambda_min, b4.lambda_value
+    assert b4.saturated
+
+    # --- bounds hold from the other side too
+    b5 = AdaptiveRankBalancer()
+    for _ in range(40):
+        b5.observe(1e6, 1e-9)
+    assert b5.lambda_value == 128.0
+
+    # --- fail closed on non-finite input
+    for bad in (float("nan"), float("inf")):
+        try:
+            AdaptiveRankBalancer().observe(bad, 1.0)
+            assert False, f"expected IntentTrainError for {bad}"
+        except IntentTrainError:
+            pass
+
+    # --- state round-trips exactly, and config drift is rejected
+    b6 = AdaptiveRankBalancer()
+    for mc, rk in zip(mc_seq, rk_seq):
+        b6.observe(mc, rk)
+    clone = AdaptiveRankBalancer()
+    clone.load_state_dict(json.loads(json.dumps(b6.state_dict())))
+    assert (clone.lambda_value, clone.ema_mc, clone.ema_rank) == (b6.lambda_value, b6.ema_mc, b6.ema_rank)
+    assert clone.observe(5.0, 0.02) == b6.observe(5.0, 0.02)
+    drifted = b6.state_dict(); drifted["target_ratio"] = 1.0
+    try:
+        AdaptiveRankBalancer().load_state_dict(drifted)
+        assert False, "expected IntentTrainError on balancer config drift"
+    except IntentTrainError:
+        pass
+
+
+def test_order3_sliding_window_gate_catches_what_the_consecutive_rule_missed() -> None:
+    """Order 3: the replaced rule needed 128 CONSECUTIVE out-of-range
+    diagnostics and reset on any single good one. The real run was 89% out
+    of range with a longest run of 32 -- and never fired."""
+    from crowd_nav.bayesian_dvl.intent_train import GradientHealthMonitor, GradientRatioMonitor
+
+    # the exact pattern that defeated the old rule: intermittent violations
+    # with a good point sprinkled in
+    pattern = ([148.0] * 9 + [0.3]) * 30          # 90% out of range, never 128 in a row
+
+    old = GradientRatioMonitor(0.05, 50.0, 128)
+    assert all(old.observe(r) is None for r in pattern), "old rule provably cannot fire on this"
+    assert old.n_out_of_range / old.n_measured >= 0.85
+
+    new = GradientHealthMonitor()
+    fired = None
+    for i, r in enumerate(pattern):
+        fired = new.observe_diagnostic(r, lambda_saturated=False, cosine=0.2)
+        if fired:
+            break
+    assert fired is not None, "sliding-window gate must catch intermittent violation"
+    assert "exceeded" in fired and i < 40, (fired, i)
+
+    # a HEALTHY stream must not fire
+    ok = GradientHealthMonitor()
+    assert all(ok.observe_diagnostic(0.25, False, 0.3) is None for _ in range(200))
+
+    # lambda saturation gate
+    sat = GradientHealthMonitor()
+    msg = None
+    for _ in range(60):
+        msg = sat.observe_diagnostic(0.25, lambda_saturated=True, cosine=0.3)
+        if msg:
+            break
+    assert msg is not None and "lambda" in msg
+
+    # objective-conflict gate
+    conf = GradientHealthMonitor()
+    msg = None
+    for _ in range(60):
+        msg = conf.observe_diagnostic(0.25, False, cosine=-0.9)
+        if msg:
+            break
+    assert msg is not None and "OBJECTIVE_CONFLICT" in msg
+
+    # clip-rate gate: measured on EVERY update, not on diagnostics
+    clip = GradientHealthMonitor()
+    msg = None
+    for i in range(1200):
+        msg = clip.observe_update(clipped=(i % 10) != 0)   # 90% clipped
+        if msg:
+            break
+    assert msg is not None and "clipping" in msg
+    # a healthy clip rate must not fire
+    fine = GradientHealthMonitor()
+    assert all(fine.observe_update(clipped=(i % 10) == 0) is None for i in range(1200))
+
+    # non-finite ratio is rejected outright
+    assert GradientHealthMonitor().observe_diagnostic(float("nan"), False, 0.0) is not None
+
+    # windows survive resume EXACTLY -- a fresh window would silently reset
+    # the very evidence the gate accumulates
+    m = GradientHealthMonitor()
+    for i in range(15):
+        m.observe_diagnostic(148.0, False, 0.1)
+        m.observe_update(True)
+    clone = GradientHealthMonitor()
+    clone.load_state_dict(json.loads(json.dumps(m.state_dict())))
+    assert clone.ratios == m.ratios and clone.clips == m.clips
+    assert clone.cosines == m.cosines and clone.saturations == m.saturations
+    assert (clone.n_measured, clone.n_out_of_range) == (m.n_measured, m.n_out_of_range)
+    # and continues to the SAME verdict
+    assert clone.observe_diagnostic(148.0, False, 0.1) == m.observe_diagnostic(148.0, False, 0.1)
+
+
+def test_order2_gradient_cosine_is_correct_on_known_geometry() -> None:
+    from crowd_nav.bayesian_dvl.intent_train import _grad_cosine
+    a = [torch.tensor([1.0, 0.0]), torch.tensor([0.0, 2.0])]
+    same = [torch.tensor([2.0, 0.0]), torch.tensor([0.0, 4.0])]
+    opp = [torch.tensor([-1.0, 0.0]), torch.tensor([0.0, -2.0])]
+    orth = [torch.tensor([0.0, 1.0]), torch.tensor([0.0, 0.0])]
+    assert abs(_grad_cosine(a, same) - 1.0) < 1e-6
+    assert abs(_grad_cosine(a, opp) + 1.0) < 1e-6
+    assert abs(_grad_cosine(a, orth) - 0.0) < 1e-6
+    assert _grad_cosine(a, [None, None]) == 0.0
+
+
+def test_order5_checkpoint_selection_is_pre_registered_and_can_fail_a_run() -> None:
+    """Order 5: the choice must be made by a rule fixed before scoring."""
+    from crowd_nav.bayesian_dvl.intent_train import (
+        select_checkpoint, CHECKPOINT_SELECTION_MIN_SR, IntentTrainError)
+
+    def cand(name, order, s_sr, j_sr, s_cr=0.0, j_cr=0.0, disc=0.1, nav=5.0):
+        return {"name": name, "order": order, "scenarios": {
+            "standard": {"success_rate": s_sr, "collision_rate": s_cr,
+                         "discomfort_frequency": disc, "navigation_time": nav},
+            "junction_crowd": {"success_rate": j_sr, "collision_rate": j_cr,
+                               "discomfort_frequency": disc, "navigation_time": nav}}}
+
+    assert CHECKPOINT_SELECTION_MIN_SR == 0.90
+
+    # The lambda=380 run's REAL measured numbers (n=100 paired, greedy).
+    # "Always take final" would take ep10000, which is that run's WORST on
+    # standard (0.83 vs 0.99, McNemar p=0.0001) and fails the bar outright.
+    old_run = [cand("ep2500", 1, 0.99, 0.89, 0.01, 0.10),
+               cand("ep5000", 2, 0.97, 1.00, 0.03, 0.00),
+               cand("ep7500", 3, 0.88, 1.00, 0.12, 0.00),
+               cand("ep10000", 4, 0.83, 0.98, 0.17, 0.02)]
+    assert select_checkpoint(old_run)["name"] == "ep5000"
+
+    # rule 1: the bar is a BAR, not a preference -- if nothing clears it the
+    # run failed, and must not silently degrade to the least-bad weights
+    try:
+        select_checkpoint([cand("a", 1, 0.50, 0.99), cand("b", 2, 0.99, 0.50)])
+        assert False, "expected IntentTrainError when no candidate qualifies"
+    except IntentTrainError as exc:
+        assert "RUN FAILED" in str(exc)
+
+    # rule 2 beats rule 3: the worst scenario dominates the macro average
+    assert select_checkpoint([cand("lopsided", 1, 1.00, 0.90),
+                              cand("balanced", 2, 0.95, 0.95)])["name"] == "balanced"
+    # rule 4: same SRs -> lower worst-case collision rate wins
+    assert select_checkpoint([cand("risky", 1, 0.95, 0.95, 0.05, 0.05),
+                              cand("safe", 2, 0.95, 0.95, 0.01, 0.01)])["name"] == "safe"
+    # rule 5: then discomfort, then navigation time
+    assert select_checkpoint([cand("crowdy", 1, 0.95, 0.95, disc=0.30),
+                              cand("roomy", 2, 0.95, 0.95, disc=0.05)])["name"] == "roomy"
+    assert select_checkpoint([cand("slow", 1, 0.95, 0.95, nav=9.0),
+                              cand("quick", 2, 0.95, 0.95, nav=4.0)])["name"] == "quick"
+    # rule 6: exact ties go to the LATER checkpoint
+    assert select_checkpoint([cand("early", 1, 0.95, 0.95),
+                              cand("late", 2, 0.95, 0.95)])["name"] == "late"
+    # a candidate at exactly the bar is eligible
+    assert select_checkpoint([cand("exactly", 1, 0.90, 0.90)])["name"] == "exactly"
+    try:
+        select_checkpoint([])
+        assert False, "expected IntentTrainError on an empty candidate list"
+    except IntentTrainError:
+        pass

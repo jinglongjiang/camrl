@@ -81,7 +81,19 @@ def test_c2_config_validation_fails_closed() -> None:
             ("zero batch size", lambda c: c.set("optim", "batch_size", "0")),
             ("demo_sample_ratio out of range", lambda c: c.set("optim", "demo_sample_ratio", "1.5")),
             ("ranking_batch_size exceeds batch", lambda c: c.set("ranking", "ranking_batch_size", "99999")),
-            ("inverted gradient ratio gate", lambda c: c.set("ranking", "rank_gradient_ratio_min", "999")),
+            # Order 2/3: the retired [ranking] gate is replaced by the
+            # balancer + sliding-window health gate, which must fail closed
+            # on every one of their parameters.
+            ("inverted health ratio band", lambda c: c.set("gradient_health", "health_ratio_min", "999")),
+            ("lambda_init outside bounds", lambda c: c.set("gradient_balance", "lambda_init", "1e9")),
+            ("non-positive target_ratio", lambda c: c.set("gradient_balance", "target_ratio", "0")),
+            ("ema_beta out of range", lambda c: c.set("gradient_balance", "ema_beta", "1.0")),
+            ("max_change_factor <= 1", lambda c: c.set("gradient_balance", "lambda_max_change_factor", "1.0")),
+            ("zero health window", lambda c: c.set("gradient_health", "health_window", "0")),
+            ("zero clip window", lambda c: c.set("gradient_health", "health_clip_window", "0")),
+            ("clip fraction out of range", lambda c: c.set("gradient_health", "health_clip_fraction", "1.5")),
+            ("saturation fraction out of range",
+             lambda c: c.set("gradient_health", "health_saturation_fraction", "0")),
             ("zero diagnostic interval", lambda c: c.set("ranking", "gradient_diagnostic_interval", "0")),
             ("zero plot interval", lambda c: c.set("monitoring", "plot_interval_episodes", "0")),
             ("bad rolling window", lambda c: c.set("monitoring", "rolling_windows", "25, 0")),
@@ -984,3 +996,95 @@ def test_a5_preflight_refuses_when_space_is_insufficient() -> None:
     assert r.returncode != 0 and "insufficient disk" in r.stderr
     r_ok = _cli("preflight", "--concurrent-runs", "1", "--plan-runs", "15")
     assert "sufficient" in r_ok.stdout, "15 SEQUENTIAL runs must not be blocked by the plan total"
+
+
+def test_order1_standard_dev_diagnostic_seeds_are_frozen_and_dev_only() -> None:
+    # Order 1: the `standard` scenario was the lambda=380 run's only blind
+    # spot -- development validation drew 10 standard episodes per
+    # checkpoint, and every large-n `standard` number came from ONLINE
+    # episodes, which carry epsilon-greedy exploration and therefore say
+    # nothing about the greedy policy. This block exists to close that gap.
+    from crowd_nav.bayesian_dvl.intent_train import STANDARD_DEV_DIAGNOSTIC_SEEDS
+    from crowd_nav.bayesian_dvl.intent_train_cli import seed_inventory
+    from crowd_nav.bayesian_dvl.intent_evaluate import RESULT_KINDS
+
+    assert len(STANDARD_DEV_DIAGNOSTIC_SEEDS) == 100
+    assert (min(STANDARD_DEV_DIAGNOSTIC_SEEDS), max(STANDARD_DEV_DIAGNOSTIC_SEEDS)) == (97401, 97500)
+
+    # declared in the ONE inventory artifact, and provably disjoint there
+    cfg = load_intent_training_config(DEFAULT_TRAINING_CONFIG)
+    inv = seed_inventory(cfg)
+    assert "standard_dev_diagnostic" in inv["blocks"]
+    assert inv["blocks"]["standard_dev_diagnostic"]["n"] == 100
+    assert inv["ok"], inv["overlaps"]
+
+    # disjoint from every other enumerated block -- checked directly, not
+    # only via the inventory's own verdict
+    dev = set(STANDARD_DEV_DIAGNOSTIC_SEEDS)
+    for name, other in (("formal_eval", FORMAL_EVAL_HELDOUT_SEEDS),
+                        ("crowd_heldout", JUNCTION_CROWD_HELDOUT_SEEDS),
+                        ("training", cfg.training_seeds),
+                        ("validation", cfg.validation_seeds)):
+        assert not (dev & set(other)), f"standard dev seeds collide with {name}"
+
+    # DEVELOPMENT ONLY: training must refuse them, exactly as it refuses a
+    # formal seed. Without this a later run could quietly train on the very
+    # seeds used to diagnose it.
+    for seed in (97401, 97450, 97500):
+        try:
+            _assert_not_formal_seed(seed)
+            assert False, f"training must reject dev diagnostic seed {seed}"
+        except IntentCLIError:
+            pass
+    # and an unclaimed seed either side is still allowed (97501+ now belongs
+    # to the selection-dev blocks, so it is deliberately NOT the example)
+    _assert_not_formal_seed(97400)
+    _assert_not_formal_seed(97800)
+
+    # the evaluator has a distinct result kind, so a dev diagnosis can never
+    # be written into (or mistaken for) a paper_main / held-out artifact
+    assert "dev_standard" in RESULT_KINDS
+    assert "dev_standard" not in ("paper_main", "heldout_junction")
+
+
+def test_order5_selection_dev_seed_blocks_are_frozen_and_separate_from_diagnosis() -> None:
+    """Order 5: checkpoint selection must score candidates on seeds nobody
+    has looked at yet.
+
+    97401-97500 is already spent -- it is the block that diagnosed the
+    lambda=380 run, so its answers are known and selecting on it would be
+    selecting on seen data. These two blocks are reserved for the frozen
+    selection rule and nothing else.
+    """
+    from crowd_nav.bayesian_dvl.intent_train import (
+        STANDARD_DEV_DIAGNOSTIC_SEEDS, STANDARD_SELECTION_DEV_SEEDS, JUNCTION_SELECTION_DEV_SEEDS,
+    )
+    from crowd_nav.bayesian_dvl.intent_train_cli import seed_inventory
+
+    assert (min(STANDARD_SELECTION_DEV_SEEDS), max(STANDARD_SELECTION_DEV_SEEDS)) == (97501, 97600)
+    assert (min(JUNCTION_SELECTION_DEV_SEEDS), max(JUNCTION_SELECTION_DEV_SEEDS)) == (97601, 97700)
+    assert len(STANDARD_SELECTION_DEV_SEEDS) == len(JUNCTION_SELECTION_DEV_SEEDS) == 100
+
+    sel_s, sel_j = set(STANDARD_SELECTION_DEV_SEEDS), set(JUNCTION_SELECTION_DEV_SEEDS)
+    # the whole point: selection seeds must be UNSEEN, i.e. disjoint from
+    # the diagnostic block
+    assert not (sel_s & set(STANDARD_DEV_DIAGNOSTIC_SEEDS))
+    assert not (sel_j & set(STANDARD_DEV_DIAGNOSTIC_SEEDS))
+    assert not (sel_s & sel_j)
+
+    cfg = load_intent_training_config(DEFAULT_TRAINING_CONFIG)
+    inv = seed_inventory(cfg)
+    for name in ("standard_selection_dev", "junction_selection_dev"):
+        assert name in inv["blocks"] and inv["blocks"][name]["n"] == 100
+    assert inv["ok"], inv["overlaps"]
+
+    # never trainable, and never the paper's formal seeds
+    for seed in (97501, 97600, 97601, 97700):
+        try:
+            _assert_not_formal_seed(seed)
+            assert False, f"training must reject selection-dev seed {seed}"
+        except IntentCLIError:
+            pass
+    for other in (FORMAL_EVAL_HELDOUT_SEEDS, JUNCTION_CROWD_HELDOUT_SEEDS,
+                  cfg.training_seeds, cfg.validation_seeds):
+        assert not ((sel_s | sel_j) & set(other))

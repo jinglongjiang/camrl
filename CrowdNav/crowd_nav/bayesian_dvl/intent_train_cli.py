@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import collections
 import json
 import os
 import platform
@@ -55,7 +56,10 @@ from crowd_nav.bayesian_dvl.intent_policy import (
 )
 from crowd_nav.bayesian_dvl.intent_train import (
     FORMAL_EVAL_HELDOUT_SEEDS, FORMAL_SIX_SCENARIOS, PAPER_MAIN_BASE_SEED,
-    PAPER_MAIN_EPISODES_PER_SCENARIO, EMAModel, GradientRatioMonitor, IntentReplay, paper_main_jobs,
+    STANDARD_DEV_DIAGNOSTIC_SEEDS, STANDARD_SELECTION_DEV_SEEDS, JUNCTION_SELECTION_DEV_SEEDS,
+    PAPER_MAIN_EPISODES_PER_SCENARIO, EMAModel, AdaptiveRankBalancer, GradientHealthMonitor,
+    IntentReplay, paper_main_jobs, IL_AUDIT_PER_SCENARIO, build_il_audit_set,
+    il_audit_identity, evaluate_il_audit,
     batch_to_tensors, collect_orca_episode, run_ablation_suite, run_formal_six_scenario_evaluation,
     collect_raw_orca_episode, materialize_arm_transitions,
     run_il_update, run_online_training_step, summarize_scenario_results, train_step,
@@ -134,6 +138,11 @@ def _reset_run_dir_for_fresh_train(run_dir: Path) -> bool:
 # A4: only these four online-episode counts get a milestone, and a
 # milestone NEVER contains the replay (model + EMA + run identity only).
 MILESTONE_EPISODES = (2500, 5000, 7500, 10000)
+
+# Order 4: how often to score the fixed IL audit set, and how much the
+# value fit may regress from its own best by the end of IL.
+IL_AUDIT_INTERVAL_PASSES = 100
+IL_AUDIT_MAX_REGRESSION = 1.5
 
 # A5: measured per-row/per-artifact costs used to size a run BEFORE it
 # starts. Gate behaviour: test_a5_preflight_refuses_when_space_is_insufficient.
@@ -317,7 +326,13 @@ class RunState:
     # so a mean-arm checkpoint can never be mistaken for a full-arm one.
     training_arm: str = "full"
     il_episodes_collected: int = 0
-    ratio_monitor: str = ""
+    ratio_monitor: str = ""        # RETIRED (kept so old artifacts still parse)
+    balancer_state: str = ""
+    il_audit_identity: str = ""
+    il_audit_mc_loss: float = 0.0
+    il_audit_rank_loss: float = 0.0
+    il_audit_best_mc_loss: float = 0.0
+    health_state: str = ""
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2, sort_keys=True)
@@ -427,11 +442,17 @@ def load_il_corpus(
     action_table = np.asarray(grid.build_action_table(), dtype=np.float64)
     transitions = []
     episodes = payload["episodes"]
+    scenarios: List[str] = []
     for done, raw in enumerate(episodes, 1):
+        before = len(transitions)
         transitions.extend(materialize_arm_transitions(
             raw, arm, action_table, horizon=cfg.future_horizon, n_samples=cfg.future_n_samples))
+        scenarios.extend([str(raw.scenario)] * (len(transitions) - before))
         if progress_callback is not None:
             progress_callback(done, len(episodes), len(transitions))
+    # Order 4: the audit set must be balanced ACROSS SCENARIOS, so the
+    # scenario of each demo row travels with it.
+    meta["scenario_of_row"] = scenarios
     return transitions, meta
 
 
@@ -445,7 +466,8 @@ class TrainingArtifacts:
     explore_rng: np.random.Generator
     sample_rng: np.random.Generator
     state: RunState
-    monitor: Optional[GradientRatioMonitor] = None
+    balancer: Optional[AdaptiveRankBalancer] = None
+    health: Optional[GradientHealthMonitor] = None
     reservoir_rng: Optional[np.random.Generator] = None
     il_corpus_ref: Optional[dict] = None
 
@@ -535,8 +557,17 @@ def _build_artifacts(cfg: IntentTrainingConfig, seed: int, device: torch.device,
         explore_rng=np.random.default_rng(seed + 2),
         sample_rng=np.random.default_rng(seed + 3),
         reservoir_rng=np.random.default_rng(seed + 4),
-        monitor=GradientRatioMonitor(cfg.rank_gradient_ratio_min, cfg.rank_gradient_ratio_max,
-                                      cfg.gradient_ratio_sustained_updates),
+        balancer=AdaptiveRankBalancer(
+            lambda_init=cfg.lambda_init, target_ratio=cfg.target_ratio, ema_beta=cfg.ema_beta,
+            lambda_min=cfg.lambda_min, lambda_max=cfg.lambda_max,
+            max_change_factor=cfg.lambda_max_change_factor, epsilon=cfg.balancer_epsilon,
+            rank_floor=cfg.balancer_rank_floor),
+        health=GradientHealthMonitor(
+            ratio_min=cfg.health_ratio_min, ratio_max=cfg.health_ratio_max, window=cfg.health_window,
+            ratio_violation_fraction=cfg.health_ratio_violation_fraction,
+            clip_window=cfg.health_clip_window, clip_fraction=cfg.health_clip_fraction,
+            saturation_fraction=cfg.health_saturation_fraction,
+            cosine_threshold=cfg.health_cosine_threshold, cosine_fraction=cfg.health_cosine_fraction),
         state=RunState(config_hash=cfg.content_hash(), code_hash=code_sha256(),
                         action_grid_hash=action_grid_hash, scene_registry_hash=scene_hash, seed=seed),
     )
@@ -574,8 +605,10 @@ def _load_into(art: TrainingArtifacts, path: Path, cfg: IntentTrainingConfig,
     if "reservoir_rng_state" in extra:
         art.reservoir_rng.bit_generator.state = extra["reservoir_rng_state"]
     art.state = RunState(**extra["run_state"])
-    if art.state.ratio_monitor and art.monitor is not None:
-        art.monitor.load_state_dict(json.loads(art.state.ratio_monitor))
+    if art.state.balancer_state and art.balancer is not None:
+        art.balancer.load_state_dict(json.loads(art.state.balancer_state))
+    if art.state.health_state and art.health is not None:
+        art.health.load_state_dict(json.loads(art.state.health_state))
 
 
 # --------------------------------------------------------------------- #
@@ -620,6 +653,12 @@ def _assert_not_formal_seed(seed: int) -> None:
     """Section 6: train/resume must never touch formal/paper seeds."""
     if seed in set(FORMAL_EVAL_HELDOUT_SEEDS) or seed in set(JUNCTION_CROWD_HELDOUT_SEEDS):
         raise IntentCLIError(f"training tried to use seed {seed}, which is a FORMAL/HELD-OUT evaluation seed")
+    if seed in set(STANDARD_DEV_DIAGNOSTIC_SEEDS):
+        raise IntentCLIError(
+            f"training tried to use seed {seed}, which is a DEVELOPMENT-ONLY standard diagnostic seed")
+    if seed in set(STANDARD_SELECTION_DEV_SEEDS) or seed in set(JUNCTION_SELECTION_DEV_SEEDS):
+        raise IntentCLIError(
+            f"training tried to use seed {seed}, which is a CHECKPOINT-SELECTION development seed")
 
 
 # --------------------------------------------------------------------- #
@@ -642,6 +681,9 @@ def seed_inventory(cfg: IntentTrainingConfig) -> Dict[str, object]:
         "junction_crowd_il": JUNCTION_CROWD_IL_SEEDS,
         "junction_crowd_online": JUNCTION_CROWD_ONLINE_SEEDS,
         "junction_crowd_validation": JUNCTION_CROWD_VALIDATION_SEEDS,
+        "standard_dev_diagnostic": STANDARD_DEV_DIAGNOSTIC_SEEDS,
+        "standard_selection_dev": STANDARD_SELECTION_DEV_SEEDS,
+        "junction_selection_dev": JUNCTION_SELECTION_DEV_SEEDS,
         "training_seeds": cfg.training_seeds,
         "validation_seeds": cfg.validation_seeds,
     }
@@ -709,7 +751,8 @@ def cmd_preflight(args) -> int:
     print(f"budget            : IL {cfg.il_episodes_total} ({cfg.il_passes} passes), online {cfg.online_episodes_total}")
     print(f"optim             : batch {cfg.batch_size}, lr {cfg.learning_rate}, gamma {cfg.gamma}, buffer {cfg.replay_capacity}")
     print(f"epsilon           : {cfg.epsilon_start} -> {cfg.epsilon_end} over {cfg.epsilon_decay_episodes} episodes")
-    print(f"lambda_rank       : {cfg.lambda_rank} (margin {cfg.ranking_margin})")
+    print(f"lambda            : ADAPTIVE init={cfg.lambda_init} target_ratio={cfg.target_ratio} "
+          f"bounds=[{cfg.lambda_min}, {cfg.lambda_max}] (margin {cfg.ranking_margin})")
     print(f"ema decay         : {cfg.ema_decay}, checkpoint every {cfg.checkpoint_interval_episodes} episodes")
     print(f"training seeds    : {list(cfg.training_seeds)}")
     cuda = torch.cuda.is_available()
@@ -847,25 +890,43 @@ def cmd_train(args, resume: bool = False) -> int:
     diag_every = max(1, cfg.gradient_diagnostic_interval)
 
     def _sync_monitor() -> None:
-        if art.monitor is not None:
-            art.state.ratio_monitor = json.dumps(art.monitor.state_dict())
+        if art.balancer is not None and art.health is not None:
+            art.state.balancer_state = json.dumps(art.balancer.state_dict())
+            art.state.health_state = json.dumps(art.health.state_dict())
 
     def _observe(result) -> None:
-        """C4R.3: feed measured ratios to the sustained-window gate.
+        """Order 2/3: drive the balancer and the health gate.
 
-        C4RF.4 fix (real bug found by audit): the abort path used to call
-        ``_save_checkpoint`` BEFORE refreshing ``RunState.ratio_monitor``
-        from the live monitor, so the checkpoint written at abort time
-        carried a STALE consecutive-out-of-range count -- exactly the
-        number the gate exists to preserve. Resuming from it would restart
-        the streak from an older value and could sail past the window.
-        The monitor state is now fixed into RunState FIRST, then saved."""
-        if result is not None and result.ratio_measured and art.monitor is not None:
-            reason = art.monitor.observe(result.gradient_ratio)
-            _sync_monitor()
-            if reason:
-                _save_rolling()
-                raise IntentCLIError(f"ABORT (gradient ratio gate): {reason}")
+        ORDER MATTERS and is the mechanism, not a detail:
+
+          1. ``result.gradient_ratio`` is the LAGGED PRE-UPDATE ratio -- it
+             was produced by the lambda this step actually ran with, which
+             was decided from EARLIER gradients. Recording it before the
+             balancer moves is what keeps the gate from being tautological:
+             a lambda computed from the same batch would force the ratio to
+             the target identically, and the gate could then only ever fail
+             on saturation.
+          2. The gate sees that ratio.
+          3. ONLY THEN does the balancer fold the new gradient norms in and
+             pick the lambda for subsequent updates.
+
+        C4RF.4 (kept): monitor state is fixed into RunState BEFORE the abort
+        checkpoint is written, or the saved artifact carries a stale window
+        -- exactly the evidence the gate exists to preserve.
+        """
+        if result is None or art.balancer is None or art.health is None:
+            return
+        # clipping is measured on EVERY update, not only diagnostic ones
+        reason = art.health.observe_update(bool(result.clipped))
+        if reason is None and result.ratio_measured:
+            reason = art.health.observe_diagnostic(
+                result.gradient_ratio, art.balancer.saturated, result.gradient_cosine)
+            # step 3: the balancer moves only after the gate has judged
+            art.balancer.observe(result.mc_grad_norm, result.rank_grad_norm)
+        _sync_monitor()
+        if reason:
+            _save_rolling()
+            raise IntentCLIError(f"ABORT (gradient health gate): {reason}")
 
     # ---------------- IL phase ----------------
     # C4RF.2: the arm's IL corpus is collected ONCE into an immutable,
@@ -944,6 +1005,53 @@ def cmd_train(args, resume: bool = False) -> int:
           f"sha256 {art.il_corpus_ref['corpus_sha256'][:12]})")
     art.state.il_episodes_collected = int(art.il_corpus_ref["n_episodes"])
 
+    # Order 4: freeze the fixed IL audit set. During IL the corpus is
+    # immutable, so these MC targets are STATIONARY -- the one phase where a
+    # rising MC loss cannot be explained away by "the target moved". That is
+    # exactly what the lambda=380 run did (0.157 at pass 400 -> 0.469 at the
+    # end, 3.0x its own best) and the training loss could not show it,
+    # because it is measured on a fresh random minibatch every pass.
+    scenario_rows = art.il_corpus_ref.get("scenario_of_row") or []
+    audit_set = None
+    audit_best = None
+    per_scenario = collections.Counter(scenario_rows)
+    # The requirement is PER SCENARIO, not on the total: a corpus can have
+    # plenty of rows overall and still be short on one scenario, and an
+    # unbalanced audit set would not measure what it claims to.
+    enough = (len(scenario_rows) == len(demo_transitions) and len(per_scenario) >= 2
+              and min(per_scenario.values()) >= IL_AUDIT_PER_SCENARIO)
+    if enough:
+        row_scenario = {id(t): sc for t, sc in zip(demo_transitions, scenario_rows)}
+        audit_set = build_il_audit_set(demo_transitions, lambda t: row_scenario[id(t)])
+        art.state.il_audit_identity = il_audit_identity(audit_set)
+        print(f"IL audit set: {len(audit_set)} rows "
+              f"({IL_AUDIT_PER_SCENARIO}/scenario), identity {art.state.il_audit_identity[:12]}")
+    elif art.state.is_pilot:
+        print(f"IL audit set: SKIPPED -- pilot corpus, rows per scenario "
+              f"{dict(per_scenario)} < {IL_AUDIT_PER_SCENARIO}")
+    else:
+        # A FORMAL run must never silently lose its only stationary-target
+        # detector; the formal corpus is 5000 episodes and cannot be short.
+        raise IntentCLIError(
+            f"formal run cannot build the IL audit set: rows per scenario {dict(per_scenario)}, "
+            f"need >= {IL_AUDIT_PER_SCENARIO} each")
+
+    def _run_il_audit(tag: str) -> None:
+        nonlocal audit_best
+        if audit_set is None:
+            return
+        m = evaluate_il_audit(art.model, audit_set, n_taus=cfg.iqn_train_quantiles,
+                              ranking_margin=cfg.ranking_margin, device=str(device))
+        art.state.il_audit_mc_loss = float(m["audit_mc_loss"])
+        art.state.il_audit_rank_loss = float(m["audit_rank_loss"])
+        if audit_best is None or m["audit_mc_loss"] < audit_best:
+            audit_best = float(m["audit_mc_loss"])
+        art.state.il_audit_best_mc_loss = float(audit_best)
+        append_durable_log(
+            run_dir,
+            f"IL-AUDIT {tag} mc={m['audit_mc_loss']:.6f} rank={m['audit_rank_loss']:.6f} "
+            f"best_mc={audit_best:.6f} identity={art.state.il_audit_identity[:12]}")
+
     if resume:
         # the demo side is now populated, so the checkpoint (which omits
         # the corpus) can be applied
@@ -1009,12 +1117,13 @@ def cmd_train(args, resume: bool = False) -> int:
 
     if art.state.il_passes_done < total_il_passes:
         result = None
+        _run_il_audit("pass=0")
         while art.state.il_passes_done < total_il_passes:
             measure = (art.state.global_updates % diag_every == 0)
             result = run_il_update(
                 art.model, art.optimizer, art.buffer, cfg.batch_size, art.sample_rng, art.tau_generator,
                 n_taus=cfg.iqn_train_quantiles, ranking_margin=cfg.ranking_margin,
-                lambda_rank=cfg.lambda_rank, ranking_batch_size=cfg.ranking_batch_size,
+                lambda_rank=art.balancer.lambda_value, ranking_batch_size=cfg.ranking_batch_size,
                 device=str(device), grad_clip_norm=cfg.grad_clip_norm, measure_gradient_ratio=measure)
             art.ema.update(art.model)
             art.state.il_passes_done += 1
@@ -1027,7 +1136,29 @@ def cmd_train(args, resume: bool = False) -> int:
                     f"mc={result.mc_loss:.4f} rank={result.rank_loss:.4f} "
                     f"|g|={result.grad_norm_preclip:.2f}{' CLIPPED' if result.clipped else ''}"
                     + (f" ratio={result.gradient_ratio:.3f}" if result.ratio_measured else "")
+                    + f" lambda={result.lambda_used:.4g}"
                 )
+            if art.state.il_passes_done % IL_AUDIT_INTERVAL_PASSES == 0:
+                _run_il_audit(f"pass={art.state.il_passes_done}")
+
+        # Order 4 gate: on a STATIONARY target the value fit must not end up
+        # materially worse than its own best. lambda=380 ended at 3.0x its
+        # best here; anything approaching that means the auxiliary term is
+        # displacing value regression again.
+        _run_il_audit(f"pass={art.state.il_passes_done} FINAL")
+        if audit_set is not None and audit_best is not None and audit_best > 0:
+            ratio = art.state.il_audit_mc_loss / audit_best
+            print(f"IL audit: final mc={art.state.il_audit_mc_loss:.6f} best={audit_best:.6f} "
+                  f"({ratio:.2f}x best, limit {IL_AUDIT_MAX_REGRESSION}x); "
+                  f"rank={art.state.il_audit_rank_loss:.6f}")
+            if ratio > IL_AUDIT_MAX_REGRESSION:
+                _sync_monitor()
+                _save_rolling()
+                raise IntentCLIError(
+                    f"ABORT (IL audit gate): value regression on the FIXED audit set ended at "
+                    f"{ratio:.2f}x its own best ({art.state.il_audit_mc_loss:.6f} vs {audit_best:.6f}), "
+                    f"limit {IL_AUDIT_MAX_REGRESSION}x. The target was stationary, so this is the "
+                    f"ranking term displacing MC regression -- the lambda=380 failure mode.")
         _sync_monitor()
         _save_rolling()
 
@@ -1042,7 +1173,7 @@ def cmd_train(args, resume: bool = False) -> int:
             args.env_config, art.model, art.optimizer, action_table, scenario, ep_seed, epsilon,
             art.buffer, cfg.batch_size, art.explore_rng, art.sample_rng, art.tau_generator,
             gamma=cfg.gamma, n_taus=cfg.iqn_train_quantiles, ranking_margin=cfg.ranking_margin,
-            lambda_rank=cfg.lambda_rank, ranking_batch_size=cfg.ranking_batch_size,
+            lambda_rank=art.balancer.lambda_value, ranking_batch_size=cfg.ranking_batch_size,
             n_samples=cfg.future_n_samples, horizon=cfg.future_horizon, device=str(device),
             demo_ratio=cfg.demo_sample_ratio, grad_clip_norm=cfg.grad_clip_norm,
             measure_gradient_ratio=measure, updates=cfg.updates_per_episode, belief_mode=arm)
@@ -1105,12 +1236,17 @@ def cmd_train(args, resume: bool = False) -> int:
     else:
         print(f"final_ema verified; {RESUME_NAME} kept "
               f"({'run incomplete' if not finished else '--keep-resume'})")
-    m = art.monitor
     print(f"done[arm={arm}]: IL {art.state.il_passes_done}, online "
           f"{art.state.online_episodes_done}/{cfg.online_episodes_total}, updates {art.state.global_updates}")
-    if m is not None and m.n_measured:
-        print(f"gradient ratio: measured {m.n_measured}x, out-of-range {m.n_out_of_range}, "
-              f"current streak {m.consecutive_out_of_range}/{m.sustained_updates}")
+    h, b = art.health, art.balancer
+    if h is not None and h.n_measured:
+        clip_rate = (sum(h.clips) / len(h.clips)) if h.clips else 0.0
+        print(f"gradient health: measured {h.n_measured}x, ratio outside "
+              f"[{h.ratio_min}, {h.ratio_max}] {h.n_out_of_range}x, "
+              f"clip rate (last {len(h.clips)}) {clip_rate:.1%}")
+    if b is not None:
+        print(f"lambda: final {b.lambda_value:.6g} (target_ratio {b.target_ratio}, "
+              f"{b.n_observations} observations, saturated {b.n_saturated}x)")
     telemetry.log(f"COMPLETE wrote {resume_path} and {run_dir / FINAL_EMA_NAME}")
     telemetry.close()
     return 0
@@ -1205,6 +1341,18 @@ def cmd_eval(args, which: str) -> int:
         _print_summary("held-out junction-crowd stress (shifted speeds + wider fork)", csv_path)
         return 0
 
+    if which == "eval-dev-standard":
+        # Order 1: large-sample GREEDY diagnosis of the `standard` scenario.
+        # DEVELOPMENT ONLY -- this exists to characterise an existing run,
+        # never to select the paper's weights.
+        seeds = (list(STANDARD_DEV_DIAGNOSTIC_SEEDS)[: args.episodes] if args.episodes
+                 else list(STANDARD_DEV_DIAGNOSTIC_SEEDS))
+        jobs = [("standard", s, False) for s in seeds]
+        csv_path = run_persistent_evaluation(args.env_config, model, action_table, out_dir, "dev_standard",
+                                              jobs, **common)
+        _print_summary("development standard-scenario diagnostic (greedy, DEV-ONLY seeds)", csv_path)
+        return 0
+
     raise IntentCLIError(f"unknown eval kind {which!r}")
 
 
@@ -1272,7 +1420,7 @@ def build_parser() -> argparse.ArgumentParser:
                        help="C4R.6: train an INDEPENDENT ablation arm from scratch. "
                             "'uniform' is a supplementary inference-time control only and is not trained.")
 
-    for name in ("validate", "eval-paper", "eval-stress"):
+    for name in ("validate", "eval-paper", "eval-stress", "eval-dev-standard"):
         e = sub.add_parser(name)
         e.add_argument("--checkpoint", type=Path, required=True)
         e.add_argument("--episodes", type=int, default=None)
@@ -1299,7 +1447,7 @@ def main(argv=None) -> int:
             return cmd_train(args, resume=False)
         if args.cmd == "resume":
             return cmd_train(args, resume=True)
-        if args.cmd in ("validate", "eval-paper", "eval-stress"):
+        if args.cmd in ("validate", "eval-paper", "eval-stress", "eval-dev-standard"):
             return cmd_eval(args, args.cmd)
         if args.cmd == "ablate":
             return cmd_ablate(args)

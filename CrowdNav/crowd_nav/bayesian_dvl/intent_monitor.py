@@ -54,6 +54,7 @@ class DevelopmentSummary:
     mean_navigation_time: float
     mean_path_ratio: float
     mean_min_clearance: float
+    mean_discomfort_frequency: float
     by_scenario: Dict[str, Dict[str, float]]
 
 
@@ -86,6 +87,7 @@ def summarize_development(online_episode: int, rows: Sequence[dict]) -> Developm
             "mean_navigation_time": _mean(subset, "navigation_time"),
             "mean_path_ratio": _mean(subset, "path_ratio"),
             "mean_min_clearance": _mean(subset, "min_clearance"),
+            "mean_discomfort_frequency": _mean(subset, "discomfort_frequency"),
         }
     return DevelopmentSummary(
         online_episode=int(online_episode),
@@ -95,6 +97,7 @@ def summarize_development(online_episode: int, rows: Sequence[dict]) -> Developm
         mean_navigation_time=_mean(rows, "navigation_time"),
         mean_path_ratio=_mean(rows, "path_ratio"),
         mean_min_clearance=_mean(rows, "min_clearance"),
+        mean_discomfort_frequency=_mean(rows, "discomfort_frequency"),
         by_scenario=by_scenario,
     )
 
@@ -156,6 +159,7 @@ def run_development_validation(
                     "path_length": result.path_length,
                     "path_ratio": result.path_ratio,
                     "min_clearance": result.min_clearance,
+                    "discomfort_frequency": result.discomfort_frequency,
                 })
     finally:
         model.train(was_training)
@@ -313,6 +317,7 @@ class TrainingMonitor:
             "path_length": float(result.path_length),
             "path_ratio": float(result.path_ratio),
             "min_clearance": float(result.min_clearance),
+            "discomfort_frequency": float(result.discomfort_frequency),
             "epsilon": float(result.epsilon),
             "loss": float(result.loss),
             "mc_loss": float(result.mc_loss),
@@ -350,13 +355,15 @@ class TrainingMonitor:
             for key in (
                 "success_rate", "collision_rate", "timeout_rate", "mean_return",
                 "mean_navigation_time", "mean_path_ratio", "mean_min_clearance",
+                "mean_discomfort_frequency",
             ):
                 self._writer.add_scalar(f"development/{key}", row[key], summary.online_episode)
         self.log(
             f"DEV[{summary.online_episode}] n={summary.n} SR={summary.success_rate:.3f} "
             f"CR={summary.collision_rate:.3f} TR={summary.timeout_rate:.3f} "
             f"return={summary.mean_return:.3f} time={summary.mean_navigation_time:.2f}s "
-            f"path={summary.mean_path_ratio:.3f} clearance={summary.mean_min_clearance:.3f}"
+            f"path={summary.mean_path_ratio:.3f} clearance={summary.mean_min_clearance:.3f} "
+            f"discomfort={summary.mean_discomfort_frequency:.3f}"
         )
 
     def has_validation(self, online_episode: int) -> bool:
