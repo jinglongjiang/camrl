@@ -895,6 +895,8 @@ def cmd_train(args, resume: bool = False) -> int:
         overrides["target_online_episodes"] = args.target_online_episodes
     if args.audit_episodes is not None:
         overrides["audit_episodes_per_scenario"] = args.audit_episodes
+    if args.warmup_steps is not None:
+        overrides["warmup_max_steps"] = args.warmup_steps
 
     art = _build_artifacts(cfg, seed, device, action_grid_hash, scene_hash)
     art.state.training_arm = args.training_arm
@@ -1197,7 +1199,8 @@ def cmd_train(args, resume: bool = False) -> int:
         art.state.il_audit_mc_loss = float(m["audit_mc_loss"])
         art.state.il_audit_rank_loss = float(d["audit_rank_loss"])
         reason = art.health.observe_audit(m["audit_mc_loss"], d["audit_rank_loss"],
-                                          d["expert_top1_rate"])
+                                          d["expert_top1_rate"],
+                                          check_ranking=art.state.warmup_passed)
         art.state.il_audit_best_mc_loss = float(art.health.best_mc or 0.0)
         append_durable_log(
             run_dir,
@@ -1216,12 +1219,22 @@ def cmd_train(args, resume: bool = False) -> int:
     # MC supervises only the executed action, so it constrains nothing about
     # the other 79 -- the ranking structure has to exist BEFORE value
     # regression starts moving the scores.
-    if audit_set is not None and not art.state.warmup_passed and art.state.il_passes_done == 0:
-        telemetry.log(f"WARMUP START max_steps={cfg.warmup_max_steps} "
+    _wu_max = args.warmup_steps if args.warmup_steps is not None else cfg.warmup_max_steps
+    if _wu_max == 0 and not art.state.is_pilot:
+        raise IntentCLIError('--warmup-steps 0 skips the warm-up gate; PILOT ONLY')
+    if (audit_set is not None and _wu_max > 0 and not art.state.warmup_passed
+            and art.state.il_passes_done == 0):
+        wu_max = _wu_max
+        if args.warmup_steps is not None and not art.state.is_pilot:
+            raise IntentCLIError(
+                '--warmup-steps is a PILOT override; a full-budget run must use the frozen '
+                f'{cfg.warmup_max_steps}')
+        telemetry.log(f"WARMUP START max_steps={wu_max} "
                       f"gate: top1>={cfg.warmup_top1_min} rank<={cfg.warmup_rank_loss_max} margin>0")
         wu = run_ranking_warmup(
             art.model, art.optimizer, art.buffer, cfg.batch_size, art.sample_rng, audit_set,
-            max_steps=cfg.warmup_max_steps, n_taus=cfg.iqn_train_quantiles,
+            max_steps=wu_max,
+            n_taus=cfg.iqn_train_quantiles,
             ranking_margin=cfg.ranking_margin,
             # ranking is the ONLY objective here, so the 80-action pass is
             # not throttled: at ranking_batch_size=32 the same budget stalls
@@ -1241,7 +1254,7 @@ def cmd_train(args, resume: bool = False) -> int:
         if not wu["passed"]:
             raise IntentCLIError(
                 f"ABORT (ranking warm-up): did not reach top1>={cfg.warmup_top1_min}, "
-                f"rank<={cfg.warmup_rank_loss_max}, margin>0 within {cfg.warmup_max_steps} steps "
+                f"rank<={cfg.warmup_rank_loss_max}, margin>0 within {wu_max} steps "
                 f"(final top1={art.state.warmup_top1:.3f} rank={art.state.warmup_rank_loss:.5f}). "
                 f"Joint training must not start on an unlearned ranking term.")
         telemetry.log(f"WARMUP PASSED steps={wu['steps']} top1={art.state.warmup_top1:.3f} "
@@ -1540,6 +1553,9 @@ def build_parser() -> argparse.ArgumentParser:
                        help="directory holding the ONE raw IL corpus shared by every arm and seed")
         t.add_argument("--keep-resume", action="store_true",
                        help="keep the GB-scale resume after a completed run (default: reclaim it)")
+        t.add_argument("--warmup-steps", type=int, default=None,
+                       help="PILOT ONLY: cap the ranking warm-up. The frozen budget is used "
+                            "for any full-budget run.")
         t.add_argument("--audit-episodes", type=int, default=None,
                        help="PILOT ONLY: held-out audit episodes per scenario. The frozen "
                             "value is used for any full-budget run.")

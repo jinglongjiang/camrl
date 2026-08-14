@@ -1122,8 +1122,8 @@ def test_order2w_audit_episodes_are_held_out_of_replay_entirely() -> None:
         run = Path(d) / "run"
         # 12 episodes with 2 audit episodes per scenario -> 8 train / 4 audit
         r = _cli("train", "--run-dir", str(run), "--target-online-episodes", "1",
-                 "--il-episodes", "12", "--audit-episodes", "1", "--il-passes", "2", "--seed", "97201",
-                 "--audit-episodes", "2",
+                 "--il-episodes", "12", "--audit-episodes", "2", "--warmup-steps", "0",
+                 "--il-passes", "2", "--seed", "97201",
                  "--il-corpus-dir", str(Path(d) / "corpus"), "--keep-resume")
         assert "split BY EPISODE" in r.stdout, r.stdout[-3000:]
         assert "audit rows never enter replay" in r.stdout

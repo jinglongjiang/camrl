@@ -1,7 +1,7 @@
 {
   "action_grid_hash": "711a5fd167e04383787df16ec25a400dfbaddc7cdf8dc78852c00e19ec11cdcf",
   "checkpoint_schema": "bdvl_intent_checkpoint_v6",
-  "code_hash": "47d0e0826248982350cfa963252bf65ad80789b45fa4a3656f7eea6c4f6d6f95",
+  "code_hash": "21ac6627b5e8d1538c5004f8f586863be2b561a6a63fb151e3b1b47604bc47c8",
   "config_content_hash": "659f2abc8aa73d6a75b1dbcab4c9fef63e2d4a8bc3f92697c40e97b9c6c9f895",
   "config_sha256": "f0298274a39714a6a466261e580dde70d680cb3ae518ab03ba9114ba21b1a38a",
   "feature_schema": "bdvl_z_state_goal_intent_v5",
@@ -148,12 +148,12 @@
         "sha256": "60613a076ace1646aa11dc58945bbe2be0239a7b691b7385cded30d0ae85631e"
       },
       "crowd_nav/bayesian_dvl/intent_train.py": {
-        "bytes": 106334,
-        "sha256": "74fd2de11f0658b49f46f3671b004cce564069cc3e1eb51a14a648b47cc8c997"
+        "bytes": 106780,
+        "sha256": "db120bc82bc11eaa5eb330fe526e039cfb7c9a76072cef5bd0134633b566c6cf"
       },
       "crowd_nav/bayesian_dvl/intent_train_cli.py": {
-        "bytes": 83902,
-        "sha256": "99624a8e5a3992fcee55663031a9ae1fd535be8a0b4adb4cc853912509b3d039"
+        "bytes": 84781,
+        "sha256": "9d9bec148f6308ed498983a49c4f38df24d1f87ca28235882857bb76b7c8fb27"
       },
       "crowd_nav/bayesian_dvl/iqn.py": {
         "bytes": 9489,
@@ -206,8 +206,8 @@
         "sha256": "54e1f88466bdacc3d5e4937d80fa26ac0ff96df84844a20e0f4e3802b21788d9"
       },
       "crowd_nav/bayesian_dvl/tests/test_intent_cli.py": {
-        "bytes": 66837,
-        "sha256": "e2fc25cadcb86b7eb5c7ff0a2d2bbd17afe8c5c114414ef58b2e6bb78278f9d9"
+        "bytes": 66835,
+        "sha256": "b793b59f9e4e1515bb6fae4a95cc0735c19fe6ce21836605b69810e682d893d4"
       },
       "crowd_nav/bayesian_dvl/tests/test_intent_integration.py": {
         "bytes": 23806,
@@ -236,7 +236,7 @@
     }
   },
   "manifest_schema": "bdvl_intent_source_manifest_v1",
-  "manifest_sha256": "12135291f742789d2b039a019cac6cf801097b85aa6b4149b1c36e923b82a7bd",
+  "manifest_sha256": "1b89f9e34a4813f767a1021a3edf3fd86ea4646fc7cc763147da5fea72768f03",
   "n_files": 55,
   "python": "3.8.10",
   "scene_registry_hash": "3e5cef6cc6a67dc8806fe8ce8768188b721be1f70ec4796cf42304c76772e21a",

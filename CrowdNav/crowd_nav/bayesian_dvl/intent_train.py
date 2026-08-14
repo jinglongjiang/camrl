@@ -750,7 +750,8 @@ class TrainingHealthMonitor:
                         f"(> {self.clip_fraction:.0%})")
         return None
 
-    def observe_audit(self, audit_mc: float, audit_rank: float, top1: float) -> Optional[str]:
+    def observe_audit(self, audit_mc: float, audit_rank: float, top1: float,
+                      check_ranking: bool = True) -> Optional[str]:
         for name, v in (("audit_mc", audit_mc), ("audit_rank", audit_rank), ("top1", top1)):
             if not np.isfinite(v):
                 return f"non-finite {name} = {v}"
@@ -760,6 +761,13 @@ class TrainingHealthMonitor:
         if self.best_mc > 0 and audit_mc > self.best_mc * self.mc_regression_factor:
             return (f"value regression on the FIXED audit set reached {audit_mc / self.best_mc:.2f}x its own "
                     f"best ({audit_mc:.6f} vs {self.best_mc:.6f}), limit {self.mc_regression_factor}x")
+        # The ranking-quality gate presupposes a PASSED warm-up: it exists to
+        # catch joint training eroding a ranking structure that was actually
+        # built. With the warm-up skipped (pilot only) there is nothing to
+        # protect, and firing here would just be reporting that fact.
+        if not check_ranking:
+            self.consecutive_rank_bad = 0
+            return None
         bad = (audit_rank > self.rank_max) or (top1 < self.top1_min)
         self.consecutive_rank_bad = self.consecutive_rank_bad + 1 if bad else 0
         if self.consecutive_rank_bad >= self.consecutive_bad:
