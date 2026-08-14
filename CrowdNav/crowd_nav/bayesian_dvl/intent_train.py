@@ -1636,6 +1636,14 @@ def summarize_scenario_results(results: Sequence[AblationEpisodeResult]) -> Dict
 
 IL_AUDIT_SET_SIZE = 512
 IL_AUDIT_PER_SCENARIO = 256
+#: Rows per forward pass when scoring the audit set. The audit is scored over
+#: ALL 80 actions, so a one-shot pass is n_rows * 80 network rows: at the
+#: frozen 50-episodes-per-scenario split that is 4316 * 80 = 345,280 and it
+#: asked CUDA for 2.63 GiB in a single allocation (measured -- it OOM'd on a
+#: shared 24 GB card). Chunking bounds the peak without touching the numbers:
+#: every statistic here is a plain sum over rows, so it is accumulated as
+#: sum/count and divided once at the end.
+IL_AUDIT_CHUNK_ROWS = 256
 
 
 def build_il_audit_set(demo_transitions: Sequence[IntentTransition],
@@ -1693,31 +1701,59 @@ def il_audit_identity(audit: Sequence[IntentTransition]) -> str:
 
 
 @torch.no_grad()
-def _audit_mc_loss(model, batch: IntentBatch, n_taus: int) -> float:
+def _audit_mc_loss(model, batch: IntentBatch, n_taus: int,
+                   chunk_rows: int = IL_AUDIT_CHUNK_ROWS) -> float:
     device = batch.robot_feats.device
     B = batch.robot_feats.shape[0]
-    tau = ((torch.arange(n_taus, dtype=torch.float32, device=device) + 0.5) / n_taus)
-    tau = tau.unsqueeze(0).expand(B, n_taus)
-    predicted = model(batch.robot_feats, batch.human_feats, batch.human_mask, batch.action_feats, tau)
-    return float(quantile_huber_loss(predicted, tau, batch.mc_returns.expand(B, 1)).mean())
+    total, count = 0.0, 0
+    for lo in range(0, B, chunk_rows):
+        hi = min(lo + chunk_rows, B)
+        n = hi - lo
+        tau = ((torch.arange(n_taus, dtype=torch.float32, device=device) + 0.5) / n_taus)
+        tau = tau.unsqueeze(0).expand(n, n_taus)
+        predicted = model(batch.robot_feats[lo:hi], batch.human_feats[lo:hi],
+                          batch.human_mask[lo:hi], batch.action_feats[lo:hi], tau)
+        # quantile_huber_loss already reduces to a SCALAR (its final .mean()
+        # is over the batch dim, uniformly per row), so the exact overall mean
+        # is the ROW-WEIGHTED mean of the chunk means -- counting elements
+        # instead would silently average the chunk means and disagree with the
+        # one-shot value whenever the last chunk is short.
+        per = quantile_huber_loss(predicted, tau, batch.mc_returns[lo:hi].expand(n, 1))
+        total += float(per) * n
+        count += n
+    return total / max(count, 1)
+
+
+@torch.no_grad()
+def _audit_scores_chunked(model, batch: IntentBatch, n_taus: int, lo: int, hi: int):
+    """Expected Q over all 80 actions for rows [lo, hi), fixed midpoint tau."""
+    device = batch.robot_feats.device
+    n = hi - lo
+    n_actions = batch.all_action_feats.shape[1]
+    fixed_tau = (torch.arange(n_taus, dtype=torch.float32, device=device) + 0.5) / n_taus
+    state_emb = model.encode(batch.robot_feats[lo:hi], batch.human_feats[lo:hi],
+                             batch.human_mask[lo:hi])
+    state_rep = state_emb.repeat_interleave(n_actions, dim=0)
+    action_emb = model.action_encoder(batch.all_action_feats[lo:hi].reshape(n * n_actions, -1))
+    tau_rep = fixed_tau.unsqueeze(0).expand(n * n_actions, n_taus)
+    return model.value_network(state_rep, action_emb, tau_rep).mean(dim=1).view(n, n_actions)
 
 
 @torch.no_grad()
 def _audit_rank_loss(model, audit: Sequence[IntentTransition], batch: IntentBatch,
-                     n_taus: int, ranking_margin: float) -> float:
-    device = batch.robot_feats.device
-    n = len(audit)
-    n_actions = batch.all_action_feats.shape[1]
-    fixed_tau = (torch.arange(n_taus, dtype=torch.float32, device=device) + 0.5) / n_taus
-    state_emb = model.encode(batch.robot_feats, batch.human_feats, batch.human_mask)
-    state_rep = state_emb.repeat_interleave(n_actions, dim=0)
-    action_rep = batch.all_action_feats.reshape(n * n_actions, -1)
-    action_emb = model.action_encoder(action_rep)
-    tau_rep = fixed_tau.unsqueeze(0).expand(n * n_actions, n_taus)
-    scores = model.value_network(state_rep, action_emb, tau_rep).mean(dim=1).view(n, n_actions)
-    losses = [expert_ranking_loss(scores[i], audit[i].expert_action_indices, ranking_margin)
-              for i in range(n) if audit[i].expert_action_indices]
-    return float(torch.stack(losses).mean()) if losses else 0.0
+                     n_taus: int, ranking_margin: float,
+                     chunk_rows: int = IL_AUDIT_CHUNK_ROWS) -> float:
+    total, count = 0.0, 0
+    for lo in range(0, len(audit), chunk_rows):
+        hi = min(lo + chunk_rows, len(audit))
+        scores = _audit_scores_chunked(model, batch, n_taus, lo, hi)
+        for r in range(hi - lo):
+            experts = audit[lo + r].expert_action_indices
+            if not experts:
+                continue
+            total += float(expert_ranking_loss(scores[r], experts, ranking_margin))
+            count += 1
+    return total / count if count else 0.0
 
 
 def evaluate_il_audit(model, audit: Sequence[IntentTransition], n_taus: int = 16,
@@ -1929,43 +1965,46 @@ WARMUP_RANK_LOSS_MAX = 0.05
 
 
 def expert_rank_diagnostics(model, audit: Sequence[IntentTransition], n_taus: int = 16,
-                            device: str = "cpu") -> Dict[str, float]:
+                            device: str = "cpu",
+                            chunk_rows: int = IL_AUDIT_CHUNK_ROWS) -> Dict[str, float]:
     """top-1 rate, expert-vs-hardest-negative margin, and score spread on a
     FIXED row set. These are the quantities that actually say whether the
     ranking objective was learned -- rank_loss alone sat at exactly the
-    margin for an entire 951-pass run while looking merely 'flat'."""
+    margin for an entire 951-pass run while looking merely 'flat'.
+
+    Chunked over rows: scoring all 80 actions for the whole audit set at once
+    is n_rows * 80 network rows (4316 * 80 = 345,280 at the frozen split,
+    2.63 GiB in one allocation -- measured, it OOM'd). Every statistic is a
+    plain sum over rows, so chunking changes the peak, not the numbers.
+    """
     was_training = bool(model.training)
     model.eval()
     try:
         with torch.no_grad():
             batch = batch_to_tensors(audit, device=device)
-            n = len(audit)
-            n_actions = batch.all_action_feats.shape[1]
-            dev = batch.robot_feats.device
-            fixed_tau = (torch.arange(n_taus, dtype=torch.float32, device=dev) + 0.5) / n_taus
-            emb = model.encode(batch.robot_feats, batch.human_feats, batch.human_mask)
-            state_rep = emb.repeat_interleave(n_actions, dim=0)
-            act = model.action_encoder(batch.all_action_feats.reshape(n * n_actions, -1))
-            tau = fixed_tau.unsqueeze(0).expand(n * n_actions, n_taus)
-            scores = model.value_network(state_rep, act, tau).mean(dim=1).view(n, n_actions)
-            top1, margins, losses = 0, [], []
-            for i, t in enumerate(audit):
-                ex = t.expert_action_indices
-                if not ex:
-                    continue
-                s = scores[i]
-                mask = torch.zeros_like(s, dtype=torch.bool)
-                mask[list(ex)] = True
-                margins.append(float(s[mask].max() - s[~mask].max()))
-                if int(s.argmax()) in set(ex):
-                    top1 += 1
-                losses.append(expert_ranking_loss(s, ex, 0.1))
-            scored = max(1, sum(1 for t in audit if t.expert_action_indices))
+            top1, margin_sum, range_sum, loss_sum, scored = 0, 0.0, 0.0, 0.0, 0
+            n_rows = len(audit)
+            for lo in range(0, n_rows, chunk_rows):
+                hi = min(lo + chunk_rows, n_rows)
+                scores = _audit_scores_chunked(model, batch, n_taus, lo, hi)
+                range_sum += float((scores.max(dim=1).values - scores.min(dim=1).values).sum())
+                for r in range(hi - lo):
+                    ex = audit[lo + r].expert_action_indices
+                    if not ex:
+                        continue
+                    srow = scores[r]
+                    mask = torch.zeros_like(srow, dtype=torch.bool)
+                    mask[list(ex)] = True
+                    margin_sum += float(srow[mask].max() - srow[~mask].max())
+                    if int(srow.argmax()) in set(ex):
+                        top1 += 1
+                    loss_sum += float(expert_ranking_loss(srow, ex, 0.1))
+                    scored += 1
             return {
-                "expert_top1_rate": top1 / scored,
-                "expert_margin_mean": float(np.mean(margins)) if margins else 0.0,
-                "score_range_mean": float((scores.max(dim=1).values - scores.min(dim=1).values).mean()),
-                "audit_rank_loss": float(torch.stack(losses).mean()) if losses else 0.0,
+                "expert_top1_rate": top1 / max(scored, 1),
+                "expert_margin_mean": margin_sum / max(scored, 1),
+                "score_range_mean": range_sum / max(n_rows, 1),
+                "audit_rank_loss": loss_sum / max(scored, 1),
             }
     finally:
         model.train(was_training)

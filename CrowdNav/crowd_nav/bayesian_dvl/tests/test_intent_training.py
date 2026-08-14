@@ -1639,3 +1639,60 @@ def test_order2r_projection_never_opposes_mc_on_random_geometry() -> None:
         # and the contribution's size is the declared share
         assert abs(float(contrib.norm()) - 0.25 * info["mc_grad_norm"]) < 1e-4
     assert worst >= -1e-5
+
+
+def test_audit_metrics_are_chunked_without_changing_the_numbers() -> None:
+    """The audit is scored over ALL 80 actions, so a one-shot pass is
+    n_rows * 80 network rows. At the frozen 50-episodes-per-scenario split
+    that is 4316 * 80 = 345,280 and it asked CUDA for 2.63 GiB in a single
+    allocation -- measured, it OOM'd on a shared 24 GB card mid-pilot.
+
+    Chunking must bound the peak WITHOUT moving the numbers, so every
+    statistic is accumulated as sum/count over rows and divided once.
+    """
+    from crowd_nav.bayesian_dvl.intent_train import (
+        IL_AUDIT_CHUNK_ROWS, _audit_mc_loss, _audit_rank_loss, batch_to_tensors,
+        build_il_audit_set, collect_orca_episode, expert_rank_diagnostics,
+    )
+    assert IL_AUDIT_CHUNK_ROWS in (128, 256)
+
+    env = _env_config_path()
+    rows, tag = [], {}
+    for scenario, base in (("standard", 700_001), ("junction_crowd", 1_100_000)):
+        for k in range(6):
+            r = collect_orca_episode(env, scenario, base + k, gamma=0.99)
+            for t in r.transitions:
+                tag[id(t)] = scenario
+            rows += r.transitions
+    audit = build_il_audit_set(rows, lambda t: tag[id(t)], n_per_scenario=64)
+    torch.manual_seed(3)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    batch = batch_to_tensors(audit, device="cpu")
+    ONE = 10 ** 9   # effectively unchunked
+
+    # --- ranking diagnostics: EXACT, they are integer counts and row sums
+    ref = expert_rank_diagnostics(model, audit, chunk_rows=ONE)
+    for cs in (128, 64, 37, 7):
+        got = expert_rank_diagnostics(model, audit, chunk_rows=cs)
+        assert set(got) == set(ref)
+        for k in ref:
+            assert got[k] == ref[k], (k, cs, got[k], ref[k])
+    assert 0.0 <= ref["expert_top1_rate"] <= 1.0
+
+    # --- ranking loss: EXACT (per-row hinge, summed)
+    r_ref = _audit_rank_loss(model, audit, batch, 16, 0.1, chunk_rows=ONE)
+    for cs in (128, 37):
+        assert _audit_rank_loss(model, audit, batch, 16, 0.1, chunk_rows=cs) == r_ref
+
+    # --- MC loss: quantile_huber_loss already reduces to a SCALAR whose
+    # final mean is over the batch dim, so the exact overall value is the
+    # ROW-WEIGHTED mean of chunk means. Counting elements instead would
+    # average the chunk means and disagree whenever the last chunk is short
+    # -- that bug produced a 1.8e-3 discrepancy before it was fixed. What
+    # remains is float32 summation order only.
+    mc_ref = _audit_mc_loss(model, batch, 16, chunk_rows=ONE)
+    for cs in (128, 64, 37, 7):
+        got = _audit_mc_loss(model, batch, 16, chunk_rows=cs)
+        assert abs(got - mc_ref) < 1e-5, (cs, got, mc_ref)
+    # a ragged split must not be systematically biased
+    assert abs(_audit_mc_loss(model, batch, 16, chunk_rows=len(audit) - 1) - mc_ref) < 1e-5
