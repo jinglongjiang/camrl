@@ -57,9 +57,11 @@ from crowd_nav.bayesian_dvl.intent_policy import (
 from crowd_nav.bayesian_dvl.intent_train import (
     FORMAL_EVAL_HELDOUT_SEEDS, FORMAL_SIX_SCENARIOS, PAPER_MAIN_BASE_SEED,
     STANDARD_DEV_DIAGNOSTIC_SEEDS, STANDARD_SELECTION_DEV_SEEDS, JUNCTION_SELECTION_DEV_SEEDS,
-    PAPER_MAIN_EPISODES_PER_SCENARIO, EMAModel, AdaptiveRankBalancer, GradientHealthMonitor,
+    PAPER_MAIN_EPISODES_PER_SCENARIO, EMAModel,
     IntentReplay, paper_main_jobs, IL_AUDIT_PER_SCENARIO, build_il_audit_set,
-    il_audit_identity, evaluate_il_audit,
+    il_audit_identity, evaluate_il_audit, TrainingHealthMonitor, run_ranking_warmup,
+    expert_rank_diagnostics, select_checkpoint, build_formal_plan, assert_in_formal_plan,
+    FORMAL_ARMS,
     batch_to_tensors, collect_orca_episode, run_ablation_suite, run_formal_six_scenario_evaluation,
     collect_raw_orca_episode, materialize_arm_transitions,
     run_il_update, run_online_training_step, summarize_scenario_results, train_step,
@@ -327,8 +329,12 @@ class RunState:
     training_arm: str = "full"
     il_episodes_collected: int = 0
     ratio_monitor: str = ""        # RETIRED (kept so old artifacts still parse)
-    balancer_state: str = ""
+    warmup_passed: bool = False
+    warmup_steps: int = 0
+    warmup_top1: float = 0.0
+    warmup_rank_loss: float = 0.0
     il_audit_identity: str = ""
+    il_audit_episodes: int = 0
     il_audit_mc_loss: float = 0.0
     il_audit_rank_loss: float = 0.0
     il_audit_best_mc_loss: float = 0.0
@@ -363,7 +369,10 @@ def il_corpus_path(corpus_dir: Path, arm: str, cfg: IntentTrainingConfig) -> Pat
     """A3: ONE corpus shared by every arm -- the path no longer depends on
     ``arm``. The parameter is kept so callers read naturally, and a
     mismatch is impossible because the file stores no arm at all."""
-    return Path(corpus_dir) / f"il_corpus_raw_{cfg.content_hash()[:12]}.pth"
+    # Keyed on the CORPUS identity, not the whole config: optimizer and
+    # gate settings cannot change a recorded ORCA transition, so they must
+    # not be able to invalidate 5000 episodes of collection.
+    return Path(corpus_dir) / f"il_corpus_raw_{cfg.corpus_identity_hash()[:12]}.pth"
 
 
 def build_il_corpus(env_config_path: Path, cfg: IntentTrainingConfig, arm: str, out_path: Path,
@@ -388,7 +397,8 @@ def build_il_corpus(env_config_path: Path, cfg: IntentTrainingConfig, arm: str, 
         "training_arm": None,   # A3: arm-independent by construction
         "feature_schema": cfg.feature_schema,
         "training_contract_schema": cfg.training_contract_schema,
-        "config_content_hash": cfg.content_hash(),
+        "config_content_hash": cfg.content_hash(),   # provenance only
+        "corpus_identity_hash": cfg.corpus_identity_hash(),
         "code_hash": code_sha256(),
         "gamma": cfg.gamma,
         "future_horizon": cfg.future_horizon,
@@ -427,8 +437,15 @@ def load_il_corpus(
         raise IntentCLIError(
             f"corpus {path} is a per-arm v1 corpus (arm={payload['training_arm']!r}); the V6 chain now "
             f"uses ONE arm-independent raw corpus -- recollect it")
-    if payload["config_content_hash"] != cfg.content_hash():
-        raise IntentCLIError("corpus was collected under a different training config")
+    stored = payload.get("corpus_identity_hash")
+    if stored is None:
+        raise IntentCLIError(
+            f"corpus {path} predates the corpus-identity contract; recollect it")
+    if stored != cfg.corpus_identity_hash():
+        raise IntentCLIError(
+            f"corpus was collected under different CORPUS-DETERMINING settings "
+            f"(env/teacher/reward/gamma/action table/scenes/seeds): {stored[:12]} != "
+            f"{cfg.corpus_identity_hash()[:12]}")
     corpus_code_hash = payload["code_hash"]
     current_code_hash = code_sha256()
     if (corpus_code_hash != current_code_hash
@@ -443,16 +460,19 @@ def load_il_corpus(
     transitions = []
     episodes = payload["episodes"]
     scenarios: List[str] = []
+    episode_ids: List[int] = []
     for done, raw in enumerate(episodes, 1):
         before = len(transitions)
         transitions.extend(materialize_arm_transitions(
             raw, arm, action_table, horizon=cfg.future_horizon, n_samples=cfg.future_n_samples))
         scenarios.extend([str(raw.scenario)] * (len(transitions) - before))
+        episode_ids.extend([int(raw.episode_seed)] * (len(transitions) - before))
         if progress_callback is not None:
             progress_callback(done, len(episodes), len(transitions))
     # Order 4: the audit set must be balanced ACROSS SCENARIOS, so the
     # scenario of each demo row travels with it.
     meta["scenario_of_row"] = scenarios
+    meta["episode_of_row"] = episode_ids
     return transitions, meta
 
 
@@ -466,8 +486,7 @@ class TrainingArtifacts:
     explore_rng: np.random.Generator
     sample_rng: np.random.Generator
     state: RunState
-    balancer: Optional[AdaptiveRankBalancer] = None
-    health: Optional[GradientHealthMonitor] = None
+    health: Optional[TrainingHealthMonitor] = None
     reservoir_rng: Optional[np.random.Generator] = None
     il_corpus_ref: Optional[dict] = None
 
@@ -557,17 +576,11 @@ def _build_artifacts(cfg: IntentTrainingConfig, seed: int, device: torch.device,
         explore_rng=np.random.default_rng(seed + 2),
         sample_rng=np.random.default_rng(seed + 3),
         reservoir_rng=np.random.default_rng(seed + 4),
-        balancer=AdaptiveRankBalancer(
-            lambda_init=cfg.lambda_init, target_ratio=cfg.target_ratio, ema_beta=cfg.ema_beta,
-            lambda_min=cfg.lambda_min, lambda_max=cfg.lambda_max,
-            max_change_factor=cfg.lambda_max_change_factor, epsilon=cfg.balancer_epsilon,
-            rank_floor=cfg.balancer_rank_floor),
-        health=GradientHealthMonitor(
-            ratio_min=cfg.health_ratio_min, ratio_max=cfg.health_ratio_max, window=cfg.health_window,
-            ratio_violation_fraction=cfg.health_ratio_violation_fraction,
-            clip_window=cfg.health_clip_window, clip_fraction=cfg.health_clip_fraction,
-            saturation_fraction=cfg.health_saturation_fraction,
-            cosine_threshold=cfg.health_cosine_threshold, cosine_fraction=cfg.health_cosine_fraction),
+        health=TrainingHealthMonitor(
+            interval=cfg.health_check_interval, mc_regression_factor=cfg.health_mc_regression_factor,
+            rank_max=cfg.health_rank_max, top1_min=cfg.health_top1_min,
+            consecutive_bad=cfg.health_consecutive_bad, clip_window=cfg.health_clip_window,
+            clip_fraction=cfg.health_clip_fraction),
         state=RunState(config_hash=cfg.content_hash(), code_hash=code_sha256(),
                         action_grid_hash=action_grid_hash, scene_registry_hash=scene_hash, seed=seed),
     )
@@ -605,8 +618,6 @@ def _load_into(art: TrainingArtifacts, path: Path, cfg: IntentTrainingConfig,
     if "reservoir_rng_state" in extra:
         art.reservoir_rng.bit_generator.state = extra["reservoir_rng_state"]
     art.state = RunState(**extra["run_state"])
-    if art.state.balancer_state and art.balancer is not None:
-        art.balancer.load_state_dict(json.loads(art.state.balancer_state))
     if art.state.health_state and art.health is not None:
         art.health.load_state_dict(json.loads(art.state.health_state))
 
@@ -751,8 +762,10 @@ def cmd_preflight(args) -> int:
     print(f"budget            : IL {cfg.il_episodes_total} ({cfg.il_passes} passes), online {cfg.online_episodes_total}")
     print(f"optim             : batch {cfg.batch_size}, lr {cfg.learning_rate}, gamma {cfg.gamma}, buffer {cfg.replay_capacity}")
     print(f"epsilon           : {cfg.epsilon_start} -> {cfg.epsilon_end} over {cfg.epsilon_decay_episodes} episodes")
-    print(f"lambda            : ADAPTIVE init={cfg.lambda_init} target_ratio={cfg.target_ratio} "
-          f"bounds=[{cfg.lambda_min}, {cfg.lambda_max}] (margin {cfg.ranking_margin})")
+    print(f"gradient combine  : PROJECTED, rank_share={cfg.rank_share} of |g_MC| "
+          f"(margin {cfg.ranking_margin}); no lambda")
+    print(f"audit split       : {cfg.audit_episodes_per_scenario} held-out episodes/scenario, "
+          f"never in replay/warm-up/gradients")
     print(f"ema decay         : {cfg.ema_decay}, checkpoint every {cfg.checkpoint_interval_episodes} episodes")
     print(f"training seeds    : {list(cfg.training_seeds)}")
     cuda = torch.cuda.is_available()
@@ -855,6 +868,24 @@ def cmd_train(args, resume: bool = False) -> int:
     if seed not in cfg.training_seeds:
         raise IntentCLIError(f"--seed {seed} is not one of the frozen training seeds {list(cfg.training_seeds)}")
 
+    # Order 5W: a FORMAL run must name the frozen plan that pairs the arms.
+    # The comparison this project exists to make is only valid if full/mean/cv
+    # differ in the belief treatment and nothing else; without this, nothing
+    # stops five seeds for `full` and one for a baseline.
+    if args.formal_plan is not None:
+        plan = json.loads(Path(args.formal_plan).read_text())
+        assert_in_formal_plan(plan, args.training_arm, seed, code_hash=code_sha256(),
+                              config_hash=cfg.content_hash(),
+                              corpus_identity=cfg.corpus_identity_hash())
+        print(f"formal plan {args.formal_plan}: (arm={args.training_arm}, seed={seed}) authorised "
+              f"[{len(plan['runs'])} runs = {plan['arms']} x {plan['seeds']}]")
+    elif not (args.il_episodes is not None
+              or (args.target_online_episodes is not None
+                  and args.target_online_episodes < cfg.online_episodes_total)):
+        raise IntentCLIError(
+            "a full-budget run must pass --formal-plan: the three arms have to be paired on the same "
+            "optimizer seeds, and that pairing is only enforceable from a frozen plan file")
+
     overrides = {}
     if args.il_episodes is not None:
         overrides["il_episodes"] = args.il_episodes
@@ -862,6 +893,8 @@ def cmd_train(args, resume: bool = False) -> int:
         overrides["il_passes"] = args.il_passes
     if args.target_online_episodes is not None and args.target_online_episodes != cfg.online_episodes_total:
         overrides["target_online_episodes"] = args.target_online_episodes
+    if args.audit_episodes is not None:
+        overrides["audit_episodes_per_scenario"] = args.audit_episodes
 
     art = _build_artifacts(cfg, seed, device, action_grid_hash, scene_hash)
     art.state.training_arm = args.training_arm
@@ -890,43 +923,34 @@ def cmd_train(args, resume: bool = False) -> int:
     diag_every = max(1, cfg.gradient_diagnostic_interval)
 
     def _sync_monitor() -> None:
-        if art.balancer is not None and art.health is not None:
-            art.state.balancer_state = json.dumps(art.balancer.state_dict())
+        if art.health is not None:
             art.state.health_state = json.dumps(art.health.state_dict())
 
     def _observe(result) -> None:
-        """Order 2/3: drive the balancer and the health gate.
+        """Order 3R: gradient statistics are RECORDED, not gated.
 
-        ORDER MATTERS and is the mechanism, not a detail:
+        Under projected, norm-normalised gradients the ranking share is
+        exactly rank_share of |g_MC| by construction, so a gate on that
+        number could only fire when the projection degenerates -- it would
+        be tautological. The previous version learned this the expensive
+        way: it aborted a pilot for exceeding a gradient budget while the
+        fixed audit set showed value regression improving throughout.
 
-          1. ``result.gradient_ratio`` is the LAGGED PRE-UPDATE ratio -- it
-             was produced by the lambda this step actually ran with, which
-             was decided from EARLIER gradients. Recording it before the
-             balancer moves is what keeps the gate from being tautological:
-             a lambda computed from the same batch would force the ratio to
-             the target identically, and the gate could then only ever fail
-             on saturation.
-          2. The gate sees that ratio.
-          3. ONLY THEN does the balancer fold the new gradient norms in and
-             pick the lambda for subsequent updates.
-
-        C4RF.4 (kept): monitor state is fixed into RunState BEFORE the abort
-        checkpoint is written, or the saved artifact carries a stale window
-        -- exactly the evidence the gate exists to preserve.
+        What still gates here is clipping, measured on EVERY update. The
+        substantive checks live in _audit_gate().
         """
-        if result is None or art.balancer is None or art.health is None:
+        if result is None or art.health is None:
             return
-        # clipping is measured on EVERY update, not only diagnostic ones
+        if result.ratio_measured:
+            art.health.record_diagnostic(
+                mc_grad_norm=result.mc_grad_norm, rank_grad_norm=result.rank_grad_norm,
+                rank_scale=result.lambda_used, cosine=result.gradient_cosine,
+                grad_norm_preclip=result.grad_norm_preclip)
         reason = art.health.observe_update(bool(result.clipped))
-        if reason is None and result.ratio_measured:
-            reason = art.health.observe_diagnostic(
-                result.gradient_ratio, art.balancer.saturated, result.gradient_cosine)
-            # step 3: the balancer moves only after the gate has judged
-            art.balancer.observe(result.mc_grad_norm, result.rank_grad_norm)
         _sync_monitor()
         if reason:
             _save_rolling()
-            raise IntentCLIError(f"ABORT (gradient health gate): {reason}")
+            raise IntentCLIError(f"ABORT (health gate): {reason}")
 
     # ---------------- IL phase ----------------
     # C4RF.2: the arm's IL corpus is collected ONCE into an immutable,
@@ -939,11 +963,33 @@ def cmd_train(args, resume: bool = False) -> int:
     if args.il_episodes is not None:
         corpus_file = corpus_file.with_name(corpus_file.stem + f"_pilot{args.il_episodes}.pth")
 
+    # Order 4W: on RESUME the CHECKPOINT's own il_corpus_ref is authoritative,
+    # not the CLI path. A wrong --il-corpus-dir used to send resume looking for
+    # a file that was not there; the guard below then fired only because the
+    # CLI path happened to be missing. Reading the reference first makes the
+    # check exact -- and it can never trigger a collection.
+    if resume and resume_path.exists():
+        _ref = torch.load(str(resume_path), map_location="cpu",
+                          weights_only=False).get("extra", {}).get("il_corpus_ref")
+        if not _ref:
+            raise IntentCLIError(
+                f"{resume_path} carries no il_corpus_ref; refusing to guess which corpus it used")
+        _p = Path(_ref["path"])
+        if not _p.is_absolute():
+            _p = corpus_dir / _p.name
+        if not _p.exists():
+            raise IntentCLIError(
+                f"resume references IL corpus {_p} (sha256 {str(_ref.get('corpus_sha256'))[:12]}) "
+                f"which does not exist. Refusing to collect a replacement -- point --il-corpus-dir "
+                f"at the original corpus. ZERO episodes collected.")
+        corpus_file = _p
+        print(f"resume: corpus taken from the checkpoint's own reference -> {corpus_file} "
+              f"(sha256 {str(_ref.get('corpus_sha256'))[:12]})")
+
     if not corpus_file.exists():
         if resume:
             raise IntentCLIError(
-                f"resume checkpoint exists but its shared IL corpus is missing at {corpus_file}; "
-                "restore the hash-matched corpus instead of recollecting it")
+                f"resume must never collect a corpus; {corpus_file} is missing")
         append_durable_log(run_dir, f"IL-DATA START total={args.il_episodes or cfg.il_episodes_total} "
                            f"destination={corpus_file}")
         collection_started = time.monotonic()
@@ -999,58 +1045,82 @@ def cmd_train(args, resume: bool = False) -> int:
         f"IL-MATERIALIZE COMPLETE arm={arm} episodes={art.il_corpus_ref['n_episodes']} "
         f"transitions={len(demo_transitions)} elapsed={(time.monotonic() - materialize_started) / 60.0:.1f}m",
     )
-    art.buffer.add_demo(demo_transitions, art.reservoir_rng)
+    # ------------------------------------------------------------------
+    # Order 2W: split the corpus BY EPISODE into training and audit.
+    #
+    # Real leak this closes: the audit set used to be built from the same
+    # rows that had already been added to the replay, so it measured
+    # TRAINING performance, not generalisation. That is why warm-up hit
+    # top1 0.951 in 500 steps here while the same procedure on genuinely
+    # disjoint episodes reached only 0.879-0.945 in 750.
+    #
+    # Splitting by EPISODE, not by row: rows inside one episode are
+    # temporally adjacent and highly correlated, so a row-level split would
+    # leak almost as badly.
+    # ------------------------------------------------------------------
+    scenario_rows = art.il_corpus_ref.get("scenario_of_row") or []
+    episode_of_row = art.il_corpus_ref.get("episode_of_row") or []
+    audit_set = None
+    if len(episode_of_row) == len(demo_transitions) and len(scenario_rows) == len(demo_transitions):
+        by_scenario_eps: Dict[str, List[int]] = {}
+        for ep, sc in zip(episode_of_row, scenario_rows):
+            lst = by_scenario_eps.setdefault(str(sc), [])
+            if not lst or lst[-1] != ep:
+                if ep not in lst:
+                    lst.append(ep)
+        n_audit_eps = (args.audit_episodes if args.audit_episodes is not None
+                       else cfg.audit_episodes_per_scenario)
+        if args.audit_episodes is not None and not art.state.is_pilot:
+            raise IntentCLIError(
+                '--audit-episodes is a PILOT override; a full-budget run must use the frozen '
+                f'{cfg.audit_episodes_per_scenario} per scenario')
+        audit_eps = set()
+        short = {}
+        for sc, eps in by_scenario_eps.items():
+            eps_sorted = sorted(eps)
+            if len(eps_sorted) < n_audit_eps + 1:
+                short[sc] = len(eps_sorted)
+            # take the LAST n episodes of each scenario: deterministic, and
+            # it touches no RNG so resume identity is unaffected
+            audit_eps.update(eps_sorted[-n_audit_eps:])
+        if short:
+            # A FORMAL run must never lose its held-out audit set; a tiny
+            # engineering pilot (2-4 episodes) legitimately cannot hold one
+            # out and still have anything left to train on.
+            if not art.state.is_pilot:
+                raise IntentCLIError(
+                    f"corpus too small to hold out an audit split: episodes per scenario {short}, "
+                    f"need > {n_audit_eps} each")
+            art.buffer.add_demo(demo_transitions, art.reservoir_rng)
+            print(f"IL audit split: SKIPPED -- pilot corpus has {short} episodes/scenario, "
+                  f"need > {n_audit_eps}")
+            audit_eps = set()
+        if audit_eps:
+            train_rows, audit_rows = [], []
+            for t, ep in zip(demo_transitions, episode_of_row):
+                (audit_rows if ep in audit_eps else train_rows).append(t)
+            # HARD invariant: not one audit row may reach the replay.
+            train_ids = {id(t) for t in train_rows}
+            assert not any(id(t) in train_ids for t in audit_rows)
+            art.buffer.add_demo(train_rows, art.reservoir_rng)
+            audit_set = audit_rows
+            art.state.il_audit_identity = il_audit_identity(audit_set)
+            art.state.il_audit_episodes = len(audit_eps)
+            print(f"IL corpus split BY EPISODE: {len(train_rows)} training rows in replay, "
+                  f"{len(audit_rows)} audit rows from {len(audit_eps)} held-out episodes "
+                  f"({n_audit_eps}/scenario) -- audit rows never enter replay, warm-up or any "
+                  f"gradient update; identity {art.state.il_audit_identity[:12]}")
+    else:
+        art.buffer.add_demo(demo_transitions, art.reservoir_rng)
+        if not art.state.is_pilot:
+            raise IntentCLIError(
+                "formal run cannot build a held-out audit split (corpus lacks per-row episode ids)")
+        print("IL audit set: SKIPPED -- corpus lacks per-row episode ids (pilot only)")
     print(f"IL corpus: {art.il_corpus_ref['n_episodes']} episodes -> {art.buffer.n_demo} demo "
           f"transitions in reservoir (capacity {cfg.demo_capacity}, "
           f"sha256 {art.il_corpus_ref['corpus_sha256'][:12]})")
     art.state.il_episodes_collected = int(art.il_corpus_ref["n_episodes"])
 
-    # Order 4: freeze the fixed IL audit set. During IL the corpus is
-    # immutable, so these MC targets are STATIONARY -- the one phase where a
-    # rising MC loss cannot be explained away by "the target moved". That is
-    # exactly what the lambda=380 run did (0.157 at pass 400 -> 0.469 at the
-    # end, 3.0x its own best) and the training loss could not show it,
-    # because it is measured on a fresh random minibatch every pass.
-    scenario_rows = art.il_corpus_ref.get("scenario_of_row") or []
-    audit_set = None
-    audit_best = None
-    per_scenario = collections.Counter(scenario_rows)
-    # The requirement is PER SCENARIO, not on the total: a corpus can have
-    # plenty of rows overall and still be short on one scenario, and an
-    # unbalanced audit set would not measure what it claims to.
-    enough = (len(scenario_rows) == len(demo_transitions) and len(per_scenario) >= 2
-              and min(per_scenario.values()) >= IL_AUDIT_PER_SCENARIO)
-    if enough:
-        row_scenario = {id(t): sc for t, sc in zip(demo_transitions, scenario_rows)}
-        audit_set = build_il_audit_set(demo_transitions, lambda t: row_scenario[id(t)])
-        art.state.il_audit_identity = il_audit_identity(audit_set)
-        print(f"IL audit set: {len(audit_set)} rows "
-              f"({IL_AUDIT_PER_SCENARIO}/scenario), identity {art.state.il_audit_identity[:12]}")
-    elif art.state.is_pilot:
-        print(f"IL audit set: SKIPPED -- pilot corpus, rows per scenario "
-              f"{dict(per_scenario)} < {IL_AUDIT_PER_SCENARIO}")
-    else:
-        # A FORMAL run must never silently lose its only stationary-target
-        # detector; the formal corpus is 5000 episodes and cannot be short.
-        raise IntentCLIError(
-            f"formal run cannot build the IL audit set: rows per scenario {dict(per_scenario)}, "
-            f"need >= {IL_AUDIT_PER_SCENARIO} each")
-
-    def _run_il_audit(tag: str) -> None:
-        nonlocal audit_best
-        if audit_set is None:
-            return
-        m = evaluate_il_audit(art.model, audit_set, n_taus=cfg.iqn_train_quantiles,
-                              ranking_margin=cfg.ranking_margin, device=str(device))
-        art.state.il_audit_mc_loss = float(m["audit_mc_loss"])
-        art.state.il_audit_rank_loss = float(m["audit_rank_loss"])
-        if audit_best is None or m["audit_mc_loss"] < audit_best:
-            audit_best = float(m["audit_mc_loss"])
-        art.state.il_audit_best_mc_loss = float(audit_best)
-        append_durable_log(
-            run_dir,
-            f"IL-AUDIT {tag} mc={m['audit_mc_loss']:.6f} rank={m['audit_rank_loss']:.6f} "
-            f"best_mc={audit_best:.6f} identity={art.state.il_audit_identity[:12]}")
 
     if resume:
         # the demo side is now populated, so the checkpoint (which omits
@@ -1115,15 +1185,77 @@ def cmd_train(args, resume: bool = False) -> int:
     if resume:
         _run_development_if_due(art.state.online_episodes_done)
 
+    def _audit_gate(tag: str) -> None:
+        """Order 3R: the substantive health check -- measured effect on the
+        FIXED audit set, not a gradient ratio."""
+        if audit_set is None or art.health is None:
+            return
+        m = evaluate_il_audit(art.model, audit_set, n_taus=cfg.iqn_train_quantiles,
+                              ranking_margin=cfg.ranking_margin, device=str(device))
+        d = expert_rank_diagnostics(art.model, audit_set, n_taus=cfg.iqn_train_quantiles,
+                                    device=str(device))
+        art.state.il_audit_mc_loss = float(m["audit_mc_loss"])
+        art.state.il_audit_rank_loss = float(d["audit_rank_loss"])
+        reason = art.health.observe_audit(m["audit_mc_loss"], d["audit_rank_loss"],
+                                          d["expert_top1_rate"])
+        art.state.il_audit_best_mc_loss = float(art.health.best_mc or 0.0)
+        append_durable_log(
+            run_dir,
+            f"AUDIT {tag} mc={m['audit_mc_loss']:.6f} best={art.health.best_mc:.6f} "
+            f"rank={d['audit_rank_loss']:.6f} top1={d['expert_top1_rate']:.3f} "
+            f"margin={d['expert_margin_mean']:+.5f} range={d['score_range_mean']:.5f}")
+        _sync_monitor()
+        if reason:
+            _save_rolling()
+            raise IntentCLIError(f"ABORT (audit gate): {reason}")
+
+    # ---------------- Order 1W: ranking warm-up ----------------
+    # Ranking is trained ALONE first. Measured on a fixed real batch: alone
+    # it reaches top1 0.96+ and margin +0.127; jointly, under an ill-scaled
+    # weight, it never left the margin (score range 0.0017, top1 52.7%).
+    # MC supervises only the executed action, so it constrains nothing about
+    # the other 79 -- the ranking structure has to exist BEFORE value
+    # regression starts moving the scores.
+    if audit_set is not None and not art.state.warmup_passed and art.state.il_passes_done == 0:
+        telemetry.log(f"WARMUP START max_steps={cfg.warmup_max_steps} "
+                      f"gate: top1>={cfg.warmup_top1_min} rank<={cfg.warmup_rank_loss_max} margin>0")
+        wu = run_ranking_warmup(
+            art.model, art.optimizer, art.buffer, cfg.batch_size, art.sample_rng, audit_set,
+            max_steps=cfg.warmup_max_steps, n_taus=cfg.iqn_train_quantiles,
+            ranking_margin=cfg.ranking_margin,
+            # ranking is the ONLY objective here, so the 80-action pass is
+            # not throttled: at ranking_batch_size=32 the same budget stalls
+            # at top1 0.938 and fails the gate for want of supervision, not
+            # for want of learnability.
+            ranking_batch_size=None,
+            grad_clip_norm=cfg.grad_clip_norm, device=str(device),
+            check_interval=cfg.warmup_check_interval, top1_min=cfg.warmup_top1_min,
+            rank_loss_max=cfg.warmup_rank_loss_max, log=telemetry.log)
+        art.state.warmup_passed = bool(wu["passed"])
+        art.state.warmup_steps = int(wu["steps"])
+        art.state.warmup_top1 = float(wu["final"].get("expert_top1_rate", 0.0))
+        art.state.warmup_rank_loss = float(wu["final"].get("audit_rank_loss", 0.0))
+        art.ema.update(art.model)
+        _sync_monitor()
+        _save_rolling()
+        if not wu["passed"]:
+            raise IntentCLIError(
+                f"ABORT (ranking warm-up): did not reach top1>={cfg.warmup_top1_min}, "
+                f"rank<={cfg.warmup_rank_loss_max}, margin>0 within {cfg.warmup_max_steps} steps "
+                f"(final top1={art.state.warmup_top1:.3f} rank={art.state.warmup_rank_loss:.5f}). "
+                f"Joint training must not start on an unlearned ranking term.")
+        telemetry.log(f"WARMUP PASSED steps={wu['steps']} top1={art.state.warmup_top1:.3f} "
+                      f"rank={art.state.warmup_rank_loss:.5f}")
+
     if art.state.il_passes_done < total_il_passes:
         result = None
-        _run_il_audit("pass=0")
+        _audit_gate("pass=0")
         while art.state.il_passes_done < total_il_passes:
             measure = (art.state.global_updates % diag_every == 0)
             result = run_il_update(
                 art.model, art.optimizer, art.buffer, cfg.batch_size, art.sample_rng, art.tau_generator,
                 n_taus=cfg.iqn_train_quantiles, ranking_margin=cfg.ranking_margin,
-                lambda_rank=art.balancer.lambda_value, ranking_batch_size=cfg.ranking_batch_size,
+                rank_share=cfg.rank_share, ranking_batch_size=cfg.ranking_batch_size,
                 device=str(device), grad_clip_norm=cfg.grad_clip_norm, measure_gradient_ratio=measure)
             art.ema.update(art.model)
             art.state.il_passes_done += 1
@@ -1138,27 +1270,14 @@ def cmd_train(args, resume: bool = False) -> int:
                     + (f" ratio={result.gradient_ratio:.3f}" if result.ratio_measured else "")
                     + f" lambda={result.lambda_used:.4g}"
                 )
-            if art.state.il_passes_done % IL_AUDIT_INTERVAL_PASSES == 0:
-                _run_il_audit(f"pass={art.state.il_passes_done}")
+            if art.state.il_passes_done % cfg.health_check_interval == 0:
+                _audit_gate(f"pass={art.state.il_passes_done}")
 
         # Order 4 gate: on a STATIONARY target the value fit must not end up
         # materially worse than its own best. lambda=380 ended at 3.0x its
         # best here; anything approaching that means the auxiliary term is
         # displacing value regression again.
-        _run_il_audit(f"pass={art.state.il_passes_done} FINAL")
-        if audit_set is not None and audit_best is not None and audit_best > 0:
-            ratio = art.state.il_audit_mc_loss / audit_best
-            print(f"IL audit: final mc={art.state.il_audit_mc_loss:.6f} best={audit_best:.6f} "
-                  f"({ratio:.2f}x best, limit {IL_AUDIT_MAX_REGRESSION}x); "
-                  f"rank={art.state.il_audit_rank_loss:.6f}")
-            if ratio > IL_AUDIT_MAX_REGRESSION:
-                _sync_monitor()
-                _save_rolling()
-                raise IntentCLIError(
-                    f"ABORT (IL audit gate): value regression on the FIXED audit set ended at "
-                    f"{ratio:.2f}x its own best ({art.state.il_audit_mc_loss:.6f} vs {audit_best:.6f}), "
-                    f"limit {IL_AUDIT_MAX_REGRESSION}x. The target was stationary, so this is the "
-                    f"ranking term displacing MC regression -- the lambda=380 failure mode.")
+        _audit_gate(f"pass={art.state.il_passes_done} FINAL")
         _sync_monitor()
         _save_rolling()
 
@@ -1173,7 +1292,7 @@ def cmd_train(args, resume: bool = False) -> int:
             args.env_config, art.model, art.optimizer, action_table, scenario, ep_seed, epsilon,
             art.buffer, cfg.batch_size, art.explore_rng, art.sample_rng, art.tau_generator,
             gamma=cfg.gamma, n_taus=cfg.iqn_train_quantiles, ranking_margin=cfg.ranking_margin,
-            lambda_rank=art.balancer.lambda_value, ranking_batch_size=cfg.ranking_batch_size,
+            rank_share=cfg.rank_share, ranking_batch_size=cfg.ranking_batch_size,
             n_samples=cfg.future_n_samples, horizon=cfg.future_horizon, device=str(device),
             demo_ratio=cfg.demo_sample_ratio, grad_clip_norm=cfg.grad_clip_norm,
             measure_gradient_ratio=measure, updates=cfg.updates_per_episode, belief_mode=arm)
@@ -1238,15 +1357,20 @@ def cmd_train(args, resume: bool = False) -> int:
               f"({'run incomplete' if not finished else '--keep-resume'})")
     print(f"done[arm={arm}]: IL {art.state.il_passes_done}, online "
           f"{art.state.online_episodes_done}/{cfg.online_episodes_total}, updates {art.state.global_updates}")
-    h, b = art.health, art.balancer
-    if h is not None and h.n_measured:
+    h = art.health
+    if h is not None:
         clip_rate = (sum(h.clips) / len(h.clips)) if h.clips else 0.0
-        print(f"gradient health: measured {h.n_measured}x, ratio outside "
-              f"[{h.ratio_min}, {h.ratio_max}] {h.n_out_of_range}x, "
+        print(f"health: {h.n_checks} audit checks, best audit_mc "
+              f"{h.best_mc if h.best_mc is None else round(h.best_mc, 6)}, "
               f"clip rate (last {len(h.clips)}) {clip_rate:.1%}")
-    if b is not None:
-        print(f"lambda: final {b.lambda_value:.6g} (target_ratio {b.target_ratio}, "
-              f"{b.n_observations} observations, saturated {b.n_saturated}x)")
+        if h.diagnostics:
+            d = h.diagnostics[-1]
+            print(f"last gradient diagnostic: |g_MC|={d['mc_grad_norm']:.4g} "
+                  f"|g_rank|={d['rank_grad_norm']:.4g} rank_scale={d['rank_scale']:.4g} "
+                  f"cos={d['cosine']:+.3f}")
+    if art.state.warmup_passed:
+        print(f"warm-up: passed in {art.state.warmup_steps} steps "
+              f"(top1 {art.state.warmup_top1:.3f}, rank {art.state.warmup_rank_loss:.5f})")
     telemetry.log(f"COMPLETE wrote {resume_path} and {run_dir / FINAL_EMA_NAME}")
     telemetry.close()
     return 0
@@ -1416,6 +1540,12 @@ def build_parser() -> argparse.ArgumentParser:
                        help="directory holding the ONE raw IL corpus shared by every arm and seed")
         t.add_argument("--keep-resume", action="store_true",
                        help="keep the GB-scale resume after a completed run (default: reclaim it)")
+        t.add_argument("--audit-episodes", type=int, default=None,
+                       help="PILOT ONLY: held-out audit episodes per scenario. The frozen "
+                            "value is used for any full-budget run.")
+        t.add_argument("--formal-plan", type=Path, default=None,
+                       help="frozen plan pairing full/mean/cv on the SAME seeds; required for a "
+                            "full-budget run")
         t.add_argument("--training-arm", type=str, default="full", choices=["full", "mean", "cv"],
                        help="C4R.6: train an INDEPENDENT ablation arm from scratch. "
                             "'uniform' is a supplementary inference-time control only and is not trained.")

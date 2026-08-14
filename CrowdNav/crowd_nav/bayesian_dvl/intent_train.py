@@ -47,6 +47,13 @@ from crowd_nav.bayesian_dvl.junction_scenario import (
 from crowd_sim.envs.crowd_sim import CrowdSim
 from crowd_sim.envs.policy.orca import ORCA
 from crowd_sim.envs.utils.action import ActionXY
+
+
+RANK_GRADIENT_SHARE = 0.25
+# |g'_rank| at or below this fraction of max(|g_MC|, 1) is treated as zero.
+RANK_GRADIENT_ZERO_TOL = 1e-8
+
+
 from crowd_sim.envs.utils.robot import Robot
 
 
@@ -476,8 +483,9 @@ class TrainStepResult:
 def train_step(
     model: DistributionalValueModel, optimizer: torch.optim.Optimizer,
     batch: IntentBatch, generator: torch.Generator, n_taus: int = 16,
-    ranking_margin: float = 0.1, lambda_rank: float = 0.5, ranking_batch_size: Optional[int] = None,
+    ranking_margin: float = 0.1, ranking_batch_size: Optional[int] = None,
     grad_clip_norm: Optional[float] = None, measure_gradient_ratio: bool = False,
+    rank_share: float = RANK_GRADIENT_SHARE,
 ) -> TrainStepResult:
     """ONE gradient step. Plan section 3.1's FROZEN objective:
 
@@ -590,30 +598,41 @@ def train_step(
         # spurious node to the graph).
         rank_loss = torch.zeros((), device=device)
 
-    loss = mc_loss + lambda_rank * rank_loss
+    # There is no longer a single weighted scalar objective: the update is
+    # assembled from gradients, not from a summed loss. `loss` is reported
+    # as the UNWEIGHTED sum purely so the two terms remain comparable across
+    # runs; nothing optimises it directly.
+    loss = mc_loss.detach() + rank_loss.detach()
 
-    # C4R.3: the frozen config declares grad_clip_norm and a rank/MC
-    # gradient-ratio gate. Those were previously READ AND VALIDATED but
-    # never applied -- contract drift: the config claimed a safeguard the
-    # production path did not implement. Both are now real.
+    # Order 2R: the update is built from PROJECTED, norm-normalised
+    # gradients, not from a weighted sum of the two losses.
+    #
+    # What this replaces and why: a scalar lambda can only decide which term
+    # is louder. It cannot stop the ranking supervision from pulling against
+    # value regression, and an EMA-tracked lambda could not keep up with how
+    # fast |g_MC| collapses during IL -- the pilot aborted on exactly that,
+    # with lambda overshooting to ~102 while the fixed audit set showed MC
+    # still improving. Here the conflicting component is removed outright
+    # and the ranking size is set by construction every step.
     params = [p for p in model.parameters() if p.requires_grad]
-    mc_grad_norm = rank_grad_norm = weighted = ratio = cosine = 0.0
-    if measure_gradient_ratio:
-        # separate autograd passes: the ratio is BETWEEN THE TWO TERMS, and
-        # the total gradient norm cannot express that.
-        mc_grads = torch.autograd.grad(mc_loss, params, retain_graph=True, allow_unused=True)
-        mc_grad_norm = _grad_l2(mc_grads)
-        if rank_loss.requires_grad:
-            rank_grads = torch.autograd.grad(rank_loss, params, retain_graph=True, allow_unused=True)
-            rank_grad_norm = _grad_l2(rank_grads)
-            cosine = _grad_cosine(mc_grads, rank_grads)
-        weighted = abs(float(lambda_rank)) * rank_grad_norm
-        # r_t uses the lambda THIS step ran with -- see AdaptiveRankBalancer
-        # on why recomputing it from these same gradients would be circular.
-        ratio = weighted / max(mc_grad_norm, 1e-12)
+    mc_grads = torch.autograd.grad(mc_loss, params, retain_graph=True, allow_unused=True)
+    rank_grads = None
+    if rank_loss.requires_grad:
+        rank_grads = torch.autograd.grad(rank_loss, params, retain_graph=True, allow_unused=True)
+
+    if rank_grads is None or rank_share <= 0.0:
+        # online-only batch (or ranking disabled): pure MC, no projection
+        combined = list(mc_grads)
+        info = {"mc_grad_norm": _grad_l2(mc_grads), "rank_grad_norm": 0.0,
+                "projected_rank_norm": 0.0, "gradient_cosine": 0.0,
+                "projection_coefficient": 0.0, "rank_scale": 0.0,
+                "conflict_removed": False, "rank_negligible": True}
+    else:
+        combined, info = combine_gradients(mc_grads, rank_grads, rank_share=rank_share)
 
     optimizer.zero_grad()
-    loss.backward()
+    for p_, g_ in zip(params, combined):
+        p_.grad = None if g_ is None else g_.detach().clone()
     grad_norm = float(sum(p.grad.norm() ** 2 for p in model.parameters() if p.grad is not None) ** 0.5)
     if not np.isfinite(grad_norm):
         raise IntentTrainError(f"non-finite gradient norm {grad_norm}")
@@ -623,6 +642,11 @@ def train_step(
             raise IntentTrainError(f"grad_clip_norm must be positive, got {grad_clip_norm}")
         torch.nn.utils.clip_grad_norm_(params, float(grad_clip_norm))
         clipped = grad_norm > float(grad_clip_norm)
+    mc_grad_norm = info["mc_grad_norm"]
+    rank_grad_norm = info["rank_grad_norm"]
+    weighted = info["rank_scale"] * info["projected_rank_norm"]
+    ratio = weighted / max(mc_grad_norm, 1e-12)
+    cosine = info["gradient_cosine"]
     optimizer.step()
     return TrainStepResult(
         loss=float(loss.item()), mc_loss=float(mc_loss.item()), rank_loss=float(rank_loss.item()),
@@ -630,7 +654,7 @@ def train_step(
         n_demo=int(batch.demo_mask.sum()), n_online=int((~batch.demo_mask).sum()),
         mc_grad_norm=mc_grad_norm, rank_grad_norm=rank_grad_norm,
         weighted_rank_grad_norm=weighted, gradient_ratio=ratio, ratio_measured=measure_gradient_ratio,
-        lambda_used=float(lambda_rank), gradient_cosine=cosine,
+        lambda_used=float(info["rank_scale"]), gradient_cosine=cosine,
     )
 
 
@@ -666,249 +690,109 @@ def _grad_cosine(a, b) -> float:
     return float(dot / denom) if denom > 1e-30 else 0.0
 
 
-class AdaptiveRankBalancer:
-    """Order 2: replaces the frozen ``lambda_rank = 380``.
+class TrainingHealthMonitor:
+    """Order 3R: health is judged on MEASURED EFFECT, not on gradient ratios.
 
-    Why the fixed value had to go, measured on the lambda=380 run: the
-    weighted ranking gradient sat at 80-350x the MC gradient (median 148),
-    93.5% of diagnostic points were outside the config's own [0.05, 50]
-    band, and the band drifted WORSE over training (107 -> 167 -> 146 ->
-    187). 380 had been calibrated ONCE against a randomly initialised
-    network and then frozen: as the value head converges ||g_MC|| shrinks
-    while ||g_rank|| does not, so a constant lambda must diverge.
+    The ratio gate is gone entirely. Under projected, norm-normalised
+    gradients the ranking contribution is exactly ``rank_share`` of |g_MC|
+    by construction, so any gate on that number is tautological -- it can
+    only ever fail when the projection degenerates. The previous
+    incarnation of this class learned that the expensive way: it aborted a
+    pilot for exceeding a gradient budget while the fixed audit set showed
+    value regression improving the whole time.
 
-    LAGGED by construction, and that is the whole point. The naive fix --
-    compute lambda from this batch's gradients so the ratio comes out at
-    the target -- makes the health gate TAUTOLOGICAL: r_t would equal the
-    target identically, and the only way it could ever fail is lambda
-    saturation. Here lambda is decided from PAST gradients (an EMA), used
-    for the current update, and the ratio it actually produced is recorded
-    afterwards. r_t is therefore an out-of-sample measurement that can
-    genuinely fall outside its band.
+    What is checked instead, every ``interval`` updates, on the FIXED audit
+    set (stationary rows, fixed midpoint quantiles, no RNG):
 
-    target_ratio is 0.25, not 1.0: MC value regression is the objective
-    this method is ABOUT; ranking is auxiliary supervision. Parity would
-    still let the auxiliary term contribute as much gradient as the thing
-    being learned.
+      * audit_mc  > best_mc * mc_regression_factor      -> abort
+      * audit_rank > rank_max, or top1 < top1_min,
+        on ``consecutive_bad`` CONSECUTIVE checks        -> abort
+      * clipping on > clip_fraction of the last
+        ``clip_window`` updates                          -> abort
+      * non-finite anything                              -> abort immediately
+
+    One bad check does not abort: the audit is deterministic but the weights
+    it scores are mid-optimisation. Two in a row is a trend.
+
+    Raw gradient norms and the cosine are still recorded, as diagnostics
+    only -- they no longer gate anything.
     """
 
-    def __init__(self, lambda_init: float = 1.0, target_ratio: float = 0.25, ema_beta: float = 0.9,
-                 lambda_min: float = 1e-4, lambda_max: float = 128.0, max_change_factor: float = 2.0,
-                 epsilon: float = 1e-12, rank_floor: float = 1e-12):
-        if not (0 < lambda_min < lambda_max):
-            raise IntentTrainError(f"require 0 < lambda_min < lambda_max, got {lambda_min}/{lambda_max}")
-        if not (0.0 < target_ratio):
-            raise IntentTrainError(f"target_ratio must be positive, got {target_ratio}")
-        if not (0.0 < ema_beta < 1.0):
-            raise IntentTrainError(f"ema_beta must be in (0,1), got {ema_beta}")
-        if max_change_factor <= 1.0:
-            raise IntentTrainError(f"max_change_factor must exceed 1, got {max_change_factor}")
-        if not (lambda_min <= lambda_init <= lambda_max):
-            raise IntentTrainError(f"lambda_init {lambda_init} outside [{lambda_min}, {lambda_max}]")
-        self.target_ratio = float(target_ratio)
-        self.ema_beta = float(ema_beta)
-        self.lambda_min, self.lambda_max = float(lambda_min), float(lambda_max)
-        self.max_change_factor = float(max_change_factor)
-        self.epsilon = float(epsilon)
-        self.rank_floor = float(rank_floor)
-        self.lambda_value = float(lambda_init)
-        self.ema_mc: Optional[float] = None
-        self.ema_rank: Optional[float] = None
-        self.n_observations = 0
-        self.n_saturated = 0
-
-    @property
-    def saturated(self) -> bool:
-        return (self.lambda_value <= self.lambda_min * (1 + 1e-9)
-                or self.lambda_value >= self.lambda_max * (1 - 1e-9))
-
-    def observe(self, mc_grad_norm: float, rank_grad_norm: float) -> float:
-        """Fold this measurement into the EMAs and set the lambda that the
-        NEXT updates will use. Returns the new lambda.
-
-        Called AFTER the optimizer step, never before -- the lag is the
-        mechanism that keeps the health gate meaningful."""
-        mc, rk = float(mc_grad_norm), float(rank_grad_norm)
-        if not (np.isfinite(mc) and np.isfinite(rk)):
-            raise IntentTrainError(f"non-finite gradient norms mc={mc} rank={rk}")
-        b = self.ema_beta
-        self.ema_mc = mc if self.ema_mc is None else b * self.ema_mc + (1 - b) * mc
-        self.ema_rank = rk if self.ema_rank is None else b * self.ema_rank + (1 - b) * rk
-        self.n_observations += 1
-
-        if self.ema_mc <= self.rank_floor:
-            # MC gradient has effectively vanished. Raising lambda here
-            # would hand the whole update to the auxiliary term -- a
-            # rank-only optimizer wearing a value-learning label. Pin to the
-            # floor instead.
-            target = self.lambda_min
-        elif self.ema_rank <= self.rank_floor:
-            # The RANKING gradient has vanished -- the auxiliary objective is
-            # satisfied. Dividing by ~0 would drive lambda to its ceiling and
-            # then trip the saturation gate, aborting a run for being
-            # HEALTHY. There is nothing left to weight up: pin to the floor.
-            # (Whether ranking actually learned is judged by the Order 4
-            # fixed audit set, not by this gradient magnitude.)
-            target = self.lambda_min
-        else:
-            target = self.target_ratio * self.ema_mc / (self.ema_rank + self.epsilon)
-
-        lo = self.lambda_value / self.max_change_factor
-        hi = self.lambda_value * self.max_change_factor
-        target = min(max(target, lo), hi)               # no more than x2 / /2 per observation
-        self.lambda_value = min(max(target, self.lambda_min), self.lambda_max)
-        if self.saturated:
-            self.n_saturated += 1
-        return self.lambda_value
-
-    def state_dict(self) -> dict:
-        return {
-            "lambda_value": self.lambda_value, "ema_mc": self.ema_mc, "ema_rank": self.ema_rank,
-            "n_observations": self.n_observations, "n_saturated": self.n_saturated,
-            "target_ratio": self.target_ratio, "ema_beta": self.ema_beta,
-            "lambda_min": self.lambda_min, "lambda_max": self.lambda_max,
-            "max_change_factor": self.max_change_factor, "epsilon": self.epsilon,
-            "rank_floor": self.rank_floor,
-        }
-
-    def load_state_dict(self, state: dict) -> None:
-        for key in ("target_ratio", "ema_beta", "lambda_min", "lambda_max", "max_change_factor",
-                    "epsilon", "rank_floor"):
-            if key in state and abs(float(state[key]) - float(getattr(self, key))) > 1e-12:
-                raise IntentTrainError(
-                    f"balancer config drift on {key}: checkpoint {state[key]} != current {getattr(self, key)}")
-        self.lambda_value = float(state["lambda_value"])
-        self.ema_mc = None if state["ema_mc"] is None else float(state["ema_mc"])
-        self.ema_rank = None if state["ema_rank"] is None else float(state["ema_rank"])
-        self.n_observations = int(state["n_observations"])
-        self.n_saturated = int(state["n_saturated"])
-
-
-class GradientHealthMonitor:
-    """Order 3: replaces the ``GradientRatioMonitor`` "128 consecutive
-    diagnostic points" rule, which was structurally incapable of firing.
-
-    Why it could not fire, measured on the lambda=380 run: diagnostics run
-    every 50 updates, so 128 CONSECUTIVE points meant tolerating 6400 of
-    that run's 12000 updates, and any single in-range point reset the
-    counter to zero. 213 of 240 points (89%) were out of range, the longest
-    consecutive stretch was 32, and the run emitted no warning at all.
-
-    A sliding-window PROPORTION cannot be reset by an occasional good
-    point, which is exactly the failure mode that was missed.
-
-    Every window, counter and statistic here is checkpointed, so a resumed
-    run continues the same windows rather than starting a fresh clean slate
-    (another way a gate can be silently defeated).
-    """
-
-    def __init__(self, ratio_min: float = 0.05, ratio_max: float = 0.75,
-                 window: int = 20, ratio_violation_fraction: float = 0.60,
-                 clip_window: int = 500, clip_fraction: float = 0.80,
-                 saturation_fraction: float = 0.20,
-                 cosine_threshold: float = -0.5, cosine_fraction: float = 0.80):
-        if not (0 < ratio_min < ratio_max):
-            raise IntentTrainError(f"require 0 < ratio_min < ratio_max, got {ratio_min}/{ratio_max}")
-        if window <= 0 or clip_window <= 0:
-            raise IntentTrainError("windows must be positive")
-        self.ratio_min, self.ratio_max = float(ratio_min), float(ratio_max)
-        self.window, self.clip_window = int(window), int(clip_window)
-        self.ratio_violation_fraction = float(ratio_violation_fraction)
-        self.clip_fraction = float(clip_fraction)
-        self.saturation_fraction = float(saturation_fraction)
-        self.cosine_threshold, self.cosine_fraction = float(cosine_threshold), float(cosine_fraction)
-        self.ratios: List[float] = []
-        self.saturations: List[bool] = []
-        self.cosines: List[float] = []
+    def __init__(self, interval: int = 100, mc_regression_factor: float = 1.5,
+                 rank_max: float = 0.075, top1_min: float = 0.90,
+                 consecutive_bad: int = 2, clip_window: int = 500, clip_fraction: float = 0.80):
+        if interval <= 0 or clip_window <= 0:
+            raise IntentTrainError("interval and clip_window must be positive")
+        if mc_regression_factor <= 1.0:
+            raise IntentTrainError(f"mc_regression_factor must exceed 1, got {mc_regression_factor}")
+        self.interval = int(interval)
+        self.mc_regression_factor = float(mc_regression_factor)
+        self.rank_max, self.top1_min = float(rank_max), float(top1_min)
+        self.consecutive_bad = int(consecutive_bad)
+        self.clip_window, self.clip_fraction = int(clip_window), float(clip_fraction)
+        self.best_mc: Optional[float] = None
+        self.consecutive_rank_bad = 0
+        self.n_checks = 0
         self.clips: List[bool] = []
-        self.n_measured = 0
-        self.n_out_of_range = 0
+        self.diagnostics: List[dict] = []
+
+    _FROZEN = ("interval", "mc_regression_factor", "rank_max", "top1_min",
+               "consecutive_bad", "clip_window", "clip_fraction")
 
     def observe_update(self, clipped: bool) -> Optional[str]:
-        """EVERY update -- clipping is measured on all of them, not only on
-        the sparse diagnostic points."""
         self.clips.append(bool(clipped))
         if len(self.clips) > self.clip_window:
-            self.clips = self.clips[-self.clip_window:]
+            del self.clips[:-self.clip_window]
         if len(self.clips) >= self.clip_window:
             frac = sum(self.clips) / len(self.clips)
             if frac > self.clip_fraction:
                 return (f"gradient clipping fired on {frac:.1%} of the last {self.clip_window} updates "
-                        f"(> {self.clip_fraction:.0%}): the loss scale and grad_clip_norm disagree")
+                        f"(> {self.clip_fraction:.0%})")
         return None
 
-    def observe_diagnostic(self, ratio: float, lambda_saturated: bool, cosine: float) -> Optional[str]:
-        """Diagnostic points only. ``ratio`` MUST be the one produced by the
-        lambda this update actually used -- a ratio recomputed from the
-        lambda that these same gradients just implied would be tautological."""
-        if not np.isfinite(ratio):
-            return f"non-finite gradient ratio {ratio}"
-        if not np.isfinite(cosine):
-            return f"non-finite gradient cosine {cosine}"
-        self.n_measured += 1
-        if not (self.ratio_min <= ratio <= self.ratio_max):
-            self.n_out_of_range += 1
-        for buf, val in ((self.ratios, float(ratio)), (self.saturations, bool(lambda_saturated)),
-                         (self.cosines, float(cosine))):
-            buf.append(val)
-            if len(buf) > self.window:
-                del buf[:-self.window]
-
-        if len(self.ratios) >= self.window:
-            # ABORT ON THE UPPER SIDE ONLY. A ratio BELOW ratio_min means the
-            # weighted ranking gradient has become small relative to MC --
-            # which is what happens when the auxiliary objective is already
-            # satisfied, i.e. a healthy state, not a failure. Aborting on it
-            # would kill runs for succeeding. Whether ranking actually
-            # learned is judged by the Order 4 fixed audit set
-            # (audit_rank_loss), not by a gradient magnitude. ratio_min is
-            # still recorded (n_out_of_range) for reporting.
-            high = sum(1 for r in self.ratios if r > self.ratio_max) / len(self.ratios)
-            if high > self.ratio_violation_fraction:
-                return (f"weighted-rank/MC gradient ratio exceeded {self.ratio_max} on {high:.0%} of the "
-                        f"last {self.window} diagnostics (> {self.ratio_violation_fraction:.0%}): the "
-                        f"auxiliary ranking term is dominating value regression")
-            sat = sum(self.saturations) / len(self.saturations)
-            if sat > self.saturation_fraction:
-                return (f"lambda sat at a bound on {sat:.0%} of the last {self.window} diagnostics "
-                        f"(> {self.saturation_fraction:.0%}): the balancer cannot reach its target")
-            conflict = sum(1 for c in self.cosines if c < self.cosine_threshold) / len(self.cosines)
-            if conflict > self.cosine_fraction:
-                return (f"OBJECTIVE_CONFLICT: cos(g_MC, g_rank) < {self.cosine_threshold} on "
-                        f"{conflict:.0%} of the last {self.window} diagnostics")
+    def observe_audit(self, audit_mc: float, audit_rank: float, top1: float) -> Optional[str]:
+        for name, v in (("audit_mc", audit_mc), ("audit_rank", audit_rank), ("top1", top1)):
+            if not np.isfinite(v):
+                return f"non-finite {name} = {v}"
+        self.n_checks += 1
+        if self.best_mc is None or audit_mc < self.best_mc:
+            self.best_mc = float(audit_mc)
+        if self.best_mc > 0 and audit_mc > self.best_mc * self.mc_regression_factor:
+            return (f"value regression on the FIXED audit set reached {audit_mc / self.best_mc:.2f}x its own "
+                    f"best ({audit_mc:.6f} vs {self.best_mc:.6f}), limit {self.mc_regression_factor}x")
+        bad = (audit_rank > self.rank_max) or (top1 < self.top1_min)
+        self.consecutive_rank_bad = self.consecutive_rank_bad + 1 if bad else 0
+        if self.consecutive_rank_bad >= self.consecutive_bad:
+            return (f"ranking quality failed {self.consecutive_rank_bad} consecutive audits "
+                    f"(rank={audit_rank:.5f} > {self.rank_max} or top1={top1:.3f} < {self.top1_min})")
         return None
 
-    #: EVERY threshold, not just the obvious four. A resume that silently
-    #: relaxed, say, clip_fraction would produce a "healthy" run under a
-    #: gate the author never agreed to.
-    _FROZEN_THRESHOLDS = (
-        "ratio_min", "ratio_max", "window", "clip_window", "ratio_violation_fraction",
-        "clip_fraction", "saturation_fraction", "cosine_threshold", "cosine_fraction",
-    )
+    def record_diagnostic(self, **kw) -> None:
+        """Gradient norms / cosine / rank_scale: kept for the report, never gates."""
+        self.diagnostics.append(dict(kw))
+        if len(self.diagnostics) > 500:
+            del self.diagnostics[:-500]
 
     def state_dict(self) -> dict:
-        state = {
-            "ratios": list(self.ratios), "saturations": [bool(x) for x in self.saturations],
-            "cosines": list(self.cosines), "clips": [bool(x) for x in self.clips],
-            "n_measured": self.n_measured, "n_out_of_range": self.n_out_of_range,
-        }
-        state.update({k: getattr(self, k) for k in self._FROZEN_THRESHOLDS})
+        state = {"best_mc": self.best_mc, "consecutive_rank_bad": self.consecutive_rank_bad,
+                 "n_checks": self.n_checks, "clips": [bool(x) for x in self.clips],
+                 "diagnostics": list(self.diagnostics)}
+        state.update({k: getattr(self, k) for k in self._FROZEN})
         return state
 
     def load_state_dict(self, state: dict) -> None:
-        missing = [k for k in self._FROZEN_THRESHOLDS if k not in state]
+        missing = [k for k in self._FROZEN if k not in state]
         if missing:
             raise IntentTrainError(f"health monitor state is missing frozen thresholds {missing}")
-        for key in self._FROZEN_THRESHOLDS:
-            if key in state and float(state[key]) != float(getattr(self, key)):
+        for k in self._FROZEN:
+            if float(state[k]) != float(getattr(self, k)):
                 raise IntentTrainError(
-                    f"health monitor config drift on {key}: checkpoint {state[key]} != {getattr(self, key)}")
-        self.ratios = [float(x) for x in state["ratios"]]
-        self.saturations = [bool(x) for x in state["saturations"]]
-        self.cosines = [float(x) for x in state["cosines"]]
+                    f"health monitor config drift on {k}: checkpoint {state[k]} != {getattr(self, k)}")
+        self.best_mc = None if state["best_mc"] is None else float(state["best_mc"])
+        self.consecutive_rank_bad = int(state["consecutive_rank_bad"])
+        self.n_checks = int(state["n_checks"])
         self.clips = [bool(x) for x in state["clips"]]
-        self.n_measured = int(state["n_measured"])
-        self.n_out_of_range = int(state["n_out_of_range"])
+        self.diagnostics = list(state["diagnostics"])
 
 
 class GradientRatioMonitor:
@@ -1255,6 +1139,16 @@ class IntentReplay:
                 self._online_next = (self._online_next + 1) % self.online_capacity
 
     # ---- reads ----
+    def sample_demo_only(self, batch_size: int, rng: np.random.Generator) -> List[IntentTransition]:
+        """Demo rows only -- the ranking warm-up has no use for online rows
+        (they carry no expert set, so they contribute nothing to L_rank)."""
+        if batch_size <= 0:
+            raise IntentTrainError(f"batch_size must be positive, got {batch_size}")
+        if not self._demo:
+            raise IntentTrainError("ranking warm-up needs a populated demo reservoir")
+        idx = rng.integers(0, len(self._demo), size=min(batch_size, len(self._demo)))
+        return [self._demo[i] for i in idx]
+
     def sample(self, batch_size: int, rng: np.random.Generator, demo_ratio: float) -> List[IntentTransition]:
         """Mixed batch. ``demo_ratio`` is the TARGET demo share; if one
         side is empty the other supplies the whole batch (so the IL phase
@@ -1396,7 +1290,8 @@ def run_online_training_step(
     action_table: np.ndarray, scenario: str, episode_seed: int, epsilon: float,
     buffer: IntentReplay, batch_size: int, explore_rng: np.random.Generator,
     sample_rng: np.random.Generator, tau_generator: torch.Generator, is_heldout: bool = False,
-    gamma: float = 0.95, n_taus: int = 16, ranking_margin: float = 0.1, lambda_rank: float = 0.5,
+    gamma: float = 0.95, n_taus: int = 16, ranking_margin: float = 0.1,
+    rank_share: float = RANK_GRADIENT_SHARE,
     ranking_batch_size: Optional[int] = None, n_samples: int = 60, horizon: int = 8, device: str = "cpu",
     demo_ratio: float = 0.20, grad_clip_norm: Optional[float] = None,
     measure_gradient_ratio: bool = False, updates: int = 1, belief_mode: str = "full",
@@ -1428,7 +1323,7 @@ def run_online_training_step(
         batch = buffer.sample(min(batch_size, len(buffer)), sample_rng, demo_ratio=demo_ratio)
         result = train_step(
             model, optimizer, batch_to_tensors(batch, device=device), tau_generator, n_taus=n_taus,
-            ranking_margin=ranking_margin, lambda_rank=lambda_rank, ranking_batch_size=ranking_batch_size,
+            ranking_margin=ranking_margin, rank_share=rank_share, ranking_batch_size=ranking_batch_size,
             grad_clip_norm=grad_clip_norm, measure_gradient_ratio=measure_gradient_ratio,
         )
     return replace(
@@ -1450,9 +1345,10 @@ def run_online_training_step(
 def run_il_update(
     model: DistributionalValueModel, optimizer: torch.optim.Optimizer, buffer: IntentReplay,
     batch_size: int, sample_rng: np.random.Generator, tau_generator: torch.Generator,
-    n_taus: int = 16, ranking_margin: float = 0.1, lambda_rank: float = 0.5,
+    n_taus: int = 16, ranking_margin: float = 0.1,
     ranking_batch_size: Optional[int] = None, device: str = "cpu",
     grad_clip_norm: Optional[float] = None, measure_gradient_ratio: bool = False,
+    rank_share: float = RANK_GRADIENT_SHARE,
 ) -> TrainStepResult:
     """ONE IL mini-batch update (C4R.1).
 
@@ -1471,7 +1367,7 @@ def run_il_update(
     batch = buffer.sample(min(batch_size, len(buffer)), sample_rng, demo_ratio=1.0)
     return train_step(
         model, optimizer, batch_to_tensors(batch, device=device), tau_generator, n_taus=n_taus,
-        ranking_margin=ranking_margin, lambda_rank=lambda_rank, ranking_batch_size=ranking_batch_size,
+        ranking_margin=ranking_margin, rank_share=rank_share, ranking_batch_size=ranking_batch_size,
         grad_clip_norm=grad_clip_norm, measure_gradient_ratio=measure_gradient_ratio,
     )
 
@@ -1900,3 +1796,296 @@ def select_checkpoint(candidates: Sequence[dict], min_sr: float = CHECKPOINT_SEL
                 sum(nav) / len(nav),
                 -int(c.get("order", 0)))         # 6: later wins ties
     return sorted(eligible, key=key)[0]
+
+
+# --------------------------------------------------------------------- #
+# Order 2R: projected, norm-normalised gradient combination.
+# --------------------------------------------------------------------- #
+
+
+
+def combine_gradients(mc_grads, rank_grads, rank_share: float = RANK_GRADIENT_SHARE,
+                      epsilon: float = 1e-12):
+    """g = g_MC + rank_share * (|g_MC| / |g'_rank|) * g'_rank, where g'_rank
+    has had any component OPPOSING g_MC removed.
+
+        c        = (g_rank . g_MC) / |g_MC|^2
+        g'_rank  = g_rank - min(0, c) * g_MC
+        g        = g_MC + rank_share * |g_MC| / (|g'_rank| + eps) * g'_rank
+
+    Replaces the adaptive-lambda scheme, and is not the same idea. A scalar
+    lambda can only decide which term is LOUDER; it cannot stop the two from
+    pulling against each other, and its EMA could not track how fast |g_MC|
+    collapses during IL (the pilot aborted on exactly that). Here the
+    conflicting component is removed outright and the ranking term's size
+    is set by construction every step -- no lambda, no EMA, no lag.
+
+    Consequences worth stating plainly:
+      * after projection g'_rank . g_MC >= 0 always, so the ranking term can
+        never actively undo value regression;
+      * the ranking contribution is exactly rank_share of |g_MC| whenever
+        g'_rank is non-zero, so an "effective ratio" gate on it would be
+        tautological -- health is judged on the fixed audit set instead;
+        ``rank_share`` is NOT a "weak auxiliary" setting: it is the weight of
+        the JOINT DEMONSTRATION RANKING SUPERVISION in the IL phase, and it
+        is calibrated, not assumed;
+      * a hinge that is fully satisfied gives EXACTLY zero gradient, and the
+        update degenerates to pure MC.
+
+    Returns ``(combined, info)``; info carries the raw norms, the cosine and
+    the scale actually applied, for diagnostics only.
+    """
+    if not (0.0 <= rank_share):
+        raise IntentTrainError(f"rank_share must be non-negative, got {rank_share}")
+    flat_mc = [g if g is not None else None for g in mc_grads]
+    flat_rank = [g if g is not None else None for g in rank_grads]
+    if len(flat_mc) != len(flat_rank):
+        raise IntentTrainError("gradient lists must be aligned parameter-for-parameter")
+
+    dot = 0.0
+    mc_sq = 0.0
+    rank_sq = 0.0
+    for a, b in zip(flat_mc, flat_rank):
+        if a is not None:
+            mc_sq += float((a ** 2).sum())
+        if b is not None:
+            rank_sq += float((b ** 2).sum())
+        if a is not None and b is not None:
+            dot += float((a * b).sum())
+    mc_norm, rank_norm = mc_sq ** 0.5, rank_sq ** 0.5
+    cosine = dot / (mc_norm * rank_norm) if mc_norm > 0 and rank_norm > 0 else 0.0
+
+    if not all(np.isfinite(v) for v in (dot, mc_norm, rank_norm)):
+        raise IntentTrainError(f"non-finite gradient statistics dot={dot} |mc|={mc_norm} |rank|={rank_norm}")
+
+    # remove only the OPPOSING component; a cooperative or orthogonal
+    # ranking gradient passes through untouched
+    c = dot / (mc_sq + epsilon) if mc_sq > 0 else 0.0
+    proj = min(0.0, c)
+    projected = []
+    proj_sq = 0.0
+    for a, b in zip(flat_mc, flat_rank):
+        if b is None and a is None:
+            projected.append(None)
+            continue
+        v = (b.clone() if b is not None else torch.zeros_like(a))
+        if proj != 0.0 and a is not None:
+            v = v - proj * a
+        projected.append(v)
+        proj_sq += float((v ** 2).sum())
+    proj_norm = proj_sq ** 0.5
+
+    # Numerical guard: a projected ranking gradient that is negligible
+    # RELATIVE to the MC gradient is treated as exactly zero. Without this,
+    # dividing by a denormal norm would turn pure floating-point noise into
+    # a full rank_share of the update. No empirical cap is needed beyond it:
+    # the ranking contribution is already bounded at rank_share * |g_MC| by
+    # construction.
+    negligible = proj_norm <= RANK_GRADIENT_ZERO_TOL * max(mc_norm, 1.0)
+    scale = 0.0
+    if proj_norm > 0.0 and mc_norm > 0.0 and not negligible:
+        scale = rank_share * mc_norm / (proj_norm + epsilon)
+    if not np.isfinite(scale):
+        raise IntentTrainError(
+            f"non-finite rank scale {scale} (|g_MC|={mc_norm}, |g'_rank|={proj_norm})")
+
+    combined = []
+    for a, v in zip(flat_mc, projected):
+        if a is None and v is None:
+            combined.append(None)
+        elif a is None:
+            combined.append(scale * v)
+        elif v is None:
+            combined.append(a.clone())
+        else:
+            combined.append(a + scale * v)
+    for g in combined:
+        if g is not None and not bool(torch.isfinite(g).all()):
+            raise IntentTrainError("combined gradient contains non-finite values")
+    info = {
+        "mc_grad_norm": mc_norm, "rank_grad_norm": rank_norm,
+        "projected_rank_norm": proj_norm, "gradient_cosine": cosine,
+        "projection_coefficient": float(proj), "rank_scale": float(scale),
+        "conflict_removed": bool(proj != 0.0), "rank_negligible": bool(negligible),
+    }
+    return combined, info
+
+
+# --------------------------------------------------------------------- #
+# Order 1W: ranking warm-up.
+# --------------------------------------------------------------------- #
+
+WARMUP_MAX_STEPS = 750
+WARMUP_TOP1_MIN = 0.95
+WARMUP_RANK_LOSS_MAX = 0.05
+
+
+def expert_rank_diagnostics(model, audit: Sequence[IntentTransition], n_taus: int = 16,
+                            device: str = "cpu") -> Dict[str, float]:
+    """top-1 rate, expert-vs-hardest-negative margin, and score spread on a
+    FIXED row set. These are the quantities that actually say whether the
+    ranking objective was learned -- rank_loss alone sat at exactly the
+    margin for an entire 951-pass run while looking merely 'flat'."""
+    was_training = bool(model.training)
+    model.eval()
+    try:
+        with torch.no_grad():
+            batch = batch_to_tensors(audit, device=device)
+            n = len(audit)
+            n_actions = batch.all_action_feats.shape[1]
+            dev = batch.robot_feats.device
+            fixed_tau = (torch.arange(n_taus, dtype=torch.float32, device=dev) + 0.5) / n_taus
+            emb = model.encode(batch.robot_feats, batch.human_feats, batch.human_mask)
+            state_rep = emb.repeat_interleave(n_actions, dim=0)
+            act = model.action_encoder(batch.all_action_feats.reshape(n * n_actions, -1))
+            tau = fixed_tau.unsqueeze(0).expand(n * n_actions, n_taus)
+            scores = model.value_network(state_rep, act, tau).mean(dim=1).view(n, n_actions)
+            top1, margins, losses = 0, [], []
+            for i, t in enumerate(audit):
+                ex = t.expert_action_indices
+                if not ex:
+                    continue
+                s = scores[i]
+                mask = torch.zeros_like(s, dtype=torch.bool)
+                mask[list(ex)] = True
+                margins.append(float(s[mask].max() - s[~mask].max()))
+                if int(s.argmax()) in set(ex):
+                    top1 += 1
+                losses.append(expert_ranking_loss(s, ex, 0.1))
+            scored = max(1, sum(1 for t in audit if t.expert_action_indices))
+            return {
+                "expert_top1_rate": top1 / scored,
+                "expert_margin_mean": float(np.mean(margins)) if margins else 0.0,
+                "score_range_mean": float((scores.max(dim=1).values - scores.min(dim=1).values).mean()),
+                "audit_rank_loss": float(torch.stack(losses).mean()) if losses else 0.0,
+            }
+    finally:
+        model.train(was_training)
+
+
+def run_ranking_warmup(model, optimizer, buffer: IntentReplay, batch_size: int,
+                       sample_rng: np.random.Generator, audit: Sequence[IntentTransition],
+                       *, max_steps: int = WARMUP_MAX_STEPS, n_taus: int = 16,
+                       ranking_margin: float = 0.1, ranking_batch_size: Optional[int] = None,
+                       grad_clip_norm: Optional[float] = None, device: str = "cpu",
+                       check_interval: int = 50, top1_min: float = WARMUP_TOP1_MIN,
+                       rank_loss_max: float = WARMUP_RANK_LOSS_MAX, log=None) -> Dict[str, object]:
+    """Train the RANKING objective alone until the fixed audit set says it
+    was actually learned, or give up.
+
+    Why a separate phase: measured on a fixed 128-row real batch, ranking
+    alone reaches top-1 0.984 and margin +0.088 in 500 steps, while under
+    joint training with an ill-scaled weight it never left the margin
+    (score range 0.0017, top-1 52.7%). MC supervises only the executed
+    action, so it constrains nothing about the other 79 -- the two objectives
+    are not competing for the same signal, they simply need the ranking
+    structure to exist BEFORE value regression starts moving the scores.
+
+    Gate: top1 >= top1_min AND audit_rank_loss <= rank_loss_max AND mean
+    margin > 0. Not reaching it within max_steps is a HARD STOP -- entering
+    joint training with an unlearned ranking term is what produced the
+    aborted pilot.
+    """
+    model.train()
+    params = [p for p in model.parameters() if p.requires_grad]
+    history = []
+    passed = False
+    step = 0
+    for step in range(max_steps + 1):
+        if step % check_interval == 0:
+            d = expert_rank_diagnostics(model, audit, n_taus=n_taus, device=device)
+            d["step"] = step
+            history.append(d)
+            if log is not None:
+                log(f"WARMUP[{step}/{max_steps}] rank={d['audit_rank_loss']:.5f} "
+                    f"top1={d['expert_top1_rate']:.3f} margin={d['expert_margin_mean']:+.5f} "
+                    f"range={d['score_range_mean']:.5f}")
+            if (d["expert_top1_rate"] >= top1_min and d["audit_rank_loss"] <= rank_loss_max
+                    and d["expert_margin_mean"] > 0.0):
+                passed = True
+                break
+        if step == max_steps:
+            break
+        batch_rows = buffer.sample_demo_only(batch_size, sample_rng)
+        batch = batch_to_tensors(batch_rows, device=device)
+        demo_positions = list(range(len(batch_rows)))
+        if ranking_batch_size is not None:
+            demo_positions = demo_positions[:ranking_batch_size]
+        n_actions = batch.all_action_feats.shape[1]
+        fixed_tau = (torch.arange(n_taus, dtype=torch.float32, device=batch.robot_feats.device) + 0.5) / n_taus
+        idx = torch.as_tensor(demo_positions, dtype=torch.long, device=batch.robot_feats.device)
+        n_demo = len(demo_positions)
+        emb = model.encode(batch.robot_feats[idx], batch.human_feats[idx], batch.human_mask[idx])
+        state_rep = emb.repeat_interleave(n_actions, dim=0)
+        act = model.action_encoder(batch.all_action_feats[idx].reshape(n_demo * n_actions, -1))
+        tau = fixed_tau.unsqueeze(0).expand(n_demo * n_actions, n_taus)
+        scores = model.value_network(state_rep, act, tau).mean(dim=1).view(n_demo, n_actions)
+        losses = [expert_ranking_loss(scores[r], batch.expert_indices[i], ranking_margin)
+                  for r, i in enumerate(demo_positions) if batch.expert_indices[i]]
+        if not losses:
+            raise IntentTrainError("ranking warm-up drew a batch with no expert sets")
+        loss = torch.stack(losses).mean()
+        optimizer.zero_grad()
+        loss.backward()
+        gn = float(sum(p.grad.norm() ** 2 for p in params if p.grad is not None) ** 0.5)
+        if not np.isfinite(gn):
+            raise IntentTrainError(f"non-finite warm-up gradient norm {gn}")
+        if grad_clip_norm is not None:
+            torch.nn.utils.clip_grad_norm_(params, float(grad_clip_norm))
+        optimizer.step()
+    final = history[-1] if history else {}
+    return {"passed": passed, "steps": step, "history": history, "final": final}
+
+
+# --------------------------------------------------------------------- #
+# Order 5W: three-arm pairing.
+# --------------------------------------------------------------------- #
+
+FORMAL_ARMS = ("full", "mean", "cv")
+
+
+def build_formal_plan(seeds: Sequence[int], code_hash: str, config_hash: str,
+                      corpus_identity: str, il_episodes: int, online_episodes: int) -> dict:
+    """A frozen plan binding every arm to the SAME optimizer seeds.
+
+    Why it is a file and not a convention: the comparison this project
+    exists to make is full vs mean vs cv, and it is only valid if the arms
+    differ in the belief treatment and nothing else. With a manual launcher
+    nothing stops five seeds being run for `full` and one for a baseline --
+    which would make `full` look better for a reason that has nothing to do
+    with belief. The launcher refuses any (arm, seed) outside this plan.
+    """
+    seeds = tuple(int(s) for s in seeds)
+    if not seeds:
+        raise IntentTrainError("formal plan needs at least one seed")
+    if len(set(seeds)) != len(seeds):
+        raise IntentTrainError(f"formal plan seeds must be unique, got {seeds}")
+    return {
+        "plan_schema": "bdvl_intent_formal_plan_v1",
+        "arms": list(FORMAL_ARMS),
+        "seeds": list(seeds),
+        "runs": [{"arm": a, "seed": s} for s in seeds for a in FORMAL_ARMS],
+        "code_hash": code_hash,
+        "config_hash": config_hash,
+        "corpus_identity_hash": corpus_identity,
+        "il_episodes": int(il_episodes),
+        "online_episodes": int(online_episodes),
+    }
+
+
+def assert_in_formal_plan(plan: dict, arm: str, seed: int, *, code_hash: str,
+                          config_hash: str, corpus_identity: str) -> None:
+    """Fail closed unless this exact (arm, seed) is in the plan AND the code,
+    config and corpus still match the ones the plan was frozen against."""
+    if plan.get("plan_schema") != "bdvl_intent_formal_plan_v1":
+        raise IntentTrainError(f"unknown formal plan schema {plan.get('plan_schema')!r}")
+    for field, current in (("code_hash", code_hash), ("config_hash", config_hash),
+                           ("corpus_identity_hash", corpus_identity)):
+        if plan.get(field) != current:
+            raise IntentTrainError(
+                f"formal plan was frozen against {field} {str(plan.get(field))[:12]} but this run has "
+                f"{str(current)[:12]}; the arms would not be comparable")
+    if not any(r["arm"] == arm and int(r["seed"]) == int(seed) for r in plan["runs"]):
+        raise IntentTrainError(
+            f"(arm={arm!r}, seed={seed}) is not in the frozen formal plan. Arms must be paired on the "
+            f"SAME seeds: plan has arms {plan['arms']} x seeds {plan['seeds']}.")

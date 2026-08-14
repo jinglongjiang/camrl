@@ -86,24 +86,21 @@ class IntentTrainingConfig:
     # [seeds]
     training_seeds: Tuple[int, ...]
     validation_seeds: Tuple[int, ...]
-    # Order 2/3: gradient balance + health, config-driven (never class defaults)
-    lambda_init: float = 1.0
-    target_ratio: float = 0.25
-    ema_beta: float = 0.9
-    lambda_min: float = 1e-4
-    lambda_max: float = 128.0
-    lambda_max_change_factor: float = 2.0
-    balancer_epsilon: float = 1e-12
-    balancer_rank_floor: float = 1e-12
-    health_window: int = 20
-    health_ratio_min: float = 0.05
-    health_ratio_max: float = 0.75
-    health_ratio_violation_fraction: float = 0.60
+    # Order 2R/3R: projected-gradient balance, warm-up and effect-based health
+    rank_share: float = 2.0
+    audit_episodes_per_scenario: int = 50
+    rank_zero_tolerance: float = 1e-8
+    warmup_max_steps: int = 750
+    warmup_check_interval: int = 50
+    warmup_top1_min: float = 0.95
+    warmup_rank_loss_max: float = 0.05
+    health_check_interval: int = 100
+    health_mc_regression_factor: float = 1.5
+    health_rank_max: float = 0.075
+    health_top1_min: float = 0.90
+    health_consecutive_bad: int = 2
     health_clip_window: int = 500
     health_clip_fraction: float = 0.80
-    health_saturation_fraction: float = 0.20
-    health_cosine_threshold: float = -0.5
-    health_cosine_fraction: float = 0.80
     # provenance
     source_path: str = ""
     source_sha256: str = ""
@@ -119,6 +116,25 @@ class IntentTrainingConfig:
             return self.epsilon_end
         frac = min(1.0, float(online_episode_index) / float(self.epsilon_decay_episodes))
         return float(self.epsilon_start + (self.epsilon_end - self.epsilon_start) * frac)
+
+    #: Fields that actually determine the RAW ORCA corpus. Everything else
+    #: -- optimizer settings, rank_share, gate thresholds, EMA, epsilon --
+    #: provably cannot change a single recorded transition, so it must not
+    #: be able to invalidate 5000 episodes of collection. Measured cost of
+    #: getting this wrong: a config edit renamed the corpus file AND the
+    #: in-file guard rejected the old one, making reuse impossible.
+    CORPUS_IDENTITY_FIELDS = (
+        "il_episodes_total", "il_episodes_standard", "il_episodes_junction_crowd",
+        "gamma", "future_horizon", "future_n_samples",
+        "feature_schema", "checkpoint_schema", "max_candidate_goals",
+    )
+
+    def corpus_identity_hash(self) -> str:
+        """Identity of the RAW ORCA corpus: environment, teacher, reward,
+        gamma, action table, scenes and seeds -- not training knobs."""
+        payload = {k: getattr(self, k) for k in self.CORPUS_IDENTITY_FIELDS}
+        blob = repr(sorted(payload.items())).encode("utf-8")
+        return hashlib.sha256(blob).hexdigest()
 
     def content_hash(self) -> str:
         payload = {k: v for k, v in asdict(self).items() if k not in ("source_path", "source_sha256")}
@@ -203,23 +219,20 @@ def load_intent_training_config(path: Path = DEFAULT_TRAINING_CONFIG) -> IntentT
         tensorboard_enabled=parser.getboolean("monitoring", "tensorboard_enabled"),
         training_seeds=_seed_tuple(g("seeds", "training_seeds"), "training_seeds"),
         validation_seeds=_seed_tuple(g("seeds", "validation_seeds"), "validation_seeds"),
-        lambda_init=gf("gradient_balance", "lambda_init"),
-        target_ratio=gf("gradient_balance", "target_ratio"),
-        ema_beta=gf("gradient_balance", "ema_beta"),
-        lambda_min=gf("gradient_balance", "lambda_min"),
-        lambda_max=gf("gradient_balance", "lambda_max"),
-        lambda_max_change_factor=gf("gradient_balance", "lambda_max_change_factor"),
-        balancer_epsilon=gf("gradient_balance", "balancer_epsilon"),
-        balancer_rank_floor=gf("gradient_balance", "balancer_rank_floor"),
-        health_window=gi("gradient_health", "health_window"),
-        health_ratio_min=gf("gradient_health", "health_ratio_min"),
-        health_ratio_max=gf("gradient_health", "health_ratio_max"),
-        health_ratio_violation_fraction=gf("gradient_health", "health_ratio_violation_fraction"),
+        rank_share=gf("gradient_balance", "rank_share"),
+        audit_episodes_per_scenario=gi("audit_split", "audit_episodes_per_scenario"),
+        rank_zero_tolerance=gf("gradient_balance", "rank_zero_tolerance"),
+        warmup_max_steps=gi("ranking_warmup", "warmup_max_steps"),
+        warmup_check_interval=gi("ranking_warmup", "warmup_check_interval"),
+        warmup_top1_min=gf("ranking_warmup", "warmup_top1_min"),
+        warmup_rank_loss_max=gf("ranking_warmup", "warmup_rank_loss_max"),
+        health_check_interval=gi("gradient_health", "health_check_interval"),
+        health_mc_regression_factor=gf("gradient_health", "health_mc_regression_factor"),
+        health_rank_max=gf("gradient_health", "health_rank_max"),
+        health_top1_min=gf("gradient_health", "health_top1_min"),
+        health_consecutive_bad=gi("gradient_health", "health_consecutive_bad"),
         health_clip_window=gi("gradient_health", "health_clip_window"),
         health_clip_fraction=gf("gradient_health", "health_clip_fraction"),
-        health_saturation_fraction=gf("gradient_health", "health_saturation_fraction"),
-        health_cosine_threshold=gf("gradient_health", "health_cosine_threshold"),
-        health_cosine_fraction=gf("gradient_health", "health_cosine_fraction"),
         source_path=str(path),
         source_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
     )
@@ -273,24 +286,28 @@ def _validate(cfg: IntentTrainingConfig) -> None:
     if cfg.ranking_batch_size > cfg.batch_size:
         raise IntentConfigError(
             f"ranking_batch_size {cfg.ranking_batch_size} cannot exceed batch_size {cfg.batch_size}")
-    # Order 2/3 validation: the balancer and the health gate are now the
-    # production mechanism, so their parameters must be sane or fail closed.
-    if not (0 < cfg.lambda_min <= cfg.lambda_init <= cfg.lambda_max):
+    # Order 2R/3R validation -- fail closed on every gate parameter.
+    if not (0.0 <= cfg.rank_share <= 10.0):
+        raise IntentConfigError(f"rank_share must be in [0,10], got {cfg.rank_share}")
+    if cfg.audit_episodes_per_scenario <= 0:
         raise IntentConfigError(
-            f"require 0 < lambda_min <= lambda_init <= lambda_max, got "
-            f"{cfg.lambda_min}/{cfg.lambda_init}/{cfg.lambda_max}")
-    if cfg.target_ratio <= 0 or not (0 < cfg.ema_beta < 1) or cfg.lambda_max_change_factor <= 1:
+            f"audit_episodes_per_scenario must be positive, got {cfg.audit_episodes_per_scenario}")
+    if not (0.0 < cfg.rank_zero_tolerance < 1.0):
+        raise IntentConfigError(f"rank_zero_tolerance must be in (0,1), got {cfg.rank_zero_tolerance}")
+    if cfg.warmup_max_steps <= 0 or cfg.warmup_check_interval <= 0:
+        raise IntentConfigError("warm-up steps and check interval must be positive")
+    if not (0.0 < cfg.warmup_top1_min <= 1.0):
+        raise IntentConfigError(f"warmup_top1_min must be in (0,1], got {cfg.warmup_top1_min}")
+    if cfg.warmup_rank_loss_max <= 0:
+        raise IntentConfigError(f"warmup_rank_loss_max must be positive, got {cfg.warmup_rank_loss_max}")
+    if cfg.health_check_interval <= 0 or cfg.health_clip_window <= 0:
+        raise IntentConfigError("health intervals must be positive")
+    if cfg.health_mc_regression_factor <= 1.0:
         raise IntentConfigError(
-            f"bad balancer params: target_ratio={cfg.target_ratio} ema_beta={cfg.ema_beta} "
-            f"max_change={cfg.lambda_max_change_factor}")
-    if not (0 < cfg.health_ratio_min < cfg.health_ratio_max):
-        raise IntentConfigError(
-            f"require 0 < health_ratio_min < health_ratio_max, got "
-            f"{cfg.health_ratio_min}/{cfg.health_ratio_max}")
-    if cfg.health_window <= 0 or cfg.health_clip_window <= 0:
-        raise IntentConfigError("health windows must be positive")
-    for name in ("health_ratio_violation_fraction", "health_clip_fraction",
-                 "health_saturation_fraction", "health_cosine_fraction"):
+            f"health_mc_regression_factor must exceed 1, got {cfg.health_mc_regression_factor}")
+    if cfg.health_consecutive_bad <= 0:
+        raise IntentConfigError("health_consecutive_bad must be positive")
+    for name in ("health_rank_max", "health_top1_min", "health_clip_fraction"):
         v = getattr(cfg, name)
         if not (0 < v <= 1):
             raise IntentConfigError(f"{name} must be in (0,1], got {v}")

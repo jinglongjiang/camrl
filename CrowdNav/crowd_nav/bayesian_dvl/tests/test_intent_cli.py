@@ -84,16 +84,15 @@ def test_c2_config_validation_fails_closed() -> None:
             # Order 2/3: the retired [ranking] gate is replaced by the
             # balancer + sliding-window health gate, which must fail closed
             # on every one of their parameters.
-            ("inverted health ratio band", lambda c: c.set("gradient_health", "health_ratio_min", "999")),
-            ("lambda_init outside bounds", lambda c: c.set("gradient_balance", "lambda_init", "1e9")),
-            ("non-positive target_ratio", lambda c: c.set("gradient_balance", "target_ratio", "0")),
-            ("ema_beta out of range", lambda c: c.set("gradient_balance", "ema_beta", "1.0")),
-            ("max_change_factor <= 1", lambda c: c.set("gradient_balance", "lambda_max_change_factor", "1.0")),
-            ("zero health window", lambda c: c.set("gradient_health", "health_window", "0")),
             ("zero clip window", lambda c: c.set("gradient_health", "health_clip_window", "0")),
             ("clip fraction out of range", lambda c: c.set("gradient_health", "health_clip_fraction", "1.5")),
-            ("saturation fraction out of range",
-             lambda c: c.set("gradient_health", "health_saturation_fraction", "0")),
+            ("negative rank_share", lambda c: c.set("gradient_balance", "rank_share", "-1")),
+            ("zero audit split", lambda c: c.set("audit_split", "audit_episodes_per_scenario", "0")),
+            ("mc regression factor <= 1",
+             lambda c: c.set("gradient_health", "health_mc_regression_factor", "1.0")),
+            ("zero health check interval",
+             lambda c: c.set("gradient_health", "health_check_interval", "0")),
+            ("warmup top1 out of range", lambda c: c.set("ranking_warmup", "warmup_top1_min", "0")),
             ("zero diagnostic interval", lambda c: c.set("ranking", "gradient_diagnostic_interval", "0")),
             ("zero plot interval", lambda c: c.set("monitoring", "plot_interval_episodes", "0")),
             ("bad rolling window", lambda c: c.set("monitoring", "rolling_windows", "25, 0")),
@@ -245,7 +244,7 @@ def test_c2_vectorized_ranking_matches_the_per_sample_loop() -> None:
         ref_rank = float(torch.stack(ref).mean())
     opt = torch.optim.Adam(model.parameters(), lr=0.0)
     got = intent_train_step(model, opt, b, torch.Generator().manual_seed(0),
-                            n_taus=n_taus, ranking_margin=margin, lambda_rank=1.0)
+                            n_taus=n_taus, ranking_margin=margin, rank_share=1.0)
     assert abs(got.rank_loss - ref_rank) < 1e-6, (got.rank_loss, ref_rank)
 
 
@@ -270,7 +269,7 @@ def test_c2_cli_resume_is_a_total_target_and_bit_identical_to_continuous() -> No
     # already-finished run must do nothing rather than run N more.
     with tempfile.TemporaryDirectory() as d:
         a, b = Path(d) / "runA", Path(d) / "runB"
-        common = ["--il-episodes", "2", "--il-passes", "3", "--seed", "97201",
+        common = ["--il-episodes", "2", "--audit-episodes", "1", "--il-passes", "3", "--seed", "97201",
                   "--il-corpus-dir", str(Path(d) / "corpus"), "--keep-resume"]
         _cli("train", "--run-dir", str(a), "--target-online-episodes", "4", *common)
         _cli("train", "--run-dir", str(b), "--target-online-episodes", "2", *common)
@@ -320,7 +319,7 @@ def test_c2_final_ema_artifact_holds_ema_weights_not_raw() -> None:
     with tempfile.TemporaryDirectory() as d:
         run = Path(d) / "run"
         _cli("train", "--run-dir", str(run), "--target-online-episodes", "2",
-             "--il-episodes", "2", "--il-passes", "3", "--seed", "97201", "--keep-resume")
+             "--il-episodes", "2", "--audit-episodes", "1", "--il-passes", "3", "--seed", "97201", "--keep-resume")
         assert (run / "final_ema.pth").exists() and (run / "run_state.json").exists()
         from crowd_nav.bayesian_dvl.intent_train_cli import _resume_path
         raw = torch.load(str(_resume_path(run)), map_location="cpu", weights_only=False)
@@ -341,7 +340,7 @@ def test_c2_pilot_runs_are_marked_so_they_cannot_pass_as_formal() -> None:
     with tempfile.TemporaryDirectory() as d:
         run = Path(d) / "run"
         r = _cli("train", "--run-dir", str(run), "--target-online-episodes", "2",
-                 "--il-episodes", "2", "--il-passes", "3", "--seed", "97201")
+                 "--il-episodes", "2", "--audit-episodes", "1", "--il-passes", "3", "--seed", "97201")
         assert "PILOT RUN" in r.stdout
         state = json.loads((run / "run_state.json").read_text())
         assert state["is_pilot"] is True
@@ -351,7 +350,7 @@ def test_c2_pilot_runs_are_marked_so_they_cannot_pass_as_formal() -> None:
 def test_c2_cli_rejects_a_seed_outside_the_frozen_training_seeds() -> None:
     with tempfile.TemporaryDirectory() as d:
         r = _cli("train", "--run-dir", str(Path(d) / "r"), "--target-online-episodes", "1",
-                 "--il-episodes", "2", "--il-passes", "1", "--seed", "12345", expect_ok=False)
+                 "--il-episodes", "2", "--audit-episodes", "1", "--il-passes", "1", "--seed", "12345", expect_ok=False)
         assert r.returncode != 0 and "not one of the frozen training seeds" in r.stderr
 
 
@@ -576,12 +575,22 @@ def test_c4rf_il_corpus_is_immutable_shared_and_identity_checked() -> None:
         assert len(t_full) == len(t_mean)
         assert not np.array_equal(t_full[0].human_features, t_mean[0].human_features), \
             "each arm must materialize its OWN belief features from the shared corpus"
-        # a different config must fail closed
+        # Order 3W: the corpus is keyed on what DETERMINES it, not on the
+        # whole config. A training knob must NOT invalidate 5000 episodes of
+        # ORCA collection -- learning_rate provably cannot change a recorded
+        # transition, and the old coupling made reuse impossible (the file
+        # was renamed AND the in-file guard rejected the original).
         import dataclasses
-        other = dataclasses.replace(cfg, learning_rate=cfg.learning_rate * 2)
+        knob = dataclasses.replace(cfg, learning_rate=cfg.learning_rate * 2)
+        assert knob.corpus_identity_hash() == cfg.corpus_identity_hash()
+        rows_knob, _ = load_il_corpus(path, knob, "full")      # must SUCCEED
+        assert len(rows_knob) == len(t_full)
+        # but a corpus-DETERMINING change must still fail closed
+        determining = dataclasses.replace(cfg, gamma=cfg.gamma * 0.5)
+        assert determining.corpus_identity_hash() != cfg.corpus_identity_hash()
         try:
-            load_il_corpus(path, other, "full")
-            assert False, "expected IntentCLIError on a config-hash mismatch"
+            load_il_corpus(path, determining, "full")
+            assert False, "expected IntentCLIError on a corpus-identity mismatch"
         except IntentCLIError:
             pass
         # Only the explicitly audited telemetry-only predecessor may reuse
@@ -798,9 +807,9 @@ def test_c5_online_rows_persist_without_dead_action_features() -> None:
     rng_a, rng_b = np.random.default_rng(5), np.random.default_rng(5)
     opt = torch.optim.Adam(model.parameters(), lr=0.0)
     ra = intent_train_step(model, opt, batch_to_tensors(a.sample(64, rng_a, demo_ratio=0.2)),
-                           torch.Generator().manual_seed(1), lambda_rank=380.0)
+                           torch.Generator().manual_seed(1), rank_share=380.0)
     rb = intent_train_step(model, opt, batch_to_tensors(b.sample(64, rng_b, demo_ratio=0.2)),
-                           torch.Generator().manual_seed(1), lambda_rank=380.0)
+                           torch.Generator().manual_seed(1), rank_share=380.0)
     assert abs(ra.loss - rb.loss) < 1e-9, (ra.loss, rb.loss)
     assert abs(ra.rank_loss - rb.rank_loss) < 1e-9
 
@@ -813,7 +822,7 @@ def test_a1_single_atomic_resume_no_slots() -> None:
     with tempfile.TemporaryDirectory() as d:
         run = Path(d) / "run"
         _cli("train", "--run-dir", str(run), "--target-online-episodes", "2",
-             "--il-episodes", "2", "--il-passes", "3", "--seed", "97201",
+             "--il-episodes", "2", "--audit-episodes", "1", "--il-passes", "3", "--seed", "97201",
              "--il-corpus-dir", str(Path(d) / "corpus"), "--keep-resume")
         big = sorted(p.name for p in run.glob("*.pth") if p.stat().st_size > 500_000)
         assert big == [RESUME_NAME], f"exactly one full resume expected, got {big}"
@@ -914,7 +923,7 @@ def test_a4_resume_is_reclaimed_only_after_final_ema_verifies() -> None:
     with tempfile.TemporaryDirectory() as d:
         run = Path(d) / "run"
         r = _cli("train", "--run-dir", str(run), "--target-online-episodes", "2",
-                 "--il-episodes", "2", "--il-passes", "3", "--seed", "97201",
+                 "--il-episodes", "2", "--audit-episodes", "1", "--il-passes", "3", "--seed", "97201",
                  "--il-corpus-dir", str(Path(d) / "corpus"))
         assert "final_ema verified" in r.stdout
         assert "run incomplete" in r.stdout, "a partial run must keep its resume"
@@ -1088,3 +1097,144 @@ def test_order5_selection_dev_seed_blocks_are_frozen_and_separate_from_diagnosis
     for other in (FORMAL_EVAL_HELDOUT_SEEDS, JUNCTION_CROWD_HELDOUT_SEEDS,
                   cfg.training_seeds, cfg.validation_seeds):
         assert not ((sel_s | sel_j) & set(other))
+
+
+def test_order2w_audit_episodes_are_held_out_of_replay_entirely() -> None:
+    """Order 2W: the audit split must be BY EPISODE and must never reach the
+    replay, the warm-up, or any gradient update.
+
+    The leak this pins: the audit set used to be built from the same rows
+    already added to the replay, so it measured TRAINING performance. Under
+    that arrangement warm-up hit top1 0.951 in 500 steps; on genuinely
+    disjoint episodes the same procedure reached only 0.879-0.945 in 750.
+    """
+    from crowd_nav.bayesian_dvl.intent_train import il_audit_identity
+    from crowd_nav.bayesian_dvl.intent_train_cli import RESUME_NAME
+
+    cfg = load_intent_training_config(DEFAULT_TRAINING_CONFIG)
+    n_audit = cfg.audit_episodes_per_scenario
+    assert n_audit == 50
+    # formal budget: 5000 episodes -> 4900 training + 100 audit
+    assert cfg.il_episodes_total == 5000
+    assert cfg.il_episodes_total - 2 * n_audit == 4900
+
+    with tempfile.TemporaryDirectory() as d:
+        run = Path(d) / "run"
+        # 12 episodes with 2 audit episodes per scenario -> 8 train / 4 audit
+        r = _cli("train", "--run-dir", str(run), "--target-online-episodes", "1",
+                 "--il-episodes", "12", "--audit-episodes", "1", "--il-passes", "2", "--seed", "97201",
+                 "--audit-episodes", "2",
+                 "--il-corpus-dir", str(Path(d) / "corpus"), "--keep-resume")
+        assert "split BY EPISODE" in r.stdout, r.stdout[-3000:]
+        assert "audit rows never enter replay" in r.stdout
+
+        ck = torch.load(str(run / RESUME_NAME), map_location="cpu", weights_only=False)
+        state = ck["extra"]["run_state"]
+        assert state["il_audit_episodes"] > 0
+        assert len(state["il_audit_identity"]) == 64
+
+        # the corpus records a per-row episode id, which is what makes an
+        # episode-level split possible at all (a row-level split would leak:
+        # rows inside one episode are temporally adjacent)
+        corpus = list((Path(d) / "corpus").glob("*.pth"))[0]
+        payload = torch.load(str(corpus), map_location="cpu", weights_only=False)
+        eps = payload["episode_of_row"] if "episode_of_row" in payload else None
+        if eps is None:  # stored in the meta returned by load_il_corpus
+            from crowd_nav.bayesian_dvl.intent_train_cli import load_il_corpus
+            rows, meta = load_il_corpus(corpus, cfg, "full")
+            eps = meta["episode_of_row"]
+            scen = meta["scenario_of_row"]
+            assert len(eps) == len(rows) == len(scen)
+            by_scen = {}
+            for e, sc in zip(eps, scen):
+                by_scen.setdefault(sc, set()).add(e)
+            # every scenario must have MORE episodes than it holds out, or the
+            # run must have failed closed rather than training on nothing
+            for sc, s in by_scen.items():
+                assert len(s) >= 2, (sc, len(s))
+            # audit episodes are the LAST n of each scenario -- deterministic,
+            # touches no RNG, so resume identity is unaffected
+            audit_eps = set()
+            for sc, s in by_scen.items():
+                audit_eps.update(sorted(s)[-2:])
+            train_eps = {e for e in eps if e not in audit_eps}
+            assert not (train_eps & audit_eps), "training and audit episodes must be disjoint"
+            # and the rows follow the episodes: no audit row may share an
+            # episode with a training row
+            train_rows = [t for t, e in zip(rows, eps) if e not in audit_eps]
+            audit_rows = [t for t, e in zip(rows, eps) if e in audit_eps]
+            assert train_rows and audit_rows
+            assert len({id(t) for t in train_rows} & {id(t) for t in audit_rows}) == 0
+            # identity is content-based, so an audit score can never be
+            # compared against a different row set
+            assert il_audit_identity(audit_rows) != il_audit_identity(train_rows[:len(audit_rows)])
+
+
+def test_order5w_formal_plan_pairs_the_three_arms_on_the_same_seeds() -> None:
+    """Order 5W: the pairing guard must be wired into the CLI, not merely
+    exist as a helper."""
+    import inspect
+    from crowd_nav.bayesian_dvl import intent_train_cli
+    from crowd_nav.bayesian_dvl.intent_train import build_formal_plan, FORMAL_ARMS
+
+    src = inspect.getsource(intent_train_cli.cmd_train)
+    assert "assert_in_formal_plan(" in src, "the guard must run inside cmd_train"
+    assert FORMAL_ARMS == ("full", "mean", "cv")
+
+    cfg = load_intent_training_config(DEFAULT_TRAINING_CONFIG)
+    plan = build_formal_plan([97201, 97202], code_sha256(), cfg.content_hash(),
+                             cfg.corpus_identity_hash(), 5000, 10000)
+    assert len(plan["runs"]) == 6                       # 3 arms x 2 seeds
+    assert {r["seed"] for r in plan["runs"]} == {97201, 97202}
+    for seed in plan["seeds"]:
+        assert {r["arm"] for r in plan["runs"] if r["seed"] == seed} == set(FORMAL_ARMS)
+
+    with tempfile.TemporaryDirectory() as d:
+        pf = Path(d) / "plan.json"
+        pf.write_text(json.dumps(plan))
+        # a full-budget run without a plan must be refused outright
+        r = _cli("train", "--run-dir", str(Path(d) / "r1"), "--seed", "97201", expect_ok=False)
+        assert r.returncode != 0 and "--formal-plan" in r.stderr
+        # a seed outside the plan must be refused even WITH a plan
+        r2 = _cli("train", "--run-dir", str(Path(d) / "r2"), "--seed", "97203",
+                  "--formal-plan", str(pf), expect_ok=False)
+        assert r2.returncode != 0
+
+
+def test_order3w_corpus_identity_is_decoupled_from_training_knobs() -> None:
+    """Order 3W: optimizer / rank_share / gate settings must not be able to
+    invalidate 5000 episodes of ORCA collection."""
+    import configparser
+    cfg = load_intent_training_config(DEFAULT_TRAINING_CONFIG)
+    base_corpus, base_full = cfg.corpus_identity_hash(), cfg.content_hash()
+    text = DEFAULT_TRAINING_CONFIG.read_text()
+
+    def variant(section, key, value):
+        p = configparser.RawConfigParser(inline_comment_prefixes=(";", "#"), strict=False)
+        p.read_string(text)
+        p.set(section, key, value)
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d) / "v.config"
+            with open(out, "w") as fh:
+                p.write(fh)
+            return load_intent_training_config(out)
+
+    # training knobs: full config hash MOVES, corpus identity does NOT
+    for section, key, value in (("gradient_balance", "rank_share", "1.0"),
+                                ("optim", "batch_size", "128"),
+                                ("optim", "learning_rate", "5e-5"),
+                                ("ema", "ema_decay", "0.95"),
+                                ("gradient_health", "health_clip_fraction", "0.7")):
+        v = variant(section, key, value)
+        assert v.content_hash() != base_full, (section, key)
+        assert v.corpus_identity_hash() == base_corpus, (
+            f"{section}.{key} must NOT invalidate the ORCA corpus")
+
+    # corpus-determining settings: identity MUST move
+    for section, key, value in (("optim", "gamma", "0.95"),
+                                ("belief", "future_horizon", "6")):
+        v = variant(section, key, value)
+        assert v.corpus_identity_hash() != base_corpus, (section, key)
+
+    # rank_share is frozen at the calibrated value
+    assert cfg.rank_share == 2.0

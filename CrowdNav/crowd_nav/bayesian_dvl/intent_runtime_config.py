@@ -135,9 +135,13 @@ FEATURE_SCHEMA_V5 = "bdvl_z_state_goal_intent_v5"
 #                  future only, spread == 0
 TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC = "bdvl_intent_training_contract_demo_rank_online_mc_v2"
 
-# Order 4: V3 is the SAME loss decomposition (demo -> L_MC + lambda*L_rank,
-# online -> L_MC only), but lambda is no longer a frozen constant: it is set
-# by AdaptiveRankBalancer from an EMA of past per-term gradient norms.
+# Order 4: V3 keeps the SAME role split (demo rows carry ranking
+# supervision, online rows are MC-only) but changes HOW the update is
+# formed. There is no lambda: the two per-term gradients are computed
+# separately, any component of the ranking gradient opposing the MC
+# gradient is projected out, and the remainder is scaled to a calibrated
+# share of |g_MC|. IL additionally begins with a ranking warm-up whose
+# success is a hard gate.
 #
 # This is an OBJECTIVE change, so it gets its own contract even though the
 # network shape is unchanged (feature schema V5 and checkpoint schema V6

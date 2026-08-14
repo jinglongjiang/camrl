@@ -247,7 +247,7 @@ def test_intent_train_rank_loss_teaches_executed_action_to_outrank_others() -> N
     opt = torch.optim.Adam(model.parameters(), lr=1e-3)
     il_batch = batch_to_tensors(transitions)
     gen = torch.Generator().manual_seed(1)
-    results = [intent_train_step(model, opt, il_batch, gen, lambda_rank=1.0) for _ in range(40)]
+    results = [intent_train_step(model, opt, il_batch, gen, rank_share=1.0) for _ in range(40)]
     rank_losses = [r.rank_loss for r in results]
     early_mean = float(np.mean(rank_losses[:5]))
     late_mean = float(np.mean(rank_losses[-5:]))
@@ -410,13 +410,13 @@ def test_c4r_mixed_replay_keeps_demo_supervision_alive_during_online() -> None:
     tb = batch_to_tensors(batch)
     assert int(tb.demo_mask.sum()) == 20
     opt = torch.optim.Adam(model.parameters(), lr=0.0)
-    r = intent_train_step(model, opt, tb, torch.Generator().manual_seed(0), lambda_rank=1.0)
+    r = intent_train_step(model, opt, tb, torch.Generator().manual_seed(0), rank_share=1.0)
     assert r.rank_loss > 0.0, "a mixed batch must still produce a real ranking loss"
     assert r.n_demo == 20 and r.n_online == 80
 
     # a pure-online batch is still exactly zero (the C0 contract holds)
     ob = batch_to_tensors(buf.sample(50, rng, demo_ratio=0.0))
-    r0 = intent_train_step(model, opt, ob, torch.Generator().manual_seed(0), lambda_rank=1000.0)
+    r0 = intent_train_step(model, opt, ob, torch.Generator().manual_seed(0), rank_share=1000.0)
     assert r0.rank_loss == 0.0 and abs(r0.loss - r0.mc_loss) < 1e-12
 
 
@@ -448,14 +448,14 @@ def test_c4r_grad_clipping_and_gradient_ratio_are_really_applied() -> None:
 
     # (a) with a tiny clip the post-clip gradient norm must equal the clip
     r = intent_train_step(model, opt, batch, torch.Generator().manual_seed(0),
-                          lambda_rank=380.0, grad_clip_norm=0.01)
+                          rank_share=380.0, grad_clip_norm=0.01)
     post = float(sum(p.grad.norm() ** 2 for p in model.parameters() if p.grad is not None) ** 0.5)
     assert r.clipped is True and r.grad_norm_preclip > 0.01
     assert abs(post - 0.01) < 1e-4, f"gradients must actually be clipped to 0.01, post-clip norm {post}"
 
     # (b) with a huge clip nothing is clipped and the norm is untouched
     r2 = intent_train_step(model, opt, batch, torch.Generator().manual_seed(0),
-                           lambda_rank=380.0, grad_clip_norm=1e9)
+                           rank_share=380.0, grad_clip_norm=1e9)
     post2 = float(sum(p.grad.norm() ** 2 for p in model.parameters() if p.grad is not None) ** 0.5)
     assert r2.clipped is False and abs(post2 - r2.grad_norm_preclip) < 1e-3
 
@@ -466,20 +466,30 @@ def test_c4r_grad_clipping_and_gradient_ratio_are_really_applied() -> None:
     except IntentTrainError:
         pass
 
-    # (d) the ratio is measured PER LOSS TERM, not faked from the total
+    # (d) Order 2R: the per-term norms are measured SEPARATELY and the
+    # realised ranking share is set by construction, not by a weight.
     r3 = intent_train_step(model, opt, batch, torch.Generator().manual_seed(0),
-                           lambda_rank=380.0, measure_gradient_ratio=True)
+                           rank_share=0.25, measure_gradient_ratio=True)
     assert r3.ratio_measured and r3.mc_grad_norm > 0 and r3.rank_grad_norm > 0
-    assert abs(r3.weighted_rank_grad_norm - 380.0 * r3.rank_grad_norm) < 1e-6
-    assert abs(r3.gradient_ratio - r3.weighted_rank_grad_norm / r3.mc_grad_norm) < 1e-6
     assert r3.mc_grad_norm != r3.grad_norm_preclip, (
         "the per-term MC gradient must not be the TOTAL gradient norm in disguise")
-    # at the frozen lambda_rank the two terms should be roughly balanced
-    assert 0.05 <= r3.gradient_ratio <= 50.0, (
-        f"at the audited lambda_rank the ratio should sit inside the frozen gate, got {r3.gradient_ratio}")
-    # and when not asked for, it is not computed (it costs 2 extra passes)
+    # the realised ratio is the declared share, because the projected
+    # ranking gradient is normalised to exactly that fraction of |g_MC|.
+    # This is precisely why a gate on this number would be tautological and
+    # why health is judged on the fixed audit set instead.
+    assert abs(r3.gradient_ratio - 0.25) < 1e-4, r3.gradient_ratio
+    assert abs(r3.weighted_rank_grad_norm - 0.25 * r3.mc_grad_norm) < 1e-4
+    r3b = intent_train_step(model, opt, batch, torch.Generator().manual_seed(0),
+                            rank_share=2.0, measure_gradient_ratio=True)
+    assert abs(r3b.gradient_ratio - 2.0) < 1e-4, r3b.gradient_ratio
+    # Order 2R changed what `measure_gradient_ratio` means. The two per-term
+    # autograd passes are no longer an optional diagnostic that can be
+    # skipped -- they ARE the update: the projection needs g_MC and g_rank
+    # separately. The flag now only controls whether the step is RECORDED as
+    # a diagnostic point, so the norms are populated either way.
     r4 = intent_train_step(model, opt, batch, torch.Generator().manual_seed(0), measure_gradient_ratio=False)
-    assert not r4.ratio_measured and r4.mc_grad_norm == 0.0
+    assert not r4.ratio_measured
+    assert r4.mc_grad_norm > 0.0, "the per-term norms are now always available"
 
 
 def test_c4r_gradient_ratio_monitor_sustained_window() -> None:
@@ -822,7 +832,7 @@ def test_intent_train_cli_end_to_end_collect_il_rl_resume_checkpoint_ablation() 
         run = Path(d) / "run"
         results = Path(d) / "results"
         base = [_sys.executable, "-m", "crowd_nav.bayesian_dvl.intent_train_cli"]
-        pilot = ["--il-episodes", "2", "--il-passes", "3", "--seed", "97201"]
+        pilot = ["--il-episodes", "2", "--audit-episodes", "1", "--il-passes", "3", "--seed", "97201"]
 
         r = subprocess.run(base + ["preflight"], cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=300)
         assert r.returncode == 0 and "preflight OK" in r.stdout, r.stderr
@@ -869,7 +879,13 @@ def test_intent_train_cli_end_to_end_collect_il_rl_resume_checkpoint_ablation() 
             missing = subprocess.run(base + ["resume", "--run-dir", str(run),
                                              "--target-online-episodes", "4"] + pilot,
                                      cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=60)
-            assert missing.returncode != 0 and "shared IL corpus is missing" in missing.stderr
+            # Order 4W: the message now names the CHECKPOINT's own reference,
+            # and states plainly that nothing was collected -- the old order
+            # would have started a fresh 5000-episode collection and only
+            # then discovered the mismatch.
+            assert missing.returncode != 0, missing.stdout[-800:]
+            assert "resume references IL corpus" in missing.stderr, missing.stderr[-800:]
+            assert "ZERO episodes collected" in missing.stderr
         finally:
             held.replace(corpus)
 
@@ -977,10 +993,10 @@ def test_c0_online_only_batch_has_exactly_zero_rank_loss() -> None:
     batch = batch_to_tensors(ep.transitions)
     opt = torch.optim.Adam(model.parameters(), lr=1e-3)
     gen = torch.Generator().manual_seed(0)
-    result = intent_train_step(model, opt, batch, gen, lambda_rank=1000.0)
+    result = intent_train_step(model, opt, batch, gen, rank_share=1000.0)
     assert result.rank_loss == 0.0, f"online-only batch must have rank_loss exactly 0.0, got {result.rank_loss}"
     assert abs(result.loss - result.mc_loss) < 1e-12, (
-        f"with no demo samples the total loss must equal the MC loss even at lambda_rank=1000, "
+        f"with no demo samples the total loss must equal the MC loss even at rank_share=1000, "
         f"got loss={result.loss} mc={result.mc_loss}")
 
 
@@ -1002,10 +1018,10 @@ def test_c0_mixed_batch_rank_loss_averages_over_demo_mask_only() -> None:
 
     mixed = batch_to_tensors(list(demo_ts) + list(online_ts))
     assert int(mixed.demo_mask.sum()) == 4 and len(mixed.demo_mask) == 10
-    r_mixed = intent_train_step(model, opt, mixed, torch.Generator().manual_seed(11), lambda_rank=1.0)
+    r_mixed = intent_train_step(model, opt, mixed, torch.Generator().manual_seed(11), rank_share=1.0)
 
     demo_only = batch_to_tensors(list(demo_ts))
-    r_demo = intent_train_step(model, opt, demo_only, torch.Generator().manual_seed(11), lambda_rank=1.0)
+    r_demo = intent_train_step(model, opt, demo_only, torch.Generator().manual_seed(11), rank_share=1.0)
 
     assert abs(r_mixed.rank_loss - r_demo.rank_loss) < 1e-9, (
         f"mixed-batch rank_loss must equal the demo-only rank_loss (mean over the demo mask), "
@@ -1056,7 +1072,7 @@ def test_c0_checkpoint_schema_v6_rejects_retired_v5_and_wrong_training_contract(
         assert raw["checkpoint_schema"] == CHECKPOINT_SCHEMA_V6
         assert raw["training_contract_schema"] == TRAINING_CONTRACT_V3_ADAPTIVE_GRADIENT_BALANCE
 
-        # Order 4: a V2 checkpoint (fixed lambda_rank=380) must be refused
+        # Order 4: a V2 checkpoint (fixed rank_share=380) must be refused
         # BY NAME, not with a generic schema message. Its optimizer state,
         # EMA and replay were produced under a measurably unbalanced
         # objective, so resuming from it would give a run that is neither
@@ -1127,7 +1143,7 @@ def test_c0_mixed_loss_matches_hand_computation() -> None:
     # recompute against them.
     opt = torch.optim.Adam(model.parameters(), lr=0.0)
     produced = intent_train_step(model, opt, batch, torch.Generator().manual_seed(99),
-                                  n_taus=n_taus, ranking_margin=margin, lambda_rank=lam)
+                                  n_taus=n_taus, ranking_margin=margin, rank_share=lam)
 
     # --- independent recomputation ---
     model.train()
@@ -1159,7 +1175,10 @@ def test_c0_mixed_loss_matches_hand_computation() -> None:
             per_demo.append(hand)
         assert len(per_demo) == 3, f"expected exactly the 3 demo samples, got {len(per_demo)}"
         expected_rank = torch.stack(per_demo).mean()
-        expected_total = expected_mc + lam * expected_rank
+        # Order 2R: there is no weighted scalar objective any more -- the
+        # update is assembled from PROJECTED gradients, so `loss` is reported
+        # as the UNWEIGHTED sum purely to keep the two terms comparable.
+        expected_total = expected_mc + expected_rank
 
     assert abs(produced.mc_loss - float(expected_mc)) < 1e-6, (produced.mc_loss, float(expected_mc))
     assert abs(produced.rank_loss - float(expected_rank)) < 1e-6, (produced.rank_loss, float(expected_rank))
@@ -1447,165 +1466,6 @@ def test_order1r_online_clearance_is_swept_dmin_and_telemetry_only() -> None:
         assert np.array_equal(ta.human_features, tb.human_features)
     # ...while the telemetry itself DID change
     assert a.min_clearance != b.min_clearance
-
-
-def test_order2_adaptive_balancer_matches_hand_computation_and_is_lagged() -> None:
-    """Order 2: lambda must follow the frozen formula EXACTLY, and must be
-    LAGGED so the health ratio is not tautological."""
-    from crowd_nav.bayesian_dvl.intent_train import AdaptiveRankBalancer, IntentTrainError
-
-    b = AdaptiveRankBalancer()
-    assert (b.lambda_value, b.target_ratio, b.ema_beta) == (1.0, 0.25, 0.9)
-    assert (b.lambda_min, b.lambda_max, b.max_change_factor) == (1e-4, 128.0, 2.0)
-
-    # --- hand-computed EMA + target, with the x2 rate limit applied
-    mc_seq = [4.0, 6.0, 5.0, 5.0, 5.0]
-    rk_seq = [0.02, 0.03, 0.02, 0.02, 0.02]
-    ema_mc = ema_rk = None
-    lam = 1.0
-    for mc, rk in zip(mc_seq, rk_seq):
-        ema_mc = mc if ema_mc is None else 0.9 * ema_mc + 0.1 * mc
-        ema_rk = rk if ema_rk is None else 0.9 * ema_rk + 0.1 * rk
-        want = 0.25 * ema_mc / (ema_rk + 1e-12)
-        want = min(max(want, lam / 2.0), lam * 2.0)
-        lam = min(max(want, 1e-4), 128.0)
-        got = b.observe(mc, rk)
-        assert abs(got - lam) < 1e-9, (got, lam)
-
-    # --- LAGGED: the ratio a step produces uses the lambda decided BEFORE
-    # it. If lambda were computed from the same batch, r_t would be the
-    # target identically and the gate could only ever fail on saturation.
-    b2 = AdaptiveRankBalancer()
-    lam_used = b2.lambda_value                      # decided before the step
-    mc, rk = 4.0, 0.02
-    r_t = lam_used * rk / max(mc, 1e-12)            # what the step actually produced
-    b2.observe(mc, rk)                              # only NOW does lambda move
-    assert abs(r_t - 1.0 * 0.02 / 4.0) < 1e-12
-    assert r_t != b2.target_ratio, "a lagged ratio must not equal the target by construction"
-    assert b2.lambda_value != lam_used
-
-    # --- rate limit: never more than x2 or /2 per observation
-    b3 = AdaptiveRankBalancer()
-    prev = b3.lambda_value
-    for _ in range(12):
-        cur = b3.observe(1e3, 1e-6)                 # demands an enormous lambda
-        assert cur <= prev * 2.0 + 1e-12
-        prev = cur
-    assert b3.lambda_value <= 128.0
-
-    # --- vanishing MC gradient must pin lambda to the FLOOR, never let the
-    # auxiliary term take over the update
-    b4 = AdaptiveRankBalancer()
-    for _ in range(40):
-        b4.observe(0.0, 0.5)
-    assert b4.lambda_value == b4.lambda_min, b4.lambda_value
-    assert b4.saturated
-
-    # --- bounds hold from the other side too
-    b5 = AdaptiveRankBalancer()
-    for _ in range(40):
-        b5.observe(1e6, 1e-9)
-    assert b5.lambda_value == 128.0
-
-    # --- fail closed on non-finite input
-    for bad in (float("nan"), float("inf")):
-        try:
-            AdaptiveRankBalancer().observe(bad, 1.0)
-            assert False, f"expected IntentTrainError for {bad}"
-        except IntentTrainError:
-            pass
-
-    # --- state round-trips exactly, and config drift is rejected
-    b6 = AdaptiveRankBalancer()
-    for mc, rk in zip(mc_seq, rk_seq):
-        b6.observe(mc, rk)
-    clone = AdaptiveRankBalancer()
-    clone.load_state_dict(json.loads(json.dumps(b6.state_dict())))
-    assert (clone.lambda_value, clone.ema_mc, clone.ema_rank) == (b6.lambda_value, b6.ema_mc, b6.ema_rank)
-    assert clone.observe(5.0, 0.02) == b6.observe(5.0, 0.02)
-    drifted = b6.state_dict(); drifted["target_ratio"] = 1.0
-    try:
-        AdaptiveRankBalancer().load_state_dict(drifted)
-        assert False, "expected IntentTrainError on balancer config drift"
-    except IntentTrainError:
-        pass
-
-
-def test_order3_sliding_window_gate_catches_what_the_consecutive_rule_missed() -> None:
-    """Order 3: the replaced rule needed 128 CONSECUTIVE out-of-range
-    diagnostics and reset on any single good one. The real run was 89% out
-    of range with a longest run of 32 -- and never fired."""
-    from crowd_nav.bayesian_dvl.intent_train import GradientHealthMonitor, GradientRatioMonitor
-
-    # the exact pattern that defeated the old rule: intermittent violations
-    # with a good point sprinkled in
-    pattern = ([148.0] * 9 + [0.3]) * 30          # 90% out of range, never 128 in a row
-
-    old = GradientRatioMonitor(0.05, 50.0, 128)
-    assert all(old.observe(r) is None for r in pattern), "old rule provably cannot fire on this"
-    assert old.n_out_of_range / old.n_measured >= 0.85
-
-    new = GradientHealthMonitor()
-    fired = None
-    for i, r in enumerate(pattern):
-        fired = new.observe_diagnostic(r, lambda_saturated=False, cosine=0.2)
-        if fired:
-            break
-    assert fired is not None, "sliding-window gate must catch intermittent violation"
-    assert "exceeded" in fired and i < 40, (fired, i)
-
-    # a HEALTHY stream must not fire
-    ok = GradientHealthMonitor()
-    assert all(ok.observe_diagnostic(0.25, False, 0.3) is None for _ in range(200))
-
-    # lambda saturation gate
-    sat = GradientHealthMonitor()
-    msg = None
-    for _ in range(60):
-        msg = sat.observe_diagnostic(0.25, lambda_saturated=True, cosine=0.3)
-        if msg:
-            break
-    assert msg is not None and "lambda" in msg
-
-    # objective-conflict gate
-    conf = GradientHealthMonitor()
-    msg = None
-    for _ in range(60):
-        msg = conf.observe_diagnostic(0.25, False, cosine=-0.9)
-        if msg:
-            break
-    assert msg is not None and "OBJECTIVE_CONFLICT" in msg
-
-    # clip-rate gate: measured on EVERY update, not on diagnostics
-    clip = GradientHealthMonitor()
-    msg = None
-    for i in range(1200):
-        msg = clip.observe_update(clipped=(i % 10) != 0)   # 90% clipped
-        if msg:
-            break
-    assert msg is not None and "clipping" in msg
-    # a healthy clip rate must not fire
-    fine = GradientHealthMonitor()
-    assert all(fine.observe_update(clipped=(i % 10) == 0) is None for i in range(1200))
-
-    # non-finite ratio is rejected outright
-    assert GradientHealthMonitor().observe_diagnostic(float("nan"), False, 0.0) is not None
-
-    # windows survive resume EXACTLY -- a fresh window would silently reset
-    # the very evidence the gate accumulates
-    m = GradientHealthMonitor()
-    for i in range(15):
-        m.observe_diagnostic(148.0, False, 0.1)
-        m.observe_update(True)
-    clone = GradientHealthMonitor()
-    clone.load_state_dict(json.loads(json.dumps(m.state_dict())))
-    assert clone.ratios == m.ratios and clone.clips == m.clips
-    assert clone.cosines == m.cosines and clone.saturations == m.saturations
-    assert (clone.n_measured, clone.n_out_of_range) == (m.n_measured, m.n_out_of_range)
-    # and continues to the SAME verdict
-    assert clone.observe_diagnostic(148.0, False, 0.1) == m.observe_diagnostic(148.0, False, 0.1)
-
-
 def test_order2_gradient_cosine_is_correct_on_known_geometry() -> None:
     from crowd_nav.bayesian_dvl.intent_train import _grad_cosine
     a = [torch.tensor([1.0, 0.0]), torch.tensor([0.0, 2.0])]
@@ -1670,3 +1530,112 @@ def test_order5_checkpoint_selection_is_pre_registered_and_can_fail_a_run() -> N
         assert False, "expected IntentTrainError on an empty candidate list"
     except IntentTrainError:
         pass
+
+
+def test_order2r_projected_gradient_matches_hand_computation() -> None:
+    """Order 2R: the projection + normalisation, verified against arithmetic
+    done by hand rather than against the implementation itself."""
+    from crowd_nav.bayesian_dvl.intent_train import combine_gradients, IntentTrainError
+
+    # --- conflicting case, worked out by hand -------------------------
+    # g_MC = (3, 4)   |g_MC| = 5   |g_MC|^2 = 25
+    # g_rank = (-3, 0)   dot = -9   c = -9/25 = -0.36   (conflict)
+    # g'_rank = (-3,0) - (-0.36)(3,4) = (-3+1.08, 1.44) = (-1.92, 1.44)
+    #           |g'_rank| = sqrt(3.6864 + 2.0736) = 2.4
+    # scale = 0.25 * 5 / 2.4 = 0.5208333...
+    # g = (3,4) + 0.5208333*(-1.92, 1.44) = (2.0, 4.75)
+    mc = [torch.tensor([3.0, 4.0])]
+    rank = [torch.tensor([-3.0, 0.0])]
+    out, info = combine_gradients(mc, rank, rank_share=0.25)
+    assert abs(info["mc_grad_norm"] - 5.0) < 1e-6
+    assert abs(info["projection_coefficient"] - (-0.36)) < 1e-6
+    assert abs(info["projected_rank_norm"] - 2.4) < 1e-6
+    assert abs(info["rank_scale"] - 0.25 * 5.0 / 2.4) < 1e-6
+    assert torch.allclose(out[0], torch.tensor([2.0, 4.75]), atol=1e-5), out[0]
+    assert info["conflict_removed"]
+
+    # the projected ranking gradient must never oppose MC
+    proj = out[0] - mc[0]
+    assert float((proj * mc[0]).sum()) >= -1e-6, float((proj * mc[0]).sum())
+
+    # --- cooperative case: nothing is removed -------------------------
+    mc = [torch.tensor([3.0, 4.0])]
+    rank = [torch.tensor([6.0, 8.0])]          # exactly parallel
+    out, info = combine_gradients(mc, rank, rank_share=0.25)
+    assert info["projection_coefficient"] == 0.0 and not info["conflict_removed"]
+    assert abs(info["gradient_cosine"] - 1.0) < 1e-6
+    # rank contribution has norm exactly 0.25|g_MC|
+    contrib = out[0] - mc[0]
+    assert abs(float(contrib.norm()) - 0.25 * 5.0) < 1e-5
+
+    # --- orthogonal case ----------------------------------------------
+    out, info = combine_gradients([torch.tensor([1.0, 0.0])], [torch.tensor([0.0, 2.0])], rank_share=0.25)
+    assert abs(info["gradient_cosine"]) < 1e-6 and not info["conflict_removed"]
+    assert torch.allclose(out[0], torch.tensor([1.0, 0.25]), atol=1e-6)
+
+    # --- a satisfied hinge gives EXACTLY zero, and the update must then
+    # be bit-identical to a pure MC update ------------------------------
+    mc = [torch.tensor([3.0, 4.0]), torch.tensor([1.5])]
+    zero = [torch.zeros(2), torch.zeros(1)]
+    out, info = combine_gradients(mc, zero, rank_share=0.25)
+    assert info["rank_scale"] == 0.0
+    for a, b in zip(out, mc):
+        assert torch.equal(a, b), (a, b)
+
+    # --- a parameter only one loss touches is handled, not skipped -----
+    out, info = combine_gradients([torch.tensor([3.0, 4.0]), torch.tensor([2.0])],
+                                  [torch.tensor([1.0, 0.0]), None], rank_share=0.25)
+    assert abs(info["mc_grad_norm"] - (9 + 16 + 4) ** 0.5) < 1e-6
+    assert abs(info["rank_grad_norm"] - 1.0) < 1e-6
+    assert out[1] is not None and torch.allclose(out[1], torch.tensor([2.0]))
+
+    # --- rank_share = 0 degenerates to pure MC -------------------------
+    out, _ = combine_gradients([torch.tensor([3.0, 4.0])], [torch.tensor([-3.0, 0.0])], rank_share=0.0)
+    assert torch.allclose(out[0], torch.tensor([3.0, 4.0]))
+
+    # --- numerical guard: negligible RELATIVE to |g_MC| counts as zero --
+    # Without it, dividing by a denormal norm turns floating-point noise
+    # into a full rank_share of the update. Threshold is
+    # RANK_GRADIENT_ZERO_TOL * max(|g_MC|, 1), i.e. 5e-8 here.
+    from crowd_nav.bayesian_dvl.intent_train import RANK_GRADIENT_ZERO_TOL
+    assert RANK_GRADIENT_ZERO_TOL == 1e-8
+    mc = [torch.tensor([3.0, 4.0])]                       # |g_MC| = 5
+    for tiny in (0.0, 1e-9, 5e-8):
+        out, info = combine_gradients(mc, [torch.tensor([tiny, 0.0])], rank_share=0.25)
+        assert info["rank_negligible"] and info["rank_scale"] == 0.0, (tiny, info)
+        assert torch.equal(out[0], mc[0]), (tiny, out[0])   # bit-identical to pure MC
+    # just above the threshold it is honoured again
+    out, info = combine_gradients(mc, [torch.tensor([1e-6, 0.0])], rank_share=0.25)
+    assert not info["rank_negligible"] and info["rank_scale"] > 0
+    assert abs(float((out[0] - mc[0]).norm()) - 0.25 * 5.0) < 1e-4
+
+    # --- fail closed on non-finite input -------------------------------
+    try:
+        combine_gradients([torch.tensor([float("nan"), 1.0])], [torch.tensor([1.0, 1.0])])
+        assert False, "expected IntentTrainError on non-finite gradients"
+    except IntentTrainError:
+        pass
+    try:
+        combine_gradients([torch.tensor([1.0, 1.0])], [torch.tensor([float("inf"), 0.0])])
+        assert False, "expected IntentTrainError on non-finite rank gradients"
+    except IntentTrainError:
+        pass
+
+
+def test_order2r_projection_never_opposes_mc_on_random_geometry() -> None:
+    """The invariant that makes this safe: after projection the auxiliary
+    contribution can never actively undo value regression."""
+    from crowd_nav.bayesian_dvl.intent_train import combine_gradients
+    rng = np.random.default_rng(0)
+    worst = 1.0
+    for _ in range(300):
+        mc = [torch.tensor(rng.normal(size=7).astype(np.float32))]
+        rank = [torch.tensor(rng.normal(size=7).astype(np.float32))]
+        out, info = combine_gradients(mc, rank, rank_share=0.25)
+        contrib = out[0] - mc[0]
+        dot = float((contrib * mc[0]).sum())
+        worst = min(worst, dot / (float(mc[0].norm()) * float(contrib.norm()) + 1e-12))
+        assert dot >= -1e-5, (dot, info)
+        # and the contribution's size is the declared share
+        assert abs(float(contrib.norm()) - 0.25 * info["mc_grad_norm"]) < 1e-4
+    assert worst >= -1e-5
