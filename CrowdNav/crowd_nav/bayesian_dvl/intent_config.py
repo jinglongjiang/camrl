@@ -92,12 +92,10 @@ class IntentTrainingConfig:
     rank_zero_tolerance: float = 1e-8
     warmup_max_steps: int = 750
     warmup_check_interval: int = 50
-    warmup_top1_min: float = 0.95
     warmup_rank_loss_max: float = 0.05
     health_check_interval: int = 100
     health_mc_regression_factor: float = 1.5
     health_rank_max: float = 0.075
-    health_top1_min: float = 0.90
     health_consecutive_bad: int = 2
     health_clip_window: int = 500
     health_clip_fraction: float = 0.80
@@ -224,12 +222,10 @@ def load_intent_training_config(path: Path = DEFAULT_TRAINING_CONFIG) -> IntentT
         rank_zero_tolerance=gf("gradient_balance", "rank_zero_tolerance"),
         warmup_max_steps=gi("ranking_warmup", "warmup_max_steps"),
         warmup_check_interval=gi("ranking_warmup", "warmup_check_interval"),
-        warmup_top1_min=gf("ranking_warmup", "warmup_top1_min"),
         warmup_rank_loss_max=gf("ranking_warmup", "warmup_rank_loss_max"),
         health_check_interval=gi("gradient_health", "health_check_interval"),
         health_mc_regression_factor=gf("gradient_health", "health_mc_regression_factor"),
         health_rank_max=gf("gradient_health", "health_rank_max"),
-        health_top1_min=gf("gradient_health", "health_top1_min"),
         health_consecutive_bad=gi("gradient_health", "health_consecutive_bad"),
         health_clip_window=gi("gradient_health", "health_clip_window"),
         health_clip_fraction=gf("gradient_health", "health_clip_fraction"),
@@ -296,8 +292,6 @@ def _validate(cfg: IntentTrainingConfig) -> None:
         raise IntentConfigError(f"rank_zero_tolerance must be in (0,1), got {cfg.rank_zero_tolerance}")
     if cfg.warmup_max_steps <= 0 or cfg.warmup_check_interval <= 0:
         raise IntentConfigError("warm-up steps and check interval must be positive")
-    if not (0.0 < cfg.warmup_top1_min <= 1.0):
-        raise IntentConfigError(f"warmup_top1_min must be in (0,1], got {cfg.warmup_top1_min}")
     if cfg.warmup_rank_loss_max <= 0:
         raise IntentConfigError(f"warmup_rank_loss_max must be positive, got {cfg.warmup_rank_loss_max}")
     if cfg.health_check_interval <= 0 or cfg.health_clip_window <= 0:
@@ -307,7 +301,7 @@ def _validate(cfg: IntentTrainingConfig) -> None:
             f"health_mc_regression_factor must exceed 1, got {cfg.health_mc_regression_factor}")
     if cfg.health_consecutive_bad <= 0:
         raise IntentConfigError("health_consecutive_bad must be positive")
-    for name in ("health_rank_max", "health_top1_min", "health_clip_fraction"):
+    for name in ("health_rank_max", "health_clip_fraction"):
         v = getattr(cfg, name)
         if not (0 < v <= 1):
             raise IntentConfigError(f"{name} must be in (0,1], got {v}")

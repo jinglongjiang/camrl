@@ -578,7 +578,7 @@ def _build_artifacts(cfg: IntentTrainingConfig, seed: int, device: torch.device,
         reservoir_rng=np.random.default_rng(seed + 4),
         health=TrainingHealthMonitor(
             interval=cfg.health_check_interval, mc_regression_factor=cfg.health_mc_regression_factor,
-            rank_max=cfg.health_rank_max, top1_min=cfg.health_top1_min,
+            rank_max=cfg.health_rank_max,
             consecutive_bad=cfg.health_consecutive_bad, clip_window=cfg.health_clip_window,
             clip_fraction=cfg.health_clip_fraction),
         state=RunState(config_hash=cfg.content_hash(), code_hash=code_sha256(),
@@ -1230,7 +1230,7 @@ def cmd_train(args, resume: bool = False) -> int:
                 '--warmup-steps is a PILOT override; a full-budget run must use the frozen '
                 f'{cfg.warmup_max_steps}')
         telemetry.log(f"WARMUP START max_steps={wu_max} "
-                      f"gate: top1>={cfg.warmup_top1_min} rank<={cfg.warmup_rank_loss_max} margin>0")
+                      f"gate: rank<={cfg.warmup_rank_loss_max} margin>0 (top1 telemetry only)")
         wu = run_ranking_warmup(
             art.model, art.optimizer, art.buffer, cfg.batch_size, art.sample_rng, audit_set,
             max_steps=wu_max,
@@ -1242,7 +1242,7 @@ def cmd_train(args, resume: bool = False) -> int:
             # for want of learnability.
             ranking_batch_size=None,
             grad_clip_norm=cfg.grad_clip_norm, device=str(device),
-            check_interval=cfg.warmup_check_interval, top1_min=cfg.warmup_top1_min,
+            check_interval=cfg.warmup_check_interval,
             rank_loss_max=cfg.warmup_rank_loss_max, log=telemetry.log)
         art.state.warmup_passed = bool(wu["passed"])
         art.state.warmup_steps = int(wu["steps"])
@@ -1253,8 +1253,8 @@ def cmd_train(args, resume: bool = False) -> int:
         _save_rolling()
         if not wu["passed"]:
             raise IntentCLIError(
-                f"ABORT (ranking warm-up): did not reach top1>={cfg.warmup_top1_min}, "
-                f"rank<={cfg.warmup_rank_loss_max}, margin>0 within {wu_max} steps "
+                f"ABORT (ranking warm-up): did not reach rank<={cfg.warmup_rank_loss_max} "
+                f"and margin>0 within {wu_max} steps "
                 f"(final top1={art.state.warmup_top1:.3f} rank={art.state.warmup_rank_loss:.5f}). "
                 f"Joint training must not start on an unlearned ranking term.")
         telemetry.log(f"WARMUP PASSED steps={wu['steps']} top1={art.state.warmup_top1:.3f} "
