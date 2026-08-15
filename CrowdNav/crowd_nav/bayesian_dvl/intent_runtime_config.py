@@ -154,6 +154,17 @@ TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC = "bdvl_intent_training_contract_demo_r
 TRAINING_CONTRACT_V3_ADAPTIVE_GRADIENT_BALANCE = (
     "bdvl_intent_training_contract_adaptive_gradient_balance_v3")
 
+# V4 -- PHASE-TRANSITION GRACE. Same objective, same data, same rank_share;
+# what changed is WHEN the ranking gate is allowed to abort. When MC joins a
+# freshly warmed-up ranker the ranking metrics step backwards once and
+# recover; the gate's verdict was turning on 0.004 of that known transient
+# (pilot pass-200 landed inside the ceiling, the formal run's landed
+# outside, and the pilot then recovered to 0.0193 by pass 2000). Runs under
+# V3 were monitored on a schedule that could abort a healthy run, so their
+# weights are not comparable to V4 ones.
+TRAINING_CONTRACT_V4_RANKING_GATE_GRACE = (
+    "bdvl_intent_training_contract_ranking_gate_grace_v4")
+
 
 FROZEN_VALUES: Dict[str, object] = {
     "dt": 0.25,

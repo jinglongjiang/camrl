@@ -20,6 +20,7 @@ from crowd_nav.bayesian_dvl.intent_runtime_config import (
     ACTION_FEATURE_DIM, ActionGridSpec, FEATURE_SCHEMA_V5, FROZEN_VALUES,
     NORMALIZATION_CONSTANTS, PROGRESS_REWARD_NORMALIZED_K,
     TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC, TRAINING_CONTRACT_V3_ADAPTIVE_GRADIENT_BALANCE,
+    TRAINING_CONTRACT_V4_RANKING_GATE_GRACE,
     derive_return_bounds,
 )
 from crowd_nav.bayesian_dvl.contracts import (
@@ -445,6 +446,7 @@ __all__ = [
     'StatisticsError',
     'TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC',
     'TRAINING_CONTRACT_V3_ADAPTIVE_GRADIENT_BALANCE',
+    'TRAINING_CONTRACT_V4_RANKING_GATE_GRACE',
     'WAYPOINT_RADIUS',
     '_FakeConfig',
     '_FakeConfigSection',

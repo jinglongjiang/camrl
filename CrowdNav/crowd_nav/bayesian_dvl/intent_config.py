@@ -96,6 +96,7 @@ class IntentTrainingConfig:
     health_check_interval: int = 100
     health_mc_regression_factor: float = 1.5
     health_rank_max: float = 0.075
+    ranking_gate_grace_il_passes: int = 500
     health_consecutive_bad: int = 2
     health_clip_window: int = 500
     health_clip_fraction: float = 0.80
@@ -226,6 +227,7 @@ def load_intent_training_config(path: Path = DEFAULT_TRAINING_CONFIG) -> IntentT
         health_check_interval=gi("gradient_health", "health_check_interval"),
         health_mc_regression_factor=gf("gradient_health", "health_mc_regression_factor"),
         health_rank_max=gf("gradient_health", "health_rank_max"),
+        ranking_gate_grace_il_passes=gi("gradient_health", "ranking_gate_grace_il_passes"),
         health_consecutive_bad=gi("gradient_health", "health_consecutive_bad"),
         health_clip_window=gi("gradient_health", "health_clip_window"),
         health_clip_fraction=gf("gradient_health", "health_clip_fraction"),
@@ -239,15 +241,15 @@ def load_intent_training_config(path: Path = DEFAULT_TRAINING_CONFIG) -> IntentT
 def _validate(cfg: IntentTrainingConfig) -> None:
     # schema must match the CODE, not just be internally consistent
     from crowd_nav.bayesian_dvl.intent_runtime_config import (
-        FEATURE_SCHEMA_V5, TRAINING_CONTRACT_V3_ADAPTIVE_GRADIENT_BALANCE,
+        FEATURE_SCHEMA_V5, TRAINING_CONTRACT_V4_RANKING_GATE_GRACE,
     )
     from crowd_nav.bayesian_dvl.intent_policy import CHECKPOINT_SCHEMA_V6
     if cfg.feature_schema != FEATURE_SCHEMA_V5:
         raise IntentConfigError(f"config feature_schema {cfg.feature_schema!r} != code's {FEATURE_SCHEMA_V5!r}")
-    if cfg.training_contract_schema != TRAINING_CONTRACT_V3_ADAPTIVE_GRADIENT_BALANCE:
+    if cfg.training_contract_schema != TRAINING_CONTRACT_V4_RANKING_GATE_GRACE:
         raise IntentConfigError(
             f"config training_contract_schema {cfg.training_contract_schema!r} != "
-            f"code's {TRAINING_CONTRACT_V3_ADAPTIVE_GRADIENT_BALANCE!r}")
+            f"code's {TRAINING_CONTRACT_V4_RANKING_GATE_GRACE!r}")
     if cfg.checkpoint_schema != CHECKPOINT_SCHEMA_V6:
         raise IntentConfigError(f"config checkpoint_schema {cfg.checkpoint_schema!r} != code's {CHECKPOINT_SCHEMA_V6!r}")
 
@@ -299,6 +301,9 @@ def _validate(cfg: IntentTrainingConfig) -> None:
     if cfg.health_mc_regression_factor <= 1.0:
         raise IntentConfigError(
             f"health_mc_regression_factor must exceed 1, got {cfg.health_mc_regression_factor}")
+    if cfg.ranking_gate_grace_il_passes < 0:
+        raise IntentConfigError(
+            f"ranking_gate_grace_il_passes must be >= 0, got {cfg.ranking_gate_grace_il_passes}")
     if cfg.health_consecutive_bad <= 0:
         raise IntentConfigError("health_consecutive_bad must be positive")
     for name in ("health_rank_max", "health_clip_fraction"):

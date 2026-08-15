@@ -579,6 +579,7 @@ def _build_artifacts(cfg: IntentTrainingConfig, seed: int, device: torch.device,
         health=TrainingHealthMonitor(
             interval=cfg.health_check_interval, mc_regression_factor=cfg.health_mc_regression_factor,
             rank_max=cfg.health_rank_max,
+            ranking_grace_il_passes=cfg.ranking_gate_grace_il_passes,
             consecutive_bad=cfg.health_consecutive_bad, clip_window=cfg.health_clip_window,
             clip_fraction=cfg.health_clip_fraction),
         state=RunState(config_hash=cfg.content_hash(), code_hash=code_sha256(),
@@ -1200,7 +1201,8 @@ def cmd_train(args, resume: bool = False) -> int:
         art.state.il_audit_rank_loss = float(d["audit_rank_loss"])
         reason = art.health.observe_audit(m["audit_mc_loss"], d["audit_rank_loss"],
                                           d["expert_top1_rate"],
-                                          check_ranking=art.state.warmup_passed)
+                                          check_ranking=art.state.warmup_passed,
+                                          il_pass=art.state.il_passes_done)
         art.state.il_audit_best_mc_loss = float(art.health.best_mc or 0.0)
         append_durable_log(
             run_dir,

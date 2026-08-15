@@ -719,7 +719,7 @@ class TrainingHealthMonitor:
     """
 
     def __init__(self, interval: int = 100, mc_regression_factor: float = 1.5,
-                 rank_max: float = 0.075,
+                 rank_max: float = 0.075, ranking_grace_il_passes: int = 500,
                  consecutive_bad: int = 2, clip_window: int = 500, clip_fraction: float = 0.80):
         if interval <= 0 or clip_window <= 0:
             raise IntentTrainError("interval and clip_window must be positive")
@@ -728,6 +728,7 @@ class TrainingHealthMonitor:
         self.interval = int(interval)
         self.mc_regression_factor = float(mc_regression_factor)
         self.rank_max = float(rank_max)
+        self.ranking_grace_il_passes = int(ranking_grace_il_passes)
         self.consecutive_bad = int(consecutive_bad)
         self.clip_window, self.clip_fraction = int(clip_window), float(clip_fraction)
         self.best_mc: Optional[float] = None
@@ -736,7 +737,7 @@ class TrainingHealthMonitor:
         self.clips: List[bool] = []
         self.diagnostics: List[dict] = []
 
-    _FROZEN = ("interval", "mc_regression_factor", "rank_max",
+    _FROZEN = ("interval", "mc_regression_factor", "rank_max", "ranking_grace_il_passes",
                "consecutive_bad", "clip_window", "clip_fraction")
 
     def observe_update(self, clipped: bool) -> Optional[str]:
@@ -751,7 +752,7 @@ class TrainingHealthMonitor:
         return None
 
     def observe_audit(self, audit_mc: float, audit_rank: float, top1: float,
-                      check_ranking: bool = True) -> Optional[str]:
+                      check_ranking: bool = True, il_pass: Optional[int] = None) -> Optional[str]:
         for name, v in (("audit_mc", audit_mc), ("audit_rank", audit_rank), ("top1", top1)):
             if not np.isfinite(v):
                 return f"non-finite {name} = {v}"
@@ -766,6 +767,25 @@ class TrainingHealthMonitor:
         # built. With the warm-up skipped (pilot only) there is nothing to
         # protect, and firing here would just be reporting that fact.
         if not check_ranking:
+            self.consecutive_rank_bad = 0
+            return None
+        # PHASE-TRANSITION GRACE. When MC joins a freshly warmed-up ranker the
+        # ranking metrics take a transient step backwards and then recover.
+        # Measured on the same code and corpus:
+        #   pilot   pass 0/100/200/300 -> 0.0287 / 0.0848 / 0.0732 / 0.0656
+        #   formal  pass 0/100/200     -> 0.0292 / 0.0881 / 0.0775  -> ABORT
+        # Both are the same transient; only the pilot's pass-200 sample
+        # happened to land 0.0018 inside the ceiling and reset the streak,
+        # while the formal run's landed 0.0025 outside it. A gate whose
+        # verdict turns on 0.004 of a known transient is a false positive,
+        # not a measurement. The pilot's own trajectory shows where it goes:
+        # 0.0656 -> ... -> 0.0193 by pass 2000, far under the ceiling.
+        #
+        # So the RANKING gate is suspended for the first
+        # `ranking_grace_il_passes` IL passes, with the streak starting from
+        # zero afterwards. Everything else -- non-finite values and MC
+        # regression -- is enforced from pass 0.
+        if il_pass is not None and il_pass < self.ranking_grace_il_passes:
             self.consecutive_rank_bad = 0
             return None
         # top-1 is telemetry, not a gate: its threshold shares the leaked

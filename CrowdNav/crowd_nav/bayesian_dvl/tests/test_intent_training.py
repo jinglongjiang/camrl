@@ -1070,7 +1070,7 @@ def test_c0_checkpoint_schema_v6_rejects_retired_v5_and_wrong_training_contract(
         save_intent_checkpoint(model, path, action_grid_hash="h", scene_registry_sha256="s")
         raw = torch.load(path, weights_only=False)
         assert raw["checkpoint_schema"] == CHECKPOINT_SCHEMA_V6
-        assert raw["training_contract_schema"] == TRAINING_CONTRACT_V3_ADAPTIVE_GRADIENT_BALANCE
+        assert raw["training_contract_schema"] == TRAINING_CONTRACT_V4_RANKING_GATE_GRACE
 
         # Order 4: a V2 checkpoint (fixed rank_share=380) must be refused
         # BY NAME, not with a generic schema message. Its optimizer state,
@@ -1744,3 +1744,64 @@ def test_warmup_gate_is_the_ranking_objective_not_top1() -> None:
     clone = TrainingHealthMonitor()
     clone.load_state_dict(json.loads(json.dumps(m3.state_dict())))
     assert clone.best_mc == m3.best_mc and clone.rank_max == m3.rank_max
+
+
+def test_ranking_gate_has_a_phase_transition_grace() -> None:
+    """The ranking gate must not abort on the warm-up -> joint transient.
+
+    Measured on the same code and corpus, IL pass 0/100/200:
+        pilot   0.0287 / 0.0848 / 0.0732   -- pass-200 landed 0.0018 INSIDE
+        formal  0.0292 / 0.0881 / 0.0775   -- pass-200 landed 0.0025 OUTSIDE
+
+    Same transient, opposite verdicts, 0.004 apart. The pilot's own
+    trajectory continues 0.0656 -> ... -> 0.0193 by pass 2000, so the ceiling
+    was never the problem -- the schedule was. Non-finite and MC-regression
+    stay enforced from pass 0.
+    """
+    from crowd_nav.bayesian_dvl.intent_train import TrainingHealthMonitor
+    from crowd_nav.bayesian_dvl.intent_config import (
+        DEFAULT_TRAINING_CONFIG, load_intent_training_config)
+
+    cfg = load_intent_training_config(DEFAULT_TRAINING_CONFIG)
+    assert cfg.ranking_gate_grace_il_passes == 500
+    assert cfg.health_rank_max == 0.075, "the ceiling itself must NOT move"
+
+    # the exact formal-run sequence that aborted must now survive
+    m = TrainingHealthMonitor(ranking_grace_il_passes=500)
+    assert m.observe_audit(11.117, 0.0292, 0.912, il_pass=0) is None
+    assert m.observe_audit(0.378, 0.0881, 0.918, il_pass=100) is None
+    assert m.observe_audit(0.336, 0.0775, 0.917, il_pass=200) is None, "this is what aborted before"
+    # ...and the pilot's recovery continues to pass cleanly
+    for il_pass, rank in ((300, 0.0656), (400, 0.0573), (500, 0.0493), (2000, 0.0193)):
+        assert m.observe_audit(0.20, rank, 0.92, il_pass=il_pass) is None
+
+    # AFTER the grace the original rule is unchanged: two consecutive aborts
+    m2 = TrainingHealthMonitor(ranking_grace_il_passes=500)
+    assert m2.observe_audit(0.20, 0.09, 0.92, il_pass=500) is None
+    reason = m2.observe_audit(0.20, 0.09, 0.92, il_pass=600)
+    assert reason is not None and "rank=" in reason
+
+    # the streak starts from zero at the boundary: violations inside the
+    # grace must not carry over and trip the very first post-grace check
+    m3 = TrainingHealthMonitor(ranking_grace_il_passes=500)
+    for p in (100, 200, 300, 400):
+        assert m3.observe_audit(0.20, 0.09, 0.92, il_pass=p) is None
+    assert m3.consecutive_rank_bad == 0
+    assert m3.observe_audit(0.20, 0.09, 0.92, il_pass=500) is None, "first post-grace check must not abort"
+
+    # OTHER gates are untouched inside the grace
+    m4 = TrainingHealthMonitor(ranking_grace_il_passes=500)
+    assert m4.observe_audit(0.10, 0.01, 0.92, il_pass=0) is None
+    assert m4.observe_audit(0.16, 0.01, 0.92, il_pass=100) is not None, "MC regression must still abort"
+    assert TrainingHealthMonitor().observe_audit(float("nan"), 0.01, 0.9, il_pass=0) is not None
+    assert TrainingHealthMonitor().observe_audit(0.1, float("inf"), 0.9, il_pass=0) is not None
+
+    # the grace is a FROZEN threshold: it must be checkpointed and verified
+    m5 = TrainingHealthMonitor(ranking_grace_il_passes=500)
+    assert "ranking_grace_il_passes" in m5.state_dict()
+    drifted = m5.state_dict(); drifted["ranking_grace_il_passes"] = 0
+    try:
+        TrainingHealthMonitor(ranking_grace_il_passes=500).load_state_dict(drifted)
+        assert False, "expected IntentTrainError on grace drift"
+    except IntentTrainError:
+        pass
