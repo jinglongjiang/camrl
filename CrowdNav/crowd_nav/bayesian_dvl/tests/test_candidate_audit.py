@@ -17,6 +17,7 @@ from crowd_nav.bayesian_dvl.candidate_audit import (
 )
 from crowd_nav.bayesian_dvl.intent_policy import HUMAN_FEATURE_DIM_V5
 from crowd_nav.bayesian_dvl.junction_scenario import (
+    junction_crowd_role_of_seed,
     AMBIGUOUS_TRACK_INDEX, JUNCTION_CROWD_HELDOUT_SEEDS, JUNCTION_CROWD_TRAIN_SEEDS,
     JunctionCrowdEpisodeConfig, build_junction_crowd_episode, maybe_reveal_crowd_exit,
     public_junction_crowd_scene,
@@ -29,7 +30,7 @@ ENV = Path(__file__).resolve().parents[2] / "configs" / "env_bayesian_dvl.config
 def _episodes(seeds, is_heldout):
     for seed in seeds:
         env, _robot, true_exit = build_junction_crowd_episode(
-            ENV, JunctionCrowdEpisodeConfig(episode_seed=seed, is_heldout=is_heldout))
+            ENV, JunctionCrowdEpisodeConfig(episode_seed=seed, role=junction_crowd_role_of_seed(seed)))
         state = {"wp": False}
 
         def advance(env=env, true_exit=true_exit, state=state, hd=is_heldout):

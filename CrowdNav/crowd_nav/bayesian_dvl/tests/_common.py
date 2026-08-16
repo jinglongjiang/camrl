@@ -49,6 +49,7 @@ from crowd_nav.bayesian_dvl.intent_policy import (
 )
 from crowd_nav.bayesian_dvl.model import DistributionalValueModel
 from crowd_nav.bayesian_dvl.junction_scenario import (
+    junction_crowd_role_of_seed,
     AMBIGUOUS_TRACK_INDEX, CROWD_HELDOUT_BACKGROUND_SPEED_RANGE, CROWD_HELDOUT_EXIT_LEFT, CROWD_HELDOUT_EXIT_RIGHT,
     CROWD_HELDOUT_PEDESTRIAN_SPEED_RANGE, CROWD_TRAIN_BACKGROUND_SPEED_RANGE,
     EXIT_LEFT, EXIT_RIGHT, JUNCTION_CROWD_HELDOUT_SEEDS, JUNCTION_CROWD_HUMAN_NUM, JUNCTION_CROWD_TRAIN_SEEDS,
@@ -412,7 +413,7 @@ __all__ = [
     'GoalIntentTracker',
     'GradientRatioMonitor',
     'HUMAN_FEATURE_DIM',
-    'HUMAN_FEATURE_DIM_V5', 'HUMAN_FEATURE_DIM_V6', 'HUMAN_SCALAR_DIM_V6',
+    'HUMAN_FEATURE_DIM_V5', 'junction_crowd_role_of_seed', 'HUMAN_FEATURE_DIM_V6', 'HUMAN_SCALAR_DIM_V6',
     'CANDIDATE_FEATURE_DIM', 'MAX_CANDIDATE_GOALS', 'FEATURE_SCHEMA_V6',
     'HumanObservation',
     'IQNValueNetwork',

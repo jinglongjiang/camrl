@@ -43,7 +43,7 @@ from crowd_nav.bayesian_dvl.intent_runtime_config import ActionGridSpec
 from crowd_nav.bayesian_dvl.intent_train import (
     STANDARD_SELECTION_DEV_SEEDS, select_checkpoint,
 )
-from crowd_nav.bayesian_dvl.junction_scenario import JUNCTION_CROWD_HELDOUT_SEEDS
+from crowd_nav.bayesian_dvl.junction_scenario import JUNCTION_CROWD_SELECTION_DEV_SEEDS
 from crowd_nav.bayesian_dvl.model import DistributionalValueModel
 
 
@@ -156,30 +156,18 @@ def evaluate_milestones(run_dir: Path, env_config: Path, cfg: IntentTrainingConf
     grid = ActionGridSpec.from_env_config(str(env_config))
     action_table = np.asarray(grid.build_action_table(), dtype=np.float64)
 
-    # PROTOCOL RECLASSIFICATION (see write_reclassification_manifest).
-    #
-    # 97601-97700 was frozen as junction selection-dev in the seed inventory,
-    # but JunctionCrowdEpisodeConfig keeps its OWN allowlist of crowd blocks
-    # and that block was never added to it. Adding it would mean editing
-    # junction_scenario.py, which is one of the 14 files code_sha256() hashes
-    # -- the full arm was trained under the current hash and mean/cv must run
-    # on byte-identical training code, so changing it would destroy the very
-    # comparison this project exists to make.
-    #
-    # 96901-97000 is therefore reclassified from paper held-out to
-    # checkpoint-selection development. It is already accepted by the scenario
-    # builder, has 100 seeds, and was never used for training. The cost is
-    # explicit and recorded: it can no longer serve as a paper number. The
-    # paper's final evaluation uses the independent Test8 protocol (base seed
-    # 42) and is unaffected.
-    #
-    # NOTE: these seeds run the HELD-OUT junction variant (shifted speeds,
-    # wider fork), which is harder than the junction_crowd distribution the
-    # arm trained on. The SR >= 0.90 bar is applied to that harder variant.
+    # V2: junction selection-dev is its OWN frozen block, 2_400_000-2_400_099,
+    # wired into JUNCTION_CROWD_SEED_ROLES so the scenario builder accepts it
+    # by role. The V1 workaround -- reclassifying the held-out block
+    # 96901-97000 into selection-dev because the real selection block had
+    # never been added to the scenario's allowlist -- is gone with V1, and
+    # the mechanism-audit block (2_010_000-2_010_099) must NOT be reused for
+    # selection: selecting a checkpoint on the same episodes that certified
+    # the candidate model would couple the two.
     jobs = {
         "standard": [("standard", s, False) for s in list(STANDARD_SELECTION_DEV_SEEDS)[:episodes]],
         "junction_crowd": [("junction_crowd", s, True)
-                           for s in list(JUNCTION_CROWD_HELDOUT_SEEDS)[:episodes]],
+                           for s in list(JUNCTION_CROWD_SELECTION_DEV_SEEDS)[:episodes]],
     }
     results, per_episode, identities = {}, {}, {}
     for order, ep in enumerate(MILESTONES, start=1):

@@ -21,6 +21,7 @@ from crowd_nav.bayesian_dvl.intent_runtime_config import (
 )
 from crowd_nav.bayesian_dvl.intent_tracker import CandidateGoal, GoalIntentTracker, IntentBeliefBank
 from crowd_nav.bayesian_dvl.junction_scenario import (
+    junction_crowd_role_of_seed,
     AMBIGUOUS_TRACK_INDEX, CROSSING_BAND_N, JUNCTION_APPROACH_HALF_WIDTH, JUNCTION_APPROACH_Y_MIN,
     JUNCTION_CROWD_HELDOUT_SEEDS, JUNCTION_CROWD_HUMAN_NUM, JUNCTION_CROWD_TRAIN_SEEDS,
     JunctionCrowdEpisodeConfig, SCENARIO_REGISTRY_ID, build_junction_crowd_episode,
@@ -42,7 +43,7 @@ MAX_WORST_CANDIDATE_ERROR_M = 1.20
 def _episodes(seeds, is_heldout):
     for seed in seeds:
         env, robot, true_exit = build_junction_crowd_episode(
-            ENV, JunctionCrowdEpisodeConfig(episode_seed=seed, is_heldout=is_heldout))
+            ENV, JunctionCrowdEpisodeConfig(episode_seed=seed, role=junction_crowd_role_of_seed(seed)))
         yield env, robot, true_exit
 
 

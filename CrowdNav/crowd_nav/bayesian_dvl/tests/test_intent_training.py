@@ -1209,12 +1209,20 @@ def test_c1_crowd_seed_blocks_frozen_and_mutually_disjoint() -> None:
     for i, a in enumerate(names):
         for b in names[i + 1:]:
             assert not (blocks[a] & blocks[b]), f"{a} and {b} overlap: {sorted(blocks[a] & blocks[b])[:5]}"
+    # A seed may only be used under ITS OWN role. Claiming a role the seed
+    # does not belong to -- the ambiguity the old is_heldout flag allowed --
+    # must be refused, and a seed from no block at all must be refused too.
     for wrong in (JUNCTION_CROWD_HELDOUT_SEEDS[0], JUNCTION_TRAIN_SEEDS[0]):
         try:
-            JunctionCrowdEpisodeConfig(episode_seed=wrong, is_heldout=False)
-            assert False, f"expected JunctionScenarioError for seed {wrong} as crowd-train"
+            JunctionCrowdEpisodeConfig(episode_seed=wrong, role="il")
+            assert False, f"expected JunctionScenarioError claiming seed {wrong} is an IL seed"
         except JunctionScenarioError:
             pass
+    try:
+        JunctionCrowdEpisodeConfig(episode_seed=JUNCTION_TRAIN_SEEDS[0], role="mechanism_train")
+        assert False, "the 1-person junction block is not a junction_crowd block"
+    except JunctionScenarioError:
+        pass
 
 
 def test_c1_crowd_heldout_is_a_real_distribution_shift_not_just_new_seeds() -> None:
@@ -1242,7 +1250,7 @@ def test_c1_crowd_episode_has_five_humans_and_no_initial_overlap() -> None:
     env_config_path = _env_config_path()
     for heldout, seeds in ((False, JUNCTION_CROWD_TRAIN_SEEDS[:4]), (True, JUNCTION_CROWD_HELDOUT_SEEDS[:3])):
         for seed in seeds:
-            cfg = JunctionCrowdEpisodeConfig(episode_seed=seed, is_heldout=heldout)
+            cfg = JunctionCrowdEpisodeConfig(episode_seed=seed, role=junction_crowd_role_of_seed(seed))
             env, robot, true_exit = build_junction_crowd_episode(env_config_path, cfg)
             assert true_exit in ("left", "right")
             assert len(env.humans) == JUNCTION_CROWD_HUMAN_NUM == 5, (
@@ -1266,7 +1274,7 @@ def test_c1_crowd_hidden_exit_identical_before_reveal_and_diverges_after() -> No
     # be bit-identical under true_exit="left" vs "right" until the reveal.
     import copy
     env_config_path = _env_config_path()
-    cfg = JunctionCrowdEpisodeConfig(episode_seed=JUNCTION_CROWD_TRAIN_SEEDS[0], is_heldout=False)
+    cfg = JunctionCrowdEpisodeConfig(episode_seed=JUNCTION_CROWD_TRAIN_SEEDS[0], role=junction_crowd_role_of_seed(JUNCTION_CROWD_TRAIN_SEEDS[0]))
     env_l, robot_l, _ = build_junction_crowd_episode(env_config_path, cfg)
     env_r, robot_r, _ = build_junction_crowd_episode(env_config_path, cfg)
 
@@ -1308,7 +1316,7 @@ def test_c1_crowd_background_pedestrians_are_not_ambiguous_and_leak_nothing() ->
     # candidate_fn signature admits no Human) and statically (no .gx/.gy in
     # the belief modules, covered by test_main_chain_never_reads_hidden_goal).
     env_config_path = _env_config_path()
-    cfg = JunctionCrowdEpisodeConfig(episode_seed=JUNCTION_CROWD_TRAIN_SEEDS[1], is_heldout=False)
+    cfg = JunctionCrowdEpisodeConfig(episode_seed=JUNCTION_CROWD_TRAIN_SEEDS[1], role=junction_crowd_role_of_seed(JUNCTION_CROWD_TRAIN_SEEDS[1]))
     env, robot, _true_exit = build_junction_crowd_episode(env_config_path, cfg)
     amb = env.humans[AMBIGUOUS_TRACK_INDEX]
     backgrounds = env.humans[AMBIGUOUS_TRACK_INDEX + 1:]
@@ -1339,7 +1347,7 @@ def test_c1_crowd_geometry_forces_conflict_while_belief_is_ambiguous() -> None:
     clearances, n_overlap = [], 0
     seeds = JUNCTION_CROWD_TRAIN_SEEDS[:8]
     for seed in seeds:
-        cfg = JunctionCrowdEpisodeConfig(episode_seed=seed, is_heldout=False)
+        cfg = JunctionCrowdEpisodeConfig(episode_seed=seed, role=junction_crowd_role_of_seed(seed))
         env, robot, true_exit = build_junction_crowd_episode(env_config_path, cfg)
         amb = env.humans[AMBIGUOUS_TRACK_INDEX]
         bank = IntentBeliefBank(make_candidate_fn(scene), dt=FROZEN_VALUES["dt"], speed=1.0)

@@ -503,13 +503,14 @@ def test_c4rf_paper_main_uses_test8_episode_identities() -> None:
         PAPER_MAIN_BASE_SEED, PAPER_MAIN_CASE_IDS, PAPER_MAIN_EPISODES_PER_SCENARIO,
         paper_main_episode_seed, paper_main_jobs,
     )
-    assert PAPER_MAIN_BASE_SEED == 42
+    assert PAPER_MAIN_BASE_SEED == 30_260_816
     assert PAPER_MAIN_EPISODES_PER_SCENARIO == 500
     assert PAPER_MAIN_CASE_IDS == {n: i for i, n in enumerate(FORMAL_SIX_SCENARIOS)}
     # the formula, recomputed independently
     for name, case_id in PAPER_MAIN_CASE_IDS.items():
         for ep in (0, 1, 499):
-            assert paper_main_episode_seed(name, ep) == (42 + case_id * 1_000_003 + ep) % (2**31 - 1)
+            assert paper_main_episode_seed(name, ep) == (
+                PAPER_MAIN_BASE_SEED + case_id * 1_000_003 + ep) % (2**31 - 1)
     jobs = paper_main_jobs()
     assert len(jobs) == 6 * 500
     assert len({s for _, s, _ in jobs}) == 6 * 500, "paper-main identities must be unique"

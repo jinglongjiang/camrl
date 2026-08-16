@@ -302,6 +302,50 @@ JUNCTION_CROWD_SELECTION_DEV_SEEDS: Tuple[int, ...] = tuple(range(2_400_000, 2_4
 # REFUSE these; the V1 paper-test block was spent the moment it was read.
 JUNCTION_CROWD_PAPER_TEST_SEEDS: Tuple[int, ...] = tuple(range(2_500_000, 2_500_500))     # 500
 
+# Seed -> ROLE, and ROLE -> geometry. One seed belongs to exactly one role.
+JUNCTION_CROWD_SEED_ROLES: Dict[str, Tuple[int, ...]] = {
+    "mechanism_train": JUNCTION_CROWD_TRAIN_SEEDS,
+    "mechanism_heldout": JUNCTION_CROWD_HELDOUT_SEEDS,
+    "il": JUNCTION_CROWD_IL_SEEDS,
+    "online": JUNCTION_CROWD_ONLINE_SEEDS,
+    "validation": JUNCTION_CROWD_VALIDATION_SEEDS,
+    "selection_dev": JUNCTION_CROWD_SELECTION_DEV_SEEDS,
+    "paper_test": JUNCTION_CROWD_PAPER_TEST_SEEDS,
+}
+TRAIN_GEOMETRY_ROLES = frozenset({"mechanism_train", "il", "online", "validation"})
+HELDOUT_GEOMETRY_ROLES = frozenset({"mechanism_heldout", "selection_dev", "paper_test"})
+# Roles training must never touch, whatever geometry they use.
+FORMAL_ONLY_ROLES = frozenset({"mechanism_heldout", "selection_dev", "paper_test"})
+
+
+def _assert_roles_partition() -> None:
+    if set(JUNCTION_CROWD_SEED_ROLES) != TRAIN_GEOMETRY_ROLES | HELDOUT_GEOMETRY_ROLES:
+        raise JunctionScenarioError("every junction_crowd role must map to exactly one geometry")
+    seen: Dict[int, str] = {}
+    for role, seeds in JUNCTION_CROWD_SEED_ROLES.items():
+        for s_ in seeds:
+            if s_ in seen:
+                raise JunctionScenarioError(
+                    f"seed {s_} is claimed by both {seen[s_]!r} and {role!r}; roles must be a partition")
+            seen[s_] = role
+
+
+_assert_roles_partition()
+
+
+def _role_of_seed(seed: int):
+    for role, seeds in JUNCTION_CROWD_SEED_ROLES.items():
+        if seed in seeds:
+            return role
+    return None
+
+
+def junction_crowd_role_of_seed(seed: int) -> str:
+    role = _role_of_seed(seed)
+    if role is None:
+        raise JunctionScenarioError(f"seed {seed} is not in any frozen junction_crowd block")
+    return role
+
 
 def _assert_crowd_seed_ranges_disjoint() -> None:
     blocks = {
@@ -345,23 +389,34 @@ _assert_heldout_ranges_are_shifted()
 
 @dataclass(frozen=True)
 class JunctionCrowdEpisodeConfig:
+    """ONE junction-crowd episode, identified by seed AND the ROLE it plays.
+
+    The old interface took ``is_heldout`` alone, so any caller holding the
+    heldout flag could run any heldout-block seed -- including the paper-test
+    block. Roles make the mapping explicit and one-way: a seed belongs to
+    exactly one role, the role determines the geometry, and a caller that
+    names a role the seed does not belong to is an error rather than a
+    silent reinterpretation.
+    """
+
     episode_seed: int
-    is_heldout: bool
+    role: str
 
     def __post_init__(self) -> None:
-        if self.is_heldout:
-            role_set = set(JUNCTION_CROWD_HELDOUT_SEEDS)
-            label = "heldout"
-        else:
-            # TRAIN accepts the mechanism block plus the two large formal
-            # blocks (IL and online), which are mutually disjoint.
-            role_set = (set(JUNCTION_CROWD_TRAIN_SEEDS) | set(JUNCTION_CROWD_IL_SEEDS)
-                        | set(JUNCTION_CROWD_ONLINE_SEEDS) | set(JUNCTION_CROWD_VALIDATION_SEEDS))
-            label = "train (mechanism|il|online|validation)"
-        if self.episode_seed not in role_set:
+        if self.role not in JUNCTION_CROWD_SEED_ROLES:
             raise JunctionScenarioError(
-                f"episode_seed {self.episode_seed} is not in the frozen crowd {label} seed range"
-            )
+                f"unknown junction_crowd seed role {self.role!r}; expected one of "
+                f"{sorted(JUNCTION_CROWD_SEED_ROLES)}")
+        if self.episode_seed not in JUNCTION_CROWD_SEED_ROLES[self.role]:
+            actual = _role_of_seed(self.episode_seed)
+            raise JunctionScenarioError(
+                f"episode_seed {self.episode_seed} is not in the frozen {self.role!r} block"
+                + (f" -- it belongs to {actual!r}" if actual else " -- it belongs to no frozen block"))
+
+    @property
+    def is_heldout(self) -> bool:
+        """Geometry follows from the ROLE, never from a caller's flag."""
+        return self.role in HELDOUT_GEOMETRY_ROLES
 
 
 def public_junction_crowd_scene(is_heldout: bool = False) -> PublicScene:

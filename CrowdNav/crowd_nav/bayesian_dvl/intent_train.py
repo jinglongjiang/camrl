@@ -40,6 +40,7 @@ from crowd_nav.bayesian_dvl.intent_tracker import IntentBeliefBank
 from crowd_nav.bayesian_dvl.model import DistributionalValueModel
 from crowd_nav.bayesian_dvl.scene_candidates import circle_scene, make_candidate_fn, square_scene
 from crowd_nav.bayesian_dvl.junction_scenario import (
+    junction_crowd_role_of_seed,
     AMBIGUOUS_TRACK_INDEX, JunctionCrowdEpisodeConfig, JunctionEpisodeConfig, build_junction_crowd_episode,
     build_junction_episode, maybe_reveal_crowd_exit, maybe_reveal_exit, public_junction_crowd_scene,
     public_junction_scene,
@@ -189,7 +190,17 @@ class _ScenarioEpisode:
             self.env, self.robot, self._true_exit = build_junction_episode(env_config_path, cfg)
             self.scene = public_junction_scene()
         else:  # junction_crowd
-            cfg = JunctionCrowdEpisodeConfig(episode_seed=episode_seed, is_heldout=is_heldout)
+            # The SEED determines the role, and the role determines the
+            # geometry -- a caller cannot mislabel an episode. is_heldout is
+            # kept only as a cross-check: disagreeing with the seed's own
+            # block is an error, not a reinterpretation.
+            role = junction_crowd_role_of_seed(episode_seed)
+            cfg = JunctionCrowdEpisodeConfig(episode_seed=episode_seed, role=role)
+            if bool(is_heldout) != cfg.is_heldout:
+                raise IntentTrainError(
+                    f"seed {episode_seed} has role {role!r} (heldout geometry={cfg.is_heldout}), but the "
+                    f"caller asked for is_heldout={is_heldout}")
+            is_heldout = cfg.is_heldout
             self.env, self.robot, self._true_exit = build_junction_crowd_episode(env_config_path, cfg)
             self.scene = public_junction_crowd_scene(is_heldout=is_heldout)
 
@@ -1525,7 +1536,15 @@ from crowd_nav.bayesian_dvl.junction_scenario import (  # noqa: E402
 # private seed block. Formula and defaults are taken verbatim from
 # crowd_nav/tools/evaluate_bdvl_paper_main.py, which already exists to
 # make exactly this comparison bit-identical.
-PAPER_MAIN_BASE_SEED = 42
+# V2: base seed 42 is RETIRED. The V6 candidate encoding changed what a
+# circle/square episode's features MEAN (candidates now carry geometry and a
+# count), so the V5 Test8 numbers do not describe this system and its episode
+# identities have been seen. Any external method compared against these
+# numbers -- Mamba-VL, SARL, LSTM -- must be re-run on this base seed too.
+PAPER_MAIN_BASE_SEED = 30_260_816
+# A separate, model-INDEPENDENT base used only by audit-test8-candidates, so
+# the candidate audit never touches a formal episode identity.
+TEST8_AUDIT_BASE_SEED = 20_260_816
 PAPER_MAIN_EPISODES_PER_SCENARIO = 500
 # case_id follows FORMAL_SIX_SCENARIOS' insertion order, which matches
 # test8.py's hardcoded list: baseline_circle=0 ... large_square=5.

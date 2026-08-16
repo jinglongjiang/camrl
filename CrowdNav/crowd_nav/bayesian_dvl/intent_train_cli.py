@@ -33,6 +33,7 @@ import argparse
 import hashlib
 import collections
 import json
+from functools import lru_cache
 import os
 import platform
 import shutil
@@ -57,6 +58,7 @@ from crowd_nav.bayesian_dvl.intent_policy import (
     CHECKPOINT_SCHEMA_V7, HUMAN_FEATURE_DIM_V5, load_intent_checkpoint, save_intent_checkpoint,
 )
 from crowd_nav.bayesian_dvl.intent_train import (
+    TEST8_AUDIT_BASE_SEED,
     FORMAL_EVAL_HELDOUT_SEEDS, FORMAL_SIX_SCENARIOS, PAPER_MAIN_BASE_SEED,
     STANDARD_DEV_DIAGNOSTIC_SEEDS, STANDARD_SELECTION_DEV_SEEDS, JUNCTION_SELECTION_DEV_SEEDS,
     PAPER_MAIN_EPISODES_PER_SCENARIO, EMAModel,
@@ -69,7 +71,7 @@ from crowd_nav.bayesian_dvl.intent_train import (
     run_il_update, run_online_training_step, summarize_scenario_results, train_step,
 )
 from crowd_nav.bayesian_dvl.junction_scenario import (
-    JUNCTION_CROWD_PAPER_TEST_SEEDS,
+    FORMAL_ONLY_ROLES, JUNCTION_CROWD_PAPER_TEST_SEEDS, _role_of_seed,
     JUNCTION_CROWD_HELDOUT_SEEDS, JUNCTION_CROWD_IL_SEEDS, JUNCTION_CROWD_ONLINE_SEEDS,
     JUNCTION_CROWD_TRAIN_SEEDS, JUNCTION_CROWD_VALIDATION_SEEDS,
     JUNCTION_HELDOUT_SEEDS, JUNCTION_TRAIN_SEEDS, SCENARIO_REGISTRY_ID,
@@ -694,8 +696,14 @@ def online_episode_at(cfg: IntentTrainingConfig, index: int) -> tuple:
 
 
 def _assert_not_formal_seed(seed: int) -> None:
-    """Section 6: train/resume must never touch formal/paper seeds."""
-    if seed in set(FORMAL_EVAL_HELDOUT_SEEDS) or seed in set(JUNCTION_CROWD_HELDOUT_SEEDS):
+    """Section 6: train/resume must never touch a formal, held-out,
+    selection or paper seed -- nor a Test8 episode identity."""
+    role = _role_of_seed(seed)
+    if role in FORMAL_ONLY_ROLES:
+        raise IntentCLIError(
+            f"training tried to use seed {seed}, whose junction_crowd role is {role!r} -- "
+            "mechanism_heldout, selection_dev and paper_test are never trained on")
+    if seed in set(FORMAL_EVAL_HELDOUT_SEEDS):
         raise IntentCLIError(f"training tried to use seed {seed}, which is a FORMAL/HELD-OUT evaluation seed")
     if seed in set(STANDARD_DEV_DIAGNOSTIC_SEEDS):
         raise IntentCLIError(
@@ -703,6 +711,22 @@ def _assert_not_formal_seed(seed: int) -> None:
     if seed in set(STANDARD_SELECTION_DEV_SEEDS) or seed in set(JUNCTION_SELECTION_DEV_SEEDS):
         raise IntentCLIError(
             f"training tried to use seed {seed}, which is a CHECKPOINT-SELECTION development seed")
+    # Test8 identities are DERIVED, not enumerated, so an inventory range
+    # cannot catch them. The audit suite and the formal suite use different
+    # base seeds and both must be refused.
+    if seed in _test8_derived_seeds():
+        raise IntentCLIError(
+            f"training tried to use seed {seed}, which is a Test8 episode identity "
+            f"(base {PAPER_MAIN_BASE_SEED} or {TEST8_AUDIT_BASE_SEED})")
+
+
+@lru_cache(maxsize=1)
+def _test8_derived_seeds() -> frozenset:
+    from crowd_nav.bayesian_dvl.intent_train import paper_main_jobs
+    seeds = set()
+    for base in (PAPER_MAIN_BASE_SEED, TEST8_AUDIT_BASE_SEED):
+        seeds.update(s for _sc, s, _hd in paper_main_jobs(episodes_per_scenario=500, base_seed=base))
+    return frozenset(seeds)
 
 
 # --------------------------------------------------------------------- #
@@ -795,14 +819,15 @@ def run_candidate_audit(cfg, env_config: Path, out_path: Path, n_episodes: int =
     )
     from crowd_nav.bayesian_dvl.junction_scenario import (
         AMBIGUOUS_TRACK_INDEX, JunctionCrowdEpisodeConfig, build_junction_crowd_episode,
-        maybe_reveal_crowd_exit, public_junction_crowd_scene,
+        junction_crowd_role_of_seed, maybe_reveal_crowd_exit, public_junction_crowd_scene,
     )
     from crowd_nav.bayesian_dvl.model import DistributionalValueModel
 
     def episodes(seeds, is_heldout):
         for seed in seeds:
             env, _robot, true_exit = build_junction_crowd_episode(
-                env_config, JunctionCrowdEpisodeConfig(episode_seed=seed, is_heldout=is_heldout))
+                env_config, JunctionCrowdEpisodeConfig(
+                    episode_seed=seed, role=junction_crowd_role_of_seed(seed)))
             state = {"wp": False}
 
             def advance(env=env, true_exit=true_exit, state=state, hd=is_heldout):
@@ -868,6 +893,82 @@ def cmd_audit_candidates(args) -> int:
         return 2
     print(f"audit PASSED -> {out}", flush=True)
     return 0
+
+def run_test8_candidate_audit(cfg, env_config: Path, out_path: Path, base_seed: int,
+                              episodes: int, max_steps: int = 40) -> dict:
+    """Model-INDEPENDENT candidate audit over the six Test8 scenarios.
+
+    Uses the SAME scenario builder and the SAME candidate provider the formal
+    evaluator uses -- build_formal_scenario_env plus circle_scene/square_scene
+    -- rather than a second copy of the geometry. A private copy is how the
+    formal evaluator once ran circle_scene() for square scenarios.
+    """
+    from crowd_nav.bayesian_dvl.candidate_audit import audit_scenario, run_pretraining_audit
+    from crowd_nav.bayesian_dvl.intent_train import (
+        FORMAL_SIX_SCENARIOS, build_formal_scenario_env, paper_main_episode_seed,
+    )
+    from crowd_nav.bayesian_dvl.intent_evaluate import initial_state_hash
+    from crowd_nav.bayesian_dvl.scene_candidates import circle_scene, square_scene
+
+    results, seed_table = [], []
+    for scenario in FORMAL_SIX_SCENARIOS:
+        shape, size, _humans = FORMAL_SIX_SCENARIOS[scenario]
+        scene = (circle_scene(radius=size, n_sectors=8) if shape == "circle"
+                 else square_scene(width=size, n_rows=4))
+        seeds = [paper_main_episode_seed(scenario, i, base_seed) for i in range(episodes)]
+
+        def episodes_iter(scenario=scenario, seeds=seeds):
+            for sd in seeds:
+                env, robot, _shape, _size = build_formal_scenario_env(env_config, scenario)
+                env.case_counter["test"] = sd % (2 ** 32 - 1)
+                env.reset()
+                seed_table.append({"scenario": scenario, "episode_seed": int(sd),
+                                   "initial_state_hash": initial_state_hash(robot, env.humans)})
+                yield env, None          # no hidden state to reveal in circle/square
+
+        r = audit_scenario(episodes_iter(), scene, scenario=scenario,
+                           ambiguous_index=None, max_steps=max_steps)
+        results.append(r)
+        print(f"  {scenario:16} coverage {r.mean_coverage_error_m:.3f}/{r.worst_coverage_error_m:.3f} m | "
+              f"speed residual {r.mean_speed_residual:.3f} | single {r.single_candidate_rate:.2%} | "
+              f"flat {r.persistently_flat_rate:.1%} | {'PASS' if r.passed else 'FAIL'}", flush=True)
+        if not r.passed:
+            raise IntentCLIError(
+                f"Test8 candidate audit FAILED on {scenario}: " + "; ".join(r.failures))
+
+    from crowd_nav.bayesian_dvl.candidate_audit import audit_permutation_invariance
+    from crowd_nav.bayesian_dvl.model import DistributionalValueModel
+    torch.manual_seed(0)
+    delta = audit_permutation_invariance(DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5))
+    print(f"  permutation invariance   max delta {delta:.2e}", flush=True)
+
+    payload = run_pretraining_audit(results, delta)      # raises on any failure
+    payload["suite"] = "test8"
+    payload["base_seed"] = int(base_seed)
+    payload["episodes_per_scenario"] = int(episodes)
+    payload["identity"] = audit_identity(cfg)
+    payload["episodes"] = seed_table
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(payload, indent=2))
+    return payload
+
+
+def cmd_audit_test8_candidates(args) -> int:
+    cfg = load_intent_training_config(args.config)
+    if args.base_seed == PAPER_MAIN_BASE_SEED:
+        raise IntentCLIError(
+            f"--base-seed {args.base_seed} is the FORMAL Test8 base; the candidate audit must not touch "
+            f"formal episode identities. Use {TEST8_AUDIT_BASE_SEED}.")
+    print(f"=== Test8 candidate audit (base seed {args.base_seed}, "
+          f"{args.episodes} episodes x 6 scenarios) ===", flush=True)
+    try:
+        run_test8_candidate_audit(cfg, args.env_config, Path(args.out), args.base_seed, args.episodes)
+    except Exception as exc:
+        print(f"AUDIT FAILED -- no IL collection, no training:\n{exc}", flush=True)
+        return 2
+    print(f"audit PASSED -> {args.out}", flush=True)
+    return 0
+
 
 def cmd_preflight(args) -> int:
     cfg = load_intent_training_config(args.config)
@@ -1677,6 +1778,13 @@ def build_parser() -> argparse.ArgumentParser:
     ac.add_argument("--episodes", type=int, default=40)
     ac.set_defaults(func=cmd_audit_candidates)
 
+    a8 = sub.add_parser("audit-test8-candidates",
+                        help="model-independent candidate audit over the six Test8 scenarios")
+    a8.add_argument("--base-seed", type=int, default=TEST8_AUDIT_BASE_SEED)
+    a8.add_argument("--episodes", type=int, default=100)
+    a8.add_argument("--out", type=Path, default=Path("runs/v2/test8_candidate_audit.json"))
+    a8.set_defaults(func=cmd_audit_test8_candidates)
+
     pf = sub.add_parser("preflight")
     pf.add_argument("--run-dir", type=Path, default=None)
     # A5-fix: two DIFFERENT numbers. --concurrent-runs drives the gate (what
@@ -1742,6 +1850,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        if args.cmd == "audit-test8-candidates":
+            return cmd_audit_test8_candidates(args)
         if args.cmd == "audit-candidates":
             return cmd_audit_candidates(args)
         if args.cmd == "preflight":
