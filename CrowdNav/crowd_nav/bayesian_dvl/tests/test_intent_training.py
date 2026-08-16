@@ -1670,13 +1670,24 @@ def test_audit_metrics_are_chunked_without_changing_the_numbers() -> None:
     batch = batch_to_tensors(audit, device="cpu")
     ONE = 10 ** 9   # effectively unchunked
 
-    # --- ranking diagnostics: EXACT, they are integer counts and row sums
+    # --- ranking diagnostics. ``expert_top1_rate`` is a ratio of INTEGER
+    # counts, so it must be bit-exact under any chunking. The other three are
+    # float row-sums divided once, so all that can differ is float32
+    # summation ORDER -- the same reason the MC loss below is compared with a
+    # tolerance. Demanding bit-equality there asserts a property floating
+    # point does not have; it held only while the feature values happened to
+    # sum identically, and a 9e-13 relative wobble is not "moving the number".
     ref = expert_rank_diagnostics(model, audit, chunk_rows=ONE)
     for cs in (128, 64, 37, 7):
         got = expert_rank_diagnostics(model, audit, chunk_rows=cs)
         assert set(got) == set(ref)
-        for k in ref:
-            assert got[k] == ref[k], (k, cs, got[k], ref[k])
+        assert got["expert_top1_rate"] == ref["expert_top1_rate"], (cs, got, ref)
+        for k in ("expert_margin_mean", "score_range_mean", "audit_rank_loss"):
+            # float32 has ~7 significant digits; these are sums over thousands
+            # of rows divided once. 1e-5 relative still catches a real chunking
+            # bug by six orders of magnitude -- the element-counting bug this
+            # test was written for showed up as 1.8e-3.
+            assert abs(got[k] - ref[k]) <= max(1e-5 * abs(ref[k]), 1e-8), (k, cs, got[k], ref[k])
     assert 0.0 <= ref["expert_top1_rate"] <= 1.0
 
     # --- ranking loss: EXACT (per-row hinge, summed)

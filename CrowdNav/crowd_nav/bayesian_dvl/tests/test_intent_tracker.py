@@ -187,19 +187,33 @@ def test_intent_belief_bank_short_gap_rebaselines_no_fake_velocity() -> None:
     bank = IntentBeliefBank(_bank_candidate_fn, dt=0.25, speed=1.0, missing_timeout_steps=3)
     # drive PAST the junction toward left so the posterior is strongly
     # non-uniform (this is where the fake velocity actually distorts).
-    for p in [(0.0, 3.0), (0.0, 4.0), (-0.6, 4.5), (-1.2, 5.0)]:
+    #
+    # The waypoints below walk the same left-turning path as the other bank
+    # fixtures but at ~0.2 m per 0.25 s step, i.e. a WALKING pedestrian. The
+    # original fixture took 1 m steps at dt=0.25 -- a 4 m/s "pedestrian",
+    # outside any human speed range and outside the tracker's speed clip.
+    # That did not matter while the preferred-velocity model was pinned to a
+    # constant 1.0 m/s, but the tracker now estimates speed from observed
+    # motion, so a 4 m/s fixture tests the estimator's saturation behaviour
+    # rather than the gap handling this test is about. The gap itself is
+    # unchanged in absolute terms: the reappearance below is still a 2.05 m
+    # jump, now 8x a normal step instead of 2x.
+    approach = [(0.0, 3.0)]
+    for a, b in (((0.0, 3.0), (0.0, 4.0)), ((0.0, 4.0), (-0.6, 4.5)), ((-0.6, 4.5), (-1.2, 5.0))):
+        approach += [(a[0] + (b[0] - a[0]) * k / 4, a[1] + (b[1] - a[1]) * k / 4) for k in (1, 2, 3, 4)]
+    for p in approach:
         bank.update({1: p})
     b_before = bank.belief_for(1).copy()
     assert b_before[0] > 0.6, f"precondition: non-uniform (left) belief, got {b_before}"
 
     bank.update({}); bank.update({})               # miss 2 frames (within timeout)
     # reappear jumped far: a single-dt diff vs pre-gap (-1.2,5.0) would be
-    # speed ~8 (real single-step is ~1). The fix must re-baseline instead.
+    # ~8 m/s (real single-step is ~0.8). The fix must re-baseline instead.
     bank.update({1: (-2.7, 6.4)})
     assert np.allclose(bank.belief_for(1), b_before), (
         f"reappearance frame must re-baseline (belief unchanged), got {bank.belief_for(1)} vs {b_before}")
     # next real single-step keeps evolving sanely (stays left-dominant, not blown up)
-    bank.update({1: (-3.3, 6.9)})
+    bank.update({1: (-2.85, 6.5)})
     nb = bank.belief_for(1)
     assert nb[0] > 0.6 and np.all(np.isfinite(nb)), f"post-rebaseline update should be sane, got {nb}"
 

@@ -227,6 +227,27 @@ def build_junction_episode(env_config_path: Path, cfg: JunctionEpisodeConfig):
 JUNCTION_CROWD_HUMAN_NUM = 5           # 1 ambiguous + 4 background
 AMBIGUOUS_TRACK_INDEX = 0              # env.humans[0] is always the ambiguous one
 
+# PUBLIC approach corridor: the strip that leads into the junction. An entry
+# inside it is on the approach and gets the left/right exit candidates; an
+# entry outside it is a lateral crosser and gets crossing candidates.
+#
+# This is the geometric fact the scene previously ASSERTED but did not
+# ENFORCE. The old background sampler could place a crosser at, say,
+# (0.1, 4.0) -- indistinguishable from the ambiguous pedestrian's start --
+# so no observable rule could have separated the two populations, and the
+# candidate function applied the junction rule to all five. Backgrounds are
+# now rejection-sampled OUT of the corridor, which makes corridor membership
+# a sound public discriminator instead of a claim.
+JUNCTION_APPROACH_HALF_WIDTH = 0.6     # ped_x is drawn from [-0.3, 0.3], so the ambiguous entry is always inside
+JUNCTION_APPROACH_Y_MIN = JUNCTION_WAYPOINT[1]   # the corridor is the stretch BEFORE the junction
+CROSSING_BAND_N = 4                    # crossers' endpoint along the band stays genuinely uncertain
+
+# Public speed prior for a track's first frame, before any velocity has been
+# observed. Replaces the old hard-coded speed=1.0, which sat outside BOTH
+# held-out ranges (pedestrian 1.15-1.45, background 1.05-1.40) and produced
+# a measured 1.03 m/s candidate-velocity residual on the background humans.
+JUNCTION_CROWD_SPEED_PRIOR = 1.0
+
 # TRAIN parameter ranges (frozen before any collection).
 CROWD_TRAIN_BACKGROUND_X_RANGE: Tuple[float, float] = (-2.2, 2.2)
 CROWD_TRAIN_BACKGROUND_Y_RANGE: Tuple[float, float] = (1.0, 4.5)
@@ -334,7 +355,11 @@ def public_junction_crowd_scene(is_heldout: bool = False) -> PublicScene:
     per-pedestrian goal."""
     left = CROWD_HELDOUT_EXIT_LEFT if is_heldout else EXIT_LEFT
     right = CROWD_HELDOUT_EXIT_RIGHT if is_heldout else EXIT_RIGHT
-    return junction_scene(JUNCTION_WAYPOINT, [("left", left), ("right", right)])
+    y0, y1 = CROWD_HELDOUT_BACKGROUND_Y_RANGE if is_heldout else CROWD_TRAIN_BACKGROUND_Y_RANGE
+    return junction_scene(
+        JUNCTION_WAYPOINT, [("left", left), ("right", right)],
+        approach_corridor=(JUNCTION_APPROACH_HALF_WIDTH, JUNCTION_APPROACH_Y_MIN),
+        crossing_band=(y0, y1, CROSSING_BAND_N))
 
 
 def crowd_exit_position(true_exit: str, is_heldout: bool = False) -> Tuple[float, float]:
@@ -417,6 +442,8 @@ def build_junction_crowd_episode(env_config_path: Path, cfg: JunctionCrowdEpisod
         for _attempt in range(200):
             bx = float(rng.uniform(*bg_x_range))
             by = float(rng.uniform(*bg_y_range))
+            if abs(bx) <= JUNCTION_APPROACH_HALF_WIDTH and by >= JUNCTION_APPROACH_Y_MIN:
+                continue  # inside the approach corridor -> would be indistinguishable from the ambiguous entry
             if all(np.hypot(bx - px, by - py) >= bg.radius + r + 0.15 for px, py, r in placed):
                 break
         else:

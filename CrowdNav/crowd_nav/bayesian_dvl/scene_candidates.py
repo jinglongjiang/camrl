@@ -59,6 +59,30 @@ class PublicScene:
     destinations: Tuple[PublicDestination, ...]
     junction: Optional[Tuple[float, float]] = None
     forward_only: bool = True
+    # ---- junction-crowd fix (paper-test post-mortem) -------------------
+    # The junction-crowd scene contains TWO populations with different
+    # public motion rules, and the old code applied the junction rule to
+    # both. Measured consequence on the 500-episode paper test: the four
+    # lateral crossers were each handed "will exit left or right at the
+    # junction" candidates whose endpoints sat 1.90 m (max 4.01 m) from
+    # where they actually went, with a 1.03 m/s velocity residual. A
+    # counterfactual that replaced only those four humans' belief features
+    # cut navigation time 37%, path length 19% and heading jitter 99% at no
+    # safety cost -- i.e. the wrong candidate model, not the Bayesian
+    # method, produced the result.
+    #
+    # The fix keeps the derivation PUBLIC: which rule applies is decided by
+    # the observable entry position against a declared corridor, never by
+    # who the pedestrian is. An entry inside the approach corridor is on
+    # the junction approach and gets the exit candidates; an entry outside
+    # it is a lateral crosser and gets crossing candidates.
+    #
+    # ``approach_corridor`` = (half_width, y_min): |x| <= half_width and
+    # y >= y_min. ``crossing_band`` = (y_min, y_max, n_bands): crossers
+    # traverse to the mirrored-x side, ending somewhere in this y band,
+    # which is discretized into ``n_bands`` candidate endpoints.
+    approach_corridor: Optional[Tuple[float, float]] = None
+    crossing_band: Optional[Tuple[float, float, int]] = None
     # C1.1: some scene TYPES carry a stronger public structural rule than a
     # forward cone. In CrowdSim's ``square_crossing``, a pedestrian's goal
     # is ALWAYS in the opposite half-plane from its entry
@@ -86,6 +110,46 @@ class PublicScene:
         if self.opposite_half_plane_axis not in (None, "x", "y"):
             raise SceneCandidatesError(
                 f"opposite_half_plane_axis must be None, 'x' or 'y', got {self.opposite_half_plane_axis!r}")
+        if self.approach_corridor is not None:
+            hw, y_min = self.approach_corridor
+            if not (np.isfinite(hw) and hw > 0 and np.isfinite(y_min)):
+                raise SceneCandidatesError(f"approach_corridor must be (half_width>0, y_min), got {self.approach_corridor!r}")
+            if self.junction is None:
+                raise SceneCandidatesError("approach_corridor requires a junction -- a corridor approaches something")
+        if self.crossing_band is not None:
+            y0, y1, n = self.crossing_band
+            if not (np.isfinite(y0) and np.isfinite(y1) and y1 > y0):
+                raise SceneCandidatesError(f"crossing_band needs y_max > y_min, got {self.crossing_band!r}")
+            if int(n) < 2:
+                raise SceneCandidatesError(
+                    f"crossing_band n_bands must be >= 2, got {n}: a crosser's endpoint along the band is "
+                    "genuinely unknown, and collapsing it to one candidate would fake certainty")
+            if int(n) > 8:
+                raise SceneCandidatesError(f"crossing_band n_bands must be <= MAX_CANDIDATE_GOALS (8), got {n}")
+            if self.approach_corridor is None:
+                raise SceneCandidatesError(
+                    "crossing_band requires an approach_corridor: without one there is no public rule "
+                    "separating approachers from crossers, which is the bug this pair exists to fix")
+
+    def in_approach_corridor(self, first_position: np.ndarray) -> bool:
+        """PUBLIC test: is this observable entry on the junction approach?"""
+        if self.approach_corridor is None:
+            return False
+        entry = np.asarray(first_position, dtype=np.float64)
+        half_width, y_min = self.approach_corridor
+        return bool(abs(entry[0]) <= half_width and entry[1] >= y_min)
+
+    def _crossing_candidates(self, entry: np.ndarray) -> List[CandidateGoal]:
+        """Lateral crossers traverse to the mirrored-x side of the scene and
+        stop somewhere in the public crossing band. Public rule + observable
+        entry only -- the band is discretized, never read off a hidden goal,
+        so the endpoint along it stays genuinely uncertain."""
+        y0, y1, n_bands = self.crossing_band
+        n_bands = int(n_bands)
+        target_x = -float(entry[0])
+        edges = np.linspace(float(y0), float(y1), n_bands + 1)
+        centres = 0.5 * (edges[:-1] + edges[1:])
+        return [CandidateGoal(f"cross{i}", ((target_x, float(y)),)) for i, y in enumerate(centres)]
 
     def candidates_for(self, first_position: np.ndarray) -> List[CandidateGoal]:
         """PUBLIC-only derivation: from an entry position (observable) +
@@ -95,6 +159,11 @@ class PublicScene:
         entry = np.asarray(first_position, dtype=np.float64)
         if entry.shape != (2,) or not np.all(np.isfinite(entry)):
             raise SceneCandidatesError(f"first_position must be a finite 2D point, got {first_position!r}")
+
+        # Two populations, two public rules. Decided by the observable entry
+        # against the declared corridor -- never by pedestrian identity.
+        if self.crossing_band is not None and not self.in_approach_corridor(entry):
+            return self._crossing_candidates(entry)
 
         # forward direction: toward the junction if present, else scene centroid
         if self.junction is not None:
@@ -191,8 +260,15 @@ def square_scene(width: float, n_rows: int = 4) -> PublicScene:
     )
 
 
-def junction_scene(junction: Tuple[float, float], exits: Sequence[Tuple[str, Tuple[float, float]]]) -> PublicScene:
+def junction_scene(junction: Tuple[float, float], exits: Sequence[Tuple[str, Tuple[float, float]]],
+                   approach_corridor: Optional[Tuple[float, float]] = None,
+                   crossing_band: Optional[Tuple[float, float, int]] = None) -> PublicScene:
     """Multimodal stress structure: discrete public exits reached via a
-    shared junction waypoint (collision risk depends on the unknown exit)."""
+    shared junction waypoint (collision risk depends on the unknown exit).
+
+    Pass ``approach_corridor``/``crossing_band`` for a scene that also
+    contains lateral crossers, so the two populations get the two different
+    public rules instead of the junction rule being applied to everyone."""
     dests = tuple(PublicDestination(name, pos) for name, pos in exits)
-    return PublicScene(destinations=dests, junction=junction, forward_only=True)
+    return PublicScene(destinations=dests, junction=junction, forward_only=True,
+                       approach_corridor=approach_corridor, crossing_band=crossing_band)

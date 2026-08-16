@@ -64,6 +64,23 @@ class GoalIntentTracker:
     preferred-velocity model is geometry-general -- not tied to a
     monotonic-descent assumption."""
 
+    # Speed estimation (paper-test post-mortem). ``speed`` used to be a
+    # hard-coded 1.0 m/s applied to every pedestrian in every scene. On the
+    # held-out junction crowd that constant sits OUTSIDE both real ranges
+    # (ambiguous 1.15-1.45, background 1.05-1.40), and the measured
+    # candidate-velocity residual on the background humans was 1.03 m/s --
+    # comparable to the speeds themselves. The preferred-velocity model is
+    # what the likelihood compares against, so a wrong speed corrupts every
+    # candidate's likelihood by roughly the same amount and the posterior
+    # stops discriminating.
+    #
+    # ``speed`` is now only the PUBLIC PRIOR used before any velocity has
+    # been observed; from the first real displacement onward the tracker
+    # runs a clipped EMA of the observed speed.
+    SPEED_EMA_ALPHA = 0.3
+    SPEED_MIN = 0.2
+    SPEED_MAX = 2.5
+
     def __init__(
         self,
         candidates: Sequence[CandidateGoal],
@@ -72,6 +89,7 @@ class GoalIntentTracker:
         sigma: float = 0.5,
         persistence: float = 0.98,
         wp_radius: float = 0.35,
+        estimate_speed: bool = True,
     ) -> None:
         if len(candidates) == 0:
             raise IntentTrackerError("GoalIntentTracker requires at least one candidate goal")
@@ -86,7 +104,9 @@ class GoalIntentTracker:
         self.candidates = list(candidates)
         self._routes = [np.asarray(c.waypoints, dtype=np.float64) for c in self.candidates]
         self.dt = float(dt)
-        self.speed = float(speed)
+        self.speed = float(speed)          # PUBLIC PRIOR only (see SPEED_EMA_ALPHA above)
+        self.estimate_speed = bool(estimate_speed)
+        self._speed_est = float(speed)     # what the preferred-velocity model actually uses
         self.sigma = float(sigma)
         self.persistence = float(persistence)
         self.wp_radius = float(wp_radius)
@@ -105,7 +125,7 @@ class GoalIntentTracker:
         route = self._routes[ci]
         if wp_idx >= len(route):
             return np.zeros(2)
-        return self.speed * _unit(route[wp_idx] - position)
+        return self._speed_est * _unit(route[wp_idx] - position)
 
     def _advance_waypoints(self, position: np.ndarray) -> None:
         for ci in range(len(self.candidates)):
@@ -145,6 +165,15 @@ class GoalIntentTracker:
             # but not frozen, so a beaten-down candidate stays recoverable
             b = self.persistence * b + (1.0 - self.persistence) / len(self.candidates)
             self._log_b = np.log(b)
+            if self.estimate_speed:
+                # AFTER the likelihood, never before: scoring this frame
+                # against a model already fitted to this frame's own
+                # displacement would make every candidate fit equally well
+                # and flatten the posterior.
+                observed = float(np.linalg.norm(v))
+                self._speed_est = float(np.clip(
+                    (1.0 - self.SPEED_EMA_ALPHA) * self._speed_est + self.SPEED_EMA_ALPHA * observed,
+                    self.SPEED_MIN, self.SPEED_MAX))
         # else: first observation OR the first frame after a gap -> re-baseline
         # only (belief unchanged); the stored position was absent/stale so no
         # valid single-step velocity exists.
@@ -169,7 +198,7 @@ class GoalIntentTracker:
         for _ in range(horizon):
             while idx < len(route) and float(np.linalg.norm(route[idx] - pos)) <= self.wp_radius:
                 idx += 1
-            v = np.zeros(2) if idx >= len(route) else self.speed * _unit(route[idx] - pos)
+            v = np.zeros(2) if idx >= len(route) else self._speed_est * _unit(route[idx] - pos)
             pos = pos + v * self.dt
             out.append(pos.copy())
         return np.array(out)
@@ -290,6 +319,14 @@ class IntentBeliefBank:
         if track_id not in self._trackers:
             raise IntentTrackerError(f"no active track {track_id}")
         return self._trackers[track_id]
+
+    def speed_estimate_for(self, track_id: int) -> float:
+        """The tracker's current speed estimate -- exposed so the candidate
+        audit can measure the residual against observed motion instead of
+        trusting that the model matches."""
+        if track_id not in self._trackers:
+            raise IntentTrackerError(f"no active track {track_id}")
+        return float(self._trackers[track_id]._speed_est)
 
     def track_age_for(self, track_id: int) -> int:
         """Number of real `update` calls this track has received since it
