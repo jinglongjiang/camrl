@@ -25,7 +25,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from crowd_nav.bayesian_dvl.intent_runtime_config import ActionGridSpec, FROZEN_VALUES
+from crowd_nav.bayesian_dvl.intent_runtime_config import ActionGridSpec, FROZEN_VALUES, TRACKER_DEFAULTS
 from crowd_nav.bayesian_dvl.contracts import HumanObservation, RobotObservation
 from crowd_nav.bayesian_dvl.geometry_features import _robot_feature_vector, compute_action_features_array
 from crowd_nav.bayesian_dvl.iqn import expert_ranking_loss, quantile_huber_loss
@@ -219,7 +219,7 @@ def collect_orca_episode(
     episode = _ScenarioEpisode(env_config_path, scenario, episode_seed, is_heldout=is_heldout)
     env, robot, scene = episode.env, episode.robot, episode.scene
 
-    bank = IntentBeliefBank(make_candidate_fn(scene), dt=FROZEN_VALUES["dt"], speed=1.0)
+    bank = IntentBeliefBank(make_candidate_fn(scene), dt=FROZEN_VALUES["dt"], speed=TRACKER_DEFAULTS["speed_prior"])
     rng = np.random.default_rng(episode_seed)
     max_steps = int(round(FROZEN_VALUES["time_limit"] / FROZEN_VALUES["dt"])) + 1
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table(), dtype=np.float64)
@@ -351,7 +351,7 @@ def materialize_arm_transitions(
     if mode not in ("full", "mean", "cv", "uniform"):
         raise IntentTrainError(f"unknown belief mode {mode!r}")
     scene = _scene_for_scenario(raw.scenario, raw.is_heldout)
-    bank = IntentBeliefBank(make_candidate_fn(scene), dt=FROZEN_VALUES["dt"], speed=1.0)
+    bank = IntentBeliefBank(make_candidate_fn(scene), dt=FROZEN_VALUES["dt"], speed=TRACKER_DEFAULTS["speed_prior"])
     rng = np.random.default_rng(raw.episode_seed)
     out: List[IntentTransition] = []
     for st in raw.steps:
@@ -891,7 +891,7 @@ def run_ablation_episode(
     episode = _ScenarioEpisode(env_config_path, scenario, episode_seed, is_heldout=is_heldout)
     env, robot, scene = episode.env, episode.robot, episode.scene
 
-    bank = IntentBeliefBank(make_candidate_fn(scene), dt=FROZEN_VALUES["dt"], speed=1.0)
+    bank = IntentBeliefBank(make_candidate_fn(scene), dt=FROZEN_VALUES["dt"], speed=TRACKER_DEFAULTS["speed_prior"])
     planner_rng = np.random.default_rng(planner_seed)
     max_steps = int(round(FROZEN_VALUES["time_limit"] / FROZEN_VALUES["dt"])) + 1
     outcome = None
@@ -983,7 +983,7 @@ def collect_online_episode(
     episode = _ScenarioEpisode(env_config_path, scenario, episode_seed, is_heldout=is_heldout)
     env, robot, scene = episode.env, episode.robot, episode.scene
 
-    bank = IntentBeliefBank(make_candidate_fn(scene), dt=FROZEN_VALUES["dt"], speed=1.0)
+    bank = IntentBeliefBank(make_candidate_fn(scene), dt=FROZEN_VALUES["dt"], speed=TRACKER_DEFAULTS["speed_prior"])
     belief_rng = np.random.default_rng(episode_seed)
     max_steps = int(round(FROZEN_VALUES["time_limit"] / FROZEN_VALUES["dt"])) + 1
 
@@ -1589,7 +1589,7 @@ def run_formal_scenario_episode(
     # behaviour) put every candidate destination on a ring unrelated to
     # where square-crossing pedestrians actually walk.
     scene = square_scene(width=size, n_rows=4) if shape == "square" else circle_scene(radius=size, n_sectors=8)
-    bank = IntentBeliefBank(make_candidate_fn(scene), dt=FROZEN_VALUES["dt"], speed=1.0)
+    bank = IntentBeliefBank(make_candidate_fn(scene), dt=FROZEN_VALUES["dt"], speed=TRACKER_DEFAULTS["speed_prior"])
     planner_rng = np.random.default_rng(episode_seed)
     max_steps = int(round(FROZEN_VALUES["time_limit"] / FROZEN_VALUES["dt"])) + 1
     outcome = None

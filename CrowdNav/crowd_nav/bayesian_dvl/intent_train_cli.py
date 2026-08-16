@@ -47,7 +47,9 @@ from typing import Callable, Dict, List, Optional
 import numpy as np
 import torch
 
-from crowd_nav.bayesian_dvl.intent_runtime_config import ActionGridSpec
+from crowd_nav.bayesian_dvl.intent_runtime_config import (
+    ActionGridSpec, FEATURE_SCHEMA_V6, TRACKER_DEFAULTS,
+)
 from crowd_nav.bayesian_dvl.intent_config import (
     DEFAULT_TRAINING_CONFIG, IntentConfigError, IntentTrainingConfig, load_intent_training_config,
 )
@@ -263,6 +265,26 @@ def scene_registry_sha256(cfg: IntentTrainingConfig) -> str:
             "max_candidate_goals": cfg.max_candidate_goals,
             "future_horizon": cfg.future_horizon, "future_n_samples": cfg.future_n_samples,
         },
+        # The candidate RULES, not just the destination coordinates. The
+        # corridor decides which of the two public rules a pedestrian gets,
+        # the band decides what a crosser's candidates are, and the speed
+        # model decides what the likelihood compares observed motion
+        # against. All three change the posterior, so a run that differs in
+        # any of them is a different experiment and must not share a hash.
+        "junction_crowd_rules": {
+            "approach_corridor_train": list(public_junction_crowd_scene(is_heldout=False).approach_corridor),
+            "approach_corridor_heldout": list(public_junction_crowd_scene(is_heldout=True).approach_corridor),
+            "crossing_band_train": list(public_junction_crowd_scene(is_heldout=False).crossing_band),
+            "crossing_band_heldout": list(public_junction_crowd_scene(is_heldout=True).crossing_band),
+            # backgrounds are rejection-sampled OUT of the corridor; the
+            # corridor bounds above ARE that exclusion rule's parameters
+            "background_excluded_from_corridor": True,
+        },
+        "speed_model": {
+            k: TRACKER_DEFAULTS[k]
+            for k in ("speed_prior", "estimate_speed", "speed_ema_alpha", "speed_min", "speed_max")
+        },
+        "feature_schema": FEATURE_SCHEMA_V6,
     }
     blob = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(blob).hexdigest()

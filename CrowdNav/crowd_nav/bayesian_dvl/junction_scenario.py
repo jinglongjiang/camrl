@@ -67,7 +67,12 @@ ROBOT_GOAL: Tuple[float, float] = (0.0, 5.0)
 # distances) to be IN the fork region while the pedestrian's exit is still
 # being resolved, not before or after it.
 ROBOT_START_Y_RANGE: Tuple[float, float] = (0.3, 0.7)
-SCENARIO_REGISTRY_ID = "bdvl_junction_scenario_v1"
+# V2: the junction-crowd BIRTH DISTRIBUTION and the CANDIDATE SEMANTICS both
+# changed (backgrounds are rejection-sampled out of the approach corridor, and
+# crossers get crossing candidates instead of junction exits). Episodes from
+# v1 and v2 are different environments and must never be pooled or compared;
+# v1 corpora, weights and test seeds are all retired.
+SCENARIO_REGISTRY_ID = "bdvl_junction_scenario_v2_corridor_split"
 
 # --- FROZEN, DISJOINT seed ranges (consolidation plan hard requirement 1) ---
 JUNCTION_TRAIN_SEEDS: Tuple[int, ...] = tuple(range(96001, 96201))     # 200
@@ -242,11 +247,10 @@ JUNCTION_APPROACH_HALF_WIDTH = 0.6     # ped_x is drawn from [-0.3, 0.3], so the
 JUNCTION_APPROACH_Y_MIN = JUNCTION_WAYPOINT[1]   # the corridor is the stretch BEFORE the junction
 CROSSING_BAND_N = 4                    # crossers' endpoint along the band stays genuinely uncertain
 
-# Public speed prior for a track's first frame, before any velocity has been
-# observed. Replaces the old hard-coded speed=1.0, which sat outside BOTH
-# held-out ranges (pedestrian 1.15-1.45, background 1.05-1.40) and produced
-# a measured 1.03 m/s candidate-velocity residual on the background humans.
-JUNCTION_CROWD_SPEED_PRIOR = 1.0
+# (The first-frame speed prior lives in intent_runtime_config.TRACKER_DEFAULTS
+# so it is one global, hashed value rather than a per-scene constant that
+# nothing reads -- an earlier draft of this fix defined it here and never
+# wired it into the call chain.)
 
 # TRAIN parameter ranges (frozen before any collection).
 CROWD_TRAIN_BACKGROUND_X_RANGE: Tuple[float, float] = (-2.2, 2.2)

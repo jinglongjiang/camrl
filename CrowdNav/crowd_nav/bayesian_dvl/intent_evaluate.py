@@ -37,7 +37,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import numpy as np
 import torch
 
-from crowd_nav.bayesian_dvl.intent_runtime_config import FROZEN_VALUES
+from crowd_nav.bayesian_dvl.intent_runtime_config import FROZEN_VALUES, TRACKER_DEFAULTS
 from crowd_nav.bayesian_dvl.contracts import HumanObservation, RobotObservation
 from crowd_nav.bayesian_dvl.evaluate import (
     deterministic_records_sha256, read_episode_records_csv, write_episode_records_csv,
@@ -100,7 +100,7 @@ def _run_one_episode(
 ) -> EpisodeMetrics:
     """Drive ONE episode with the model's own greedy policy and collect the
     full plan-section-7 metric set."""
-    bank = IntentBeliefBank(make_candidate_fn(scene), dt=FROZEN_VALUES["dt"], speed=1.0)
+    bank = IntentBeliefBank(make_candidate_fn(scene), dt=FROZEN_VALUES["dt"], speed=TRACKER_DEFAULTS["speed_prior"])
     planner_rng = np.random.default_rng(planner_seed)
     max_steps = int(round(FROZEN_VALUES["time_limit"] / FROZEN_VALUES["dt"])) + 1
     discomfort_dist = float(FROZEN_VALUES.get("discomfort_distance", 0.2) or 0.2)

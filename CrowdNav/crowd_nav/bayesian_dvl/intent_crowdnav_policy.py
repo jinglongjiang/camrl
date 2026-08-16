@@ -27,7 +27,7 @@ from typing import Dict, List, Optional, Sequence
 import numpy as np
 import torch
 
-from crowd_nav.bayesian_dvl.intent_runtime_config import ActionGridSpec, FROZEN_VALUES
+from crowd_nav.bayesian_dvl.intent_runtime_config import ActionGridSpec, FROZEN_VALUES, TRACKER_DEFAULTS
 from crowd_nav.bayesian_dvl.contracts import HumanObservation, RobotObservation
 from crowd_nav.bayesian_dvl.intent_policy import (
     HUMAN_FEATURE_DIM_V5, build_intent_human_feature_batch, load_intent_checkpoint, remaining_time_fraction,
@@ -143,7 +143,7 @@ class IntentBDVLPolicy:
     def _reset_bank(self) -> None:
         if self.scene is None:
             return
-        self.bank = IntentBeliefBank(make_candidate_fn(self.scene), dt=float(self.time_step), speed=1.0)
+        self.bank = IntentBeliefBank(make_candidate_fn(self.scene), dt=float(self.time_step), speed=TRACKER_DEFAULTS["speed_prior"])
 
     # ---------------- CrowdNav duck-typed hooks ----------------
 

@@ -77,20 +77,32 @@ class GoalIntentTracker:
     # ``speed`` is now only the PUBLIC PRIOR used before any velocity has
     # been observed; from the first real displacement onward the tracker
     # runs a clipped EMA of the observed speed.
-    SPEED_EMA_ALPHA = 0.3
-    SPEED_MIN = 0.2
-    SPEED_MAX = 2.5
-
     def __init__(
         self,
         candidates: Sequence[CandidateGoal],
         dt: float,
         speed: float,
-        sigma: float = 0.5,
-        persistence: float = 0.98,
-        wp_radius: float = 0.35,
-        estimate_speed: bool = True,
+        sigma: float = None,
+        persistence: float = None,
+        wp_radius: float = None,
+        estimate_speed: bool = None,
+        speed_ema_alpha: float = None,
+        speed_min: float = None,
+        speed_max: float = None,
     ) -> None:
+        from crowd_nav.bayesian_dvl.intent_runtime_config import TRACKER_DEFAULTS
+        d = TRACKER_DEFAULTS
+        sigma = d["sigma"] if sigma is None else sigma
+        persistence = d["persistence"] if persistence is None else persistence
+        wp_radius = d["waypoint_radius"] if wp_radius is None else wp_radius
+        estimate_speed = d["estimate_speed"] if estimate_speed is None else estimate_speed
+        self.speed_ema_alpha = float(d["speed_ema_alpha"] if speed_ema_alpha is None else speed_ema_alpha)
+        self.speed_min = float(d["speed_min"] if speed_min is None else speed_min)
+        self.speed_max = float(d["speed_max"] if speed_max is None else speed_max)
+        if not (0.0 < self.speed_ema_alpha <= 1.0):
+            raise IntentTrackerError(f"speed_ema_alpha must be in (0,1], got {self.speed_ema_alpha}")
+        if not (0.0 < self.speed_min < self.speed_max):
+            raise IntentTrackerError(f"need 0 < speed_min < speed_max, got {self.speed_min}/{self.speed_max}")
         if len(candidates) == 0:
             raise IntentTrackerError("GoalIntentTracker requires at least one candidate goal")
         names = [c.name for c in candidates]
@@ -172,8 +184,8 @@ class GoalIntentTracker:
                 # and flatten the posterior.
                 observed = float(np.linalg.norm(v))
                 self._speed_est = float(np.clip(
-                    (1.0 - self.SPEED_EMA_ALPHA) * self._speed_est + self.SPEED_EMA_ALPHA * observed,
-                    self.SPEED_MIN, self.SPEED_MAX))
+                    (1.0 - self.speed_ema_alpha) * self._speed_est + self.speed_ema_alpha * observed,
+                    self.speed_min, self.speed_max))
         # else: first observation OR the first frame after a gap -> re-baseline
         # only (belief unchanged); the stored position was absent/stale so no
         # valid single-step velocity exists.

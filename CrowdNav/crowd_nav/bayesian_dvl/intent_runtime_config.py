@@ -136,6 +136,33 @@ FEATURE_SCHEMA_V5 = "bdvl_z_state_goal_intent_v5"
 FEATURE_SCHEMA_V6 = "bdvl_z_state_goal_intent_v6_candidate_set"
 
 MAX_CANDIDATE_GOALS = 8
+
+# Tracker parameters, frozen HERE so there is exactly one source of truth.
+#
+# Before this, the config declared tracker_sigma / persistence / waypoint
+# radius but every IntentBeliefBank call site constructed the tracker without
+# passing them, so the config values were hashed into provenance and then
+# ignored. They happened to equal the code defaults, so nothing was wrong in
+# effect -- which is precisely why it survived. intent_config now VALIDATES
+# the config against these constants and fails closed on disagreement,
+# instead of silently accepting a value it will not use.
+#
+# ``speed_prior`` is the pedestrian speed assumed before any velocity has
+# been observed; from the first real displacement the tracker runs a clipped
+# EMA. This is a GLOBAL model change, not a junction patch: a tracker that
+# assumes a fixed speed is simply wrong everywhere, and scoping it to one
+# scenario would put two different tracker behaviours inside one experiment.
+TRACKER_DEFAULTS = {
+    "sigma": 0.5,
+    "persistence": 0.98,
+    "waypoint_radius": 0.35,
+    "missing_timeout_steps": 8,
+    "speed_prior": 1.0,
+    "estimate_speed": True,
+    "speed_ema_alpha": 0.3,
+    "speed_min": 0.2,
+    "speed_max": 2.5,
+}
 # per candidate: probability, endpoint relative to the human (dx, dy),
 # next-waypoint relative to the human (dx, dy). All normalized, all public.
 CANDIDATE_FEATURE_DIM = 5

@@ -73,6 +73,11 @@ class IntentTrainingConfig:
     tracker_persistence: float
     tracker_waypoint_radius: float
     missing_timeout_steps: int
+    tracker_speed_prior: float
+    tracker_estimate_speed: bool
+    tracker_speed_ema_alpha: float
+    tracker_speed_min: float
+    tracker_speed_max: float
     max_candidate_goals: int
     # [ema]
     ema_decay: float
@@ -208,6 +213,11 @@ def load_intent_training_config(path: Path = DEFAULT_TRAINING_CONFIG) -> IntentT
         tracker_persistence=gf("belief", "tracker_persistence"),
         tracker_waypoint_radius=gf("belief", "tracker_waypoint_radius"),
         missing_timeout_steps=gi("belief", "missing_timeout_steps"),
+        tracker_speed_prior=gf("belief", "tracker_speed_prior"),
+        tracker_estimate_speed=g("belief", "tracker_estimate_speed").strip().lower() in ("1", "true", "yes"),
+        tracker_speed_ema_alpha=gf("belief", "tracker_speed_ema_alpha"),
+        tracker_speed_min=gf("belief", "tracker_speed_min"),
+        tracker_speed_max=gf("belief", "tracker_speed_max"),
         max_candidate_goals=gi("belief", "max_candidate_goals"),
         ema_decay=gf("ema", "ema_decay"),
         checkpoint_interval_episodes=gi("checkpoint", "checkpoint_interval_episodes"),
@@ -252,6 +262,29 @@ def _validate(cfg: IntentTrainingConfig) -> None:
             f"code's {TRAINING_CONTRACT_V4_RANKING_GATE_GRACE!r}")
     if cfg.checkpoint_schema != CHECKPOINT_SCHEMA_V7:
         raise IntentConfigError(f"config checkpoint_schema {cfg.checkpoint_schema!r} != code's {CHECKPOINT_SCHEMA_V7!r}")
+
+    # Every tracker knob the config declares must be one the code actually
+    # uses. These were previously hashed into provenance and then ignored,
+    # because the bank was constructed without passing them; they matched the
+    # defaults, so the gap was invisible. Fail closed instead.
+    from crowd_nav.bayesian_dvl.intent_runtime_config import TRACKER_DEFAULTS
+    for cfg_name, code_name in (
+        ("tracker_sigma", "sigma"), ("tracker_persistence", "persistence"),
+        ("tracker_waypoint_radius", "waypoint_radius"),
+        ("missing_timeout_steps", "missing_timeout_steps"),
+        ("tracker_speed_prior", "speed_prior"), ("tracker_estimate_speed", "estimate_speed"),
+        ("tracker_speed_ema_alpha", "speed_ema_alpha"),
+        ("tracker_speed_min", "speed_min"), ("tracker_speed_max", "speed_max"),
+    ):
+        declared, used = getattr(cfg, cfg_name), TRACKER_DEFAULTS[code_name]
+        if type(declared) is bool or type(used) is bool:
+            same = bool(declared) == bool(used)
+        else:
+            same = abs(float(declared) - float(used)) < 1e-12
+        if not same:
+            raise IntentConfigError(
+                f"config {cfg_name}={declared!r} but the code uses TRACKER_DEFAULTS[{code_name!r}]={used!r}; "
+                "a declared value the code does not use is a provenance lie")
 
     if cfg.il_episodes_standard + cfg.il_episodes_junction_crowd != cfg.il_episodes_total:
         raise IntentConfigError(
