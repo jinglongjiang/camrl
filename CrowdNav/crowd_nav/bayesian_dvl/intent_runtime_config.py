@@ -118,6 +118,34 @@ ACTION_FEATURE_DIM = 5
 # those did; this is a genuinely different network, trained from scratch.
 FEATURE_SCHEMA_V5 = "bdvl_z_state_goal_intent_v5"
 
+# V6 (junction-crowd post-mortem): v5 handed the network a bare ``p0..p8``
+# probability vector whose slots were POSITIONAL. Candidates are produced by
+# filtering public destinations against the observed entry, so slot k does
+# not denote a fixed destination -- measured on the held-out junction crowd,
+# ``p0`` meant "left exit" for 412 humans and "right exit" for 68 others.
+# v6 pairs every probability with its own geometry and pools the set, so the
+# representation no longer depends on candidate ORDER at all.
+#
+# The row stays ONE packed vector so replay storage, batching and every call
+# site keep their [B, N, D] shapes; set_encoder.SetEncoder is the single
+# place that knows the layout:
+#   [0 : S]                       scalar block (S = HUMAN_SCALAR_DIM_V6)
+#   [S : S + G*F]                 G candidates x F features, row-major
+#   [S + G*F : S + G*F + G]       per-candidate validity mask
+# Checkpoint-incompatible with v5 by dimensionality, and must fail closed.
+FEATURE_SCHEMA_V6 = "bdvl_z_state_goal_intent_v6_candidate_set"
+
+MAX_CANDIDATE_GOALS = 8
+# per candidate: probability, endpoint relative to the human (dx, dy),
+# next-waypoint relative to the human (dx, dy). All normalized, all public.
+CANDIDATE_FEATURE_DIM = 5
+# scalar block: rel dx, dy, rel vx, vy, radius, speed, ttc (7) + track_age
+# + normalized entropy + top1 margin + posterior-future mean delta (2)
+# + posterior-future spread
+HUMAN_SCALAR_DIM_V6 = 13
+HUMAN_FEATURE_DIM_V6 = (HUMAN_SCALAR_DIM_V6 + MAX_CANDIDATE_GOALS * CANDIDATE_FEATURE_DIM
+                        + MAX_CANDIDATE_GOALS)   # = 61
+
 
 # C0.5 (plan section 5, 2026-08-11): the GOAL-INTENT chain's own training
 # contract, on the same "data/loss semantics" axis as the V1 constant

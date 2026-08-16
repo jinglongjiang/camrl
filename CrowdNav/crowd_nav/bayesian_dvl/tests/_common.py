@@ -38,8 +38,12 @@ from crowd_nav.bayesian_dvl.scene_candidates import (
     PublicDestination, PublicScene, SceneCandidatesError, circle_scene, junction_scene, make_candidate_fn,
     square_scene,
 )
+from crowd_nav.bayesian_dvl.intent_runtime_config import (
+    CANDIDATE_FEATURE_DIM, FEATURE_SCHEMA_V6, HUMAN_FEATURE_DIM_V6, HUMAN_SCALAR_DIM_V6,
+    MAX_CANDIDATE_GOALS,
+)
 from crowd_nav.bayesian_dvl.intent_policy import (
-    CHECKPOINT_SCHEMA_V5_RETIRED, CHECKPOINT_SCHEMA_V6, HUMAN_FEATURE_DIM_V5, IntentPolicyError, build_intent_human_feature_batch,
+    CHECKPOINT_SCHEMA_V5_RETIRED, CHECKPOINT_SCHEMA_V7, HUMAN_FEATURE_DIM_V5, IntentPolicyError, build_intent_human_feature_batch,
     load_intent_checkpoint, remaining_time_fraction as intent_remaining_time_fraction,
     save_intent_checkpoint, score_candidates_v5,
 )
@@ -385,7 +389,7 @@ __all__ = [
     'ActionGridSpec',
     'CALIBRATION_TAUS',
     'CHECKPOINT_SCHEMA_V5_RETIRED',
-    'CHECKPOINT_SCHEMA_V6',
+    'CHECKPOINT_SCHEMA_V7',
     'CROWD_HELDOUT_BACKGROUND_SPEED_RANGE',
     'CROWD_HELDOUT_EXIT_LEFT',
     'CROWD_HELDOUT_EXIT_RIGHT',
@@ -408,7 +412,8 @@ __all__ = [
     'GoalIntentTracker',
     'GradientRatioMonitor',
     'HUMAN_FEATURE_DIM',
-    'HUMAN_FEATURE_DIM_V5',
+    'HUMAN_FEATURE_DIM_V5', 'HUMAN_FEATURE_DIM_V6', 'HUMAN_SCALAR_DIM_V6',
+    'CANDIDATE_FEATURE_DIM', 'MAX_CANDIDATE_GOALS', 'FEATURE_SCHEMA_V6',
     'HumanObservation',
     'IQNValueNetwork',
     'IntentBatch',

@@ -326,7 +326,7 @@ def test_c2_final_ema_artifact_holds_ema_weights_not_raw() -> None:
         raw = torch.load(str(_resume_path(run)), map_location="cpu", weights_only=False)
         fin = torch.load(str(run / "final_ema.pth"), map_location="cpu", weights_only=False)
         assert fin["extra"]["artifact_role"] == "final_ema"
-        assert fin["checkpoint_schema"] == CHECKPOINT_SCHEMA_V6
+        assert fin["checkpoint_schema"] == CHECKPOINT_SCHEMA_V7
         ema = raw["extra"]["ema_state_dict"]
         assert all(torch.equal(fin["model_state_dict"][k].float(), ema[k].float()) for k in fin["model_state_dict"]), \
             "final_ema.model_state_dict must BE the EMA"

@@ -241,17 +241,17 @@ def load_intent_training_config(path: Path = DEFAULT_TRAINING_CONFIG) -> IntentT
 def _validate(cfg: IntentTrainingConfig) -> None:
     # schema must match the CODE, not just be internally consistent
     from crowd_nav.bayesian_dvl.intent_runtime_config import (
-        FEATURE_SCHEMA_V5, TRAINING_CONTRACT_V4_RANKING_GATE_GRACE,
+        FEATURE_SCHEMA_V6, TRAINING_CONTRACT_V4_RANKING_GATE_GRACE,
     )
-    from crowd_nav.bayesian_dvl.intent_policy import CHECKPOINT_SCHEMA_V6
-    if cfg.feature_schema != FEATURE_SCHEMA_V5:
-        raise IntentConfigError(f"config feature_schema {cfg.feature_schema!r} != code's {FEATURE_SCHEMA_V5!r}")
+    from crowd_nav.bayesian_dvl.intent_policy import CHECKPOINT_SCHEMA_V7
+    if cfg.feature_schema != FEATURE_SCHEMA_V6:
+        raise IntentConfigError(f"config feature_schema {cfg.feature_schema!r} != code's {FEATURE_SCHEMA_V6!r}")
     if cfg.training_contract_schema != TRAINING_CONTRACT_V4_RANKING_GATE_GRACE:
         raise IntentConfigError(
             f"config training_contract_schema {cfg.training_contract_schema!r} != "
             f"code's {TRAINING_CONTRACT_V4_RANKING_GATE_GRACE!r}")
-    if cfg.checkpoint_schema != CHECKPOINT_SCHEMA_V6:
-        raise IntentConfigError(f"config checkpoint_schema {cfg.checkpoint_schema!r} != code's {CHECKPOINT_SCHEMA_V6!r}")
+    if cfg.checkpoint_schema != CHECKPOINT_SCHEMA_V7:
+        raise IntentConfigError(f"config checkpoint_schema {cfg.checkpoint_schema!r} != code's {CHECKPOINT_SCHEMA_V7!r}")
 
     if cfg.il_episodes_standard + cfg.il_episodes_junction_crowd != cfg.il_episodes_total:
         raise IntentConfigError(

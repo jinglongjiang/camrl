@@ -1069,7 +1069,7 @@ def test_c0_checkpoint_schema_v6_rejects_retired_v5_and_wrong_training_contract(
         path = str(Path(d) / "ckpt.pth")
         save_intent_checkpoint(model, path, action_grid_hash="h", scene_registry_sha256="s")
         raw = torch.load(path, weights_only=False)
-        assert raw["checkpoint_schema"] == CHECKPOINT_SCHEMA_V6
+        assert raw["checkpoint_schema"] == CHECKPOINT_SCHEMA_V7
         assert raw["training_contract_schema"] == TRAINING_CONTRACT_V4_RANKING_GATE_GRACE
 
         # Order 4: a V2 checkpoint (fixed rank_share=380) must be refused

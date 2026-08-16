@@ -67,8 +67,12 @@ def test_intent_policy_full_vs_mean_differ_in_multimodal_state() -> None:
     feat_mean, mask_mean = build_intent_human_feature_batch(bank, robot, humans, mode="mean", rng=np.random.default_rng(42), n_samples=200)
     assert not np.allclose(feat_full, feat_mean), "full and mean must produce different network inputs in a multimodal state"
     # the spread feature is the clearest signature: full (multiple sampled
-    # futures) has nonzero endpoint spread, mean (one averaged path) has zero
-    assert feat_full[0, -1] > 0.05 and feat_mean[0, -1] == 0.0
+    # futures) has nonzero endpoint spread, mean (one averaged path) has zero.
+    # Indexed by NAME, not as [-1]: in V5 the spread happened to be the last
+    # dim, in V6 the last dim is the candidate validity mask, and a negative
+    # index silently followed the layout instead of failing.
+    SPREAD = 12
+    assert feat_full[0, SPREAD] > 0.05 and feat_mean[0, SPREAD] == 0.0
 
     res_full = score_candidates_v5(model, robot, feat_full, mask_full, action_table, rf)
     res_mean = score_candidates_v5(model, robot, feat_mean, mask_mean, action_table, rf)
@@ -171,12 +175,20 @@ def test_c0_frozen_four_arm_definitions() -> None:
     robot = RobotObservation(px=0.0, py=0.5, gx=0.0, gy=5.0, vx=0.0, vy=0.5, radius=0.3, v_pref=1.0, theta=np.pi / 2)
     humans = [HumanObservation(0, -0.25, 2.6, -0.5, -0.6, 0.3)]
 
-    # V5 layout: 7 geometry + 1 age + 8 belief + 8 validity mask + entropy
-    # + top1-margin + 2 future-mean-delta + 1 future-spread = 29
+    # V6 layout: 13 scalars, then G x F candidate features, then the G-wide
+    # validity mask. The per-goal probability is column 0 of each candidate
+    # row rather than a standalone p0..p7 block.
     n_cand = len(real_belief)
-    BELIEF, MASK = slice(8, 8 + 8), slice(16, 16 + 8)
-    ENTROPY, MARGIN = 24, 25
-    FUT_DX, FUT_DY, SPREAD = 26, 27, 28
+    G, F, S = MAX_CANDIDATE_GOALS, CANDIDATE_FEATURE_DIM, HUMAN_SCALAR_DIM_V6
+    ENTROPY, MARGIN = 8, 9
+    FUT_DX, FUT_DY, SPREAD = 10, 11, 12
+    MASK = slice(S + G * F, S + G * F + G)
+
+    def probs(row):
+        return row[S:S + G * F].reshape(G, F)[:, 0]
+
+    def cand_rows(row):
+        return row[S:S + G * F].reshape(G, F)
 
     feats = {}
     for mode in ("full", "mean", "cv", "uniform"):
@@ -186,13 +198,14 @@ def test_c0_frozen_four_arm_definitions() -> None:
         feats[mode] = f[0]
 
     # --- full: the real posterior, verbatim ---
-    assert np.allclose(feats["full"][BELIEF][:n_cand], real_belief, atol=1e-6)
+    assert np.allclose(probs(feats["full"])[:n_cand], real_belief, atol=1e-6)
     assert feats["full"][ENTROPY] > 0.0
 
     # --- mean: NO per-goal vector at all (hence entropy 0 and margin 0),
     #     spread exactly 0, but a real posterior-weighted mean future ---
-    assert np.all(feats["mean"][BELIEF] == 0.0), (
-        f"mean must not expose any per-goal probability vector, got {feats['mean'][BELIEF][:n_cand]}")
+    assert np.all(cand_rows(feats["mean"]) == 0.0), (
+        "mean must not expose any per-goal probability OR candidate geometry, got "
+        f"{cand_rows(feats['mean'])[:n_cand]}")
     assert feats["mean"][ENTROPY] == 0.0 and feats["mean"][MARGIN] == 0.0, (
         "mean must not leak posterior shape through the entropy/margin scalars either")
     assert feats["mean"][SPREAD] == 0.0, "mean is a single averaged trajectory -> spread must be exactly 0"
@@ -200,7 +213,7 @@ def test_c0_frozen_four_arm_definitions() -> None:
         "mean's whole content is the posterior-weighted mean future: its delta vs CV must be non-zero")
 
     # --- cv: no goal information whatsoever; future IS the CV future ---
-    assert np.all(feats["cv"][BELIEF] == 0.0)
+    assert np.all(cand_rows(feats["cv"]) == 0.0)
     assert feats["cv"][ENTROPY] == 0.0 and feats["cv"][MARGIN] == 0.0
     assert feats["cv"][SPREAD] == 0.0
     assert abs(feats["cv"][FUT_DX]) < 1e-6 and abs(feats["cv"][FUT_DY]) < 1e-6, (
@@ -214,8 +227,8 @@ def test_c0_frozen_four_arm_definitions() -> None:
         f"mean and cv may differ ONLY in the future-mean-delta dims, but differ at {differing.tolist()}")
 
     # --- uniform: flat 1/n, a SUPPLEMENTARY control, never the posterior ---
-    assert np.allclose(feats["uniform"][BELIEF][:n_cand], np.ones(n_cand) / n_cand, atol=1e-6)
-    assert not np.allclose(feats["uniform"][BELIEF][:n_cand], real_belief, atol=1e-3), (
+    assert np.allclose(probs(feats["uniform"])[:n_cand], np.ones(n_cand) / n_cand, atol=1e-6)
+    assert not np.allclose(probs(feats["uniform"])[:n_cand], real_belief, atol=1e-3), (
         "uniform must never be the fitted posterior")
 
     # --- the public validity mask is identical across all four arms

@@ -52,7 +52,7 @@ from crowd_nav.bayesian_dvl.intent_config import (
     DEFAULT_TRAINING_CONFIG, IntentConfigError, IntentTrainingConfig, load_intent_training_config,
 )
 from crowd_nav.bayesian_dvl.intent_policy import (
-    CHECKPOINT_SCHEMA_V6, HUMAN_FEATURE_DIM_V5, load_intent_checkpoint, save_intent_checkpoint,
+    CHECKPOINT_SCHEMA_V7, HUMAN_FEATURE_DIM_V5, load_intent_checkpoint, save_intent_checkpoint,
 )
 from crowd_nav.bayesian_dvl.intent_train import (
     FORMAL_EVAL_HELDOUT_SEEDS, FORMAL_SIX_SCENARIOS, PAPER_MAIN_BASE_SEED,

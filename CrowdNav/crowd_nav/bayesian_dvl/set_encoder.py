@@ -107,9 +107,61 @@ class ActionEncoder(nn.Module):
         return self.net(action_features)
 
 
+class CandidateSetEncoder(nn.Module):
+    """Per-human candidate goals -> ONE permutation-invariant embedding.
+
+    Replaces feeding the network a bare ``p0..p7`` probability vector. Those
+    slots were positional, and their meaning was NOT stable: candidates are
+    produced by filtering public destinations against the observed entry, so
+    on the held-out junction crowd ``p0`` meant "left exit" for 412 humans
+    and "right exit" for 68 others (measured). The network had no way to
+    tell those apart, because the slot index was the only thing identifying
+    a candidate and no coordinates were supplied.
+
+    Each candidate now carries its own geometry (probability + where it ends
+    + where its next waypoint is, all relative to the human), a shared MLP
+    embeds each one independently, and masked mean/max pooling collapses the
+    set. Pooling has no fixed arity and no slot order, so shuffling the
+    candidates cannot change the output -- asserted by
+    ``test_candidate_encoding_is_permutation_invariant``.
+    """
+
+    def __init__(self, candidate_feature_dim: int, hidden_dim: int = 32, embed_dim: int = 16):
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.net = nn.Sequential(
+            nn.Linear(candidate_feature_dim, hidden_dim), nn.ReLU(),
+            nn.Linear(hidden_dim, embed_dim), nn.ReLU(),
+        )
+
+    def forward(self, candidate_features: torch.Tensor, candidate_mask: torch.Tensor) -> torch.Tensor:
+        # candidate_features: [B, N, G, F], candidate_mask: [B, N, G] bool
+        embeds = self.net(candidate_features)                     # [B, N, G, E]
+        mask_f = candidate_mask.float().unsqueeze(-1)             # [B, N, G, 1]
+        n_valid = mask_f.sum(dim=2).clamp(min=1.0)                # [B, N, 1]
+        mean_pool = (embeds * mask_f).sum(dim=2) / n_valid        # [B, N, E]
+
+        very_negative = torch.finfo(embeds.dtype).min
+        max_pool = embeds.masked_fill(~candidate_mask.unsqueeze(-1), very_negative).max(dim=2).values
+        any_valid = candidate_mask.any(dim=2, keepdim=True)       # [B, N, 1]
+        # A human whose candidate block is entirely masked (the mean/cv arms,
+        # which get no per-goal information at all) must contribute exactly
+        # zero here, not the min-fill sentinel.
+        max_pool = torch.where(any_valid, max_pool, torch.zeros_like(max_pool))
+        mean_pool = torch.where(any_valid, mean_pool, torch.zeros_like(mean_pool))
+        return torch.cat([mean_pool, max_pool], dim=-1)           # [B, N, 2E]
+
+
 class SetEncoder(nn.Module):
     """robot_features [B, ROBOT_FEATURE_DIM], human_features [B, N, HUMAN_FEATURE_DIM],
-    human_mask [B, N] bool -> state_embedding [B, embedding_dim]."""
+    human_mask [B, N] bool -> state_embedding [B, embedding_dim].
+
+    ``human_features`` is the packed V6 row: a scalar block, then the
+    per-candidate block, then the per-candidate validity mask. It is packed
+    into one tensor rather than passed as three so that replay storage,
+    batching, checkpointing and every call site keep the [B, N, D] shape
+    they already had; this encoder is the one place that knows the layout.
+    """
 
     def __init__(
         self,
@@ -119,9 +171,28 @@ class SetEncoder(nn.Module):
         human_embed_dim: int = 32,
         robot_embed_dim: int = 32,
         embedding_dim: int = 128,
+        scalar_dim: int = None,
+        max_candidates: int = None,
+        candidate_feature_dim: int = None,
     ):
         super().__init__()
-        self.human_mlp = HumanMLP(human_feature_dim, human_hidden_dim, human_embed_dim)
+        from crowd_nav.bayesian_dvl.intent_runtime_config import (
+            CANDIDATE_FEATURE_DIM, HUMAN_SCALAR_DIM_V6, MAX_CANDIDATE_GOALS,
+        )
+        self.scalar_dim = HUMAN_SCALAR_DIM_V6 if scalar_dim is None else int(scalar_dim)
+        self.max_candidates = MAX_CANDIDATE_GOALS if max_candidates is None else int(max_candidates)
+        self.candidate_feature_dim = (
+            CANDIDATE_FEATURE_DIM if candidate_feature_dim is None else int(candidate_feature_dim))
+        expected = (self.scalar_dim + self.max_candidates * self.candidate_feature_dim
+                    + self.max_candidates)
+        if human_feature_dim != expected:
+            raise ValueError(
+                f"human_feature_dim {human_feature_dim} does not match the packed V6 layout "
+                f"(scalar {self.scalar_dim} + {self.max_candidates}x{self.candidate_feature_dim} "
+                f"candidates + {self.max_candidates} mask = {expected})")
+        self.candidate_encoder = CandidateSetEncoder(self.candidate_feature_dim)
+        human_mlp_in = self.scalar_dim + 2 * self.candidate_encoder.embed_dim
+        self.human_mlp = HumanMLP(human_mlp_in, human_hidden_dim, human_embed_dim)
         self.robot_mlp = nn.Sequential(
             nn.Linear(robot_feature_dim, robot_embed_dim), nn.ReLU(),
         )
@@ -132,9 +203,20 @@ class SetEncoder(nn.Module):
             nn.Linear(embedding_dim, embedding_dim), nn.ReLU(),
         )
 
+    def split_packed(self, human_features: torch.Tensor):
+        """[B, N, D] packed row -> (scalars, candidate features, candidate mask)."""
+        g, f = self.max_candidates, self.candidate_feature_dim
+        scalars = human_features[..., :self.scalar_dim]
+        block = human_features[..., self.scalar_dim:self.scalar_dim + g * f]
+        cand = block.reshape(*block.shape[:-1], g, f)
+        cand_mask = human_features[..., self.scalar_dim + g * f:] > 0.5
+        return scalars, cand, cand_mask
+
     def forward(self, robot_features: torch.Tensor, human_features: torch.Tensor, human_mask: torch.Tensor) -> torch.Tensor:
         robot_embed = self.robot_mlp(robot_features)  # [B, robot_embed_dim]
-        human_embeds = self.human_mlp(human_features)  # [B, N, human_embed_dim]
+        scalars, cand_feats, cand_mask = self.split_packed(human_features)
+        cand_embed = self.candidate_encoder(cand_feats, cand_mask)   # [B, N, 2E]
+        human_embeds = self.human_mlp(torch.cat([scalars, cand_embed], dim=-1))  # [B, N, human_embed_dim]
 
         mask_f = human_mask.float().unsqueeze(-1)  # [B, N, 1]
         n_valid = mask_f.sum(dim=1).clamp(min=1.0)  # [B, 1], avoid div-by-zero for zero-human states

@@ -1,4 +1,4 @@
-"""Goal-intent main chain: FEATURE_SCHEMA_V5 feature builder, candidate
+"""Goal-intent main chain: FEATURE_SCHEMA_V6 feature builder, candidate
 scoring, and checkpoint contract (consolidation plan Order 4 item 3/5).
 
 Import graph is deliberately self-contained: config, normalization,
@@ -8,18 +8,28 @@ iqn, model -- NONE of belief.py / rollout.py / world_model.py / counterfactual.p
 what "final train/inference entry must not import the old branches" means
 at the actual Python import-graph level, not just "doesn't call it".
 
-Human feature layout (HUMAN_FEATURE_DIM_V5 dims) -- replaces v1-v4's
-SBK-HMM-coupled belief[5]/pred_mean[2]/pred_cov[3] block with a
-cardinality-general goal-posterior + posterior-future summary:
-  [0:7]                        relative dx,dy, rel vx,vy, radius, speed, ttc
-  [7]                          normalized track_age
-  [8 : 8+G]                    goal posterior, zero-padded to MAX_CANDIDATE_GOALS
-  [8+G : 8+2G]                 goal validity mask (1 real / 0 padding)
-  [8+2G]                       normalized posterior entropy (entropy / log(n_valid))
-  [8+2G+1]                     top1-minus-top2 probability margin
-  [8+2G+2 : 8+2G+4]            posterior-future mean position delta vs CV, normalized
-  [8+2G+4]                     posterior-future position spread (trace of sample covariance), normalized
-where G = MAX_CANDIDATE_GOALS.
+Human feature layout (FEATURE_SCHEMA_V6, HUMAN_FEATURE_DIM_V6 = 61 dims).
+V5 handed the network a bare p0..p7 vector whose slots were POSITIONAL;
+measured on the held-out junction crowd, p0 meant "left exit" for 412
+humans and "right exit" for 68 others, and no coordinates were supplied to
+tell them apart. V6 pairs each probability with its own geometry and pools
+the set, so candidate ORDER cannot affect the output.
+
+  [0:7]              relative dx,dy, rel vx,vy, radius, speed, ttc
+  [7]                normalized track_age
+  [8]                normalized posterior entropy (entropy / log(n_valid))
+  [9]                top1-minus-top2 probability margin
+  [10:12]            posterior-future mean position delta vs CV, normalized
+  [12]               posterior-future position spread, normalized
+  [13 : 13+G*F]      G candidates x F features, row-major:
+                       probability, endpoint relative to the human (dx,dy),
+                       next waypoint relative to the human (dx,dy)
+  [13+G*F : 13+G*F+G]  per-candidate validity mask
+where G = MAX_CANDIDATE_GOALS = 8 and F = CANDIDATE_FEATURE_DIM = 5.
+
+set_encoder.SetEncoder is the ONLY place that unpacks this; it is one
+tensor rather than three so replay storage, batching and every call site
+keep the [B, N, D] shapes they already had.
 """
 
 from __future__ import annotations
@@ -32,16 +42,20 @@ import torch
 
 from crowd_nav.bayesian_dvl import normalization as norm
 from crowd_nav.bayesian_dvl.intent_runtime_config import (
-    FEATURE_SCHEMA_V5, NORMALIZATION_CONSTANTS, FROZEN_VALUES, TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC,
-    TRAINING_CONTRACT_V3_ADAPTIVE_GRADIENT_BALANCE, TRAINING_CONTRACT_V4_RANKING_GATE_GRACE,
+    CANDIDATE_FEATURE_DIM, FEATURE_SCHEMA_V5, FEATURE_SCHEMA_V6, HUMAN_FEATURE_DIM_V6,
+    HUMAN_SCALAR_DIM_V6, MAX_CANDIDATE_GOALS, NORMALIZATION_CONSTANTS, FROZEN_VALUES,
+    TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC, TRAINING_CONTRACT_V3_ADAPTIVE_GRADIENT_BALANCE,
+    TRAINING_CONTRACT_V4_RANKING_GATE_GRACE,
 )
 from crowd_nav.bayesian_dvl.contracts import HumanObservation, RobotObservation
 from crowd_nav.bayesian_dvl.geometry_features import _robot_feature_vector, compute_action_features_array
 from crowd_nav.bayesian_dvl.intent_tracker import IntentBeliefBank, IntentTrackerError
 from crowd_nav.bayesian_dvl.model import DistributionalValueModel
 
-MAX_CANDIDATE_GOALS = 8
-HUMAN_FEATURE_DIM_V5 = 7 + 1 + MAX_CANDIDATE_GOALS + MAX_CANDIDATE_GOALS + 1 + 1 + 2 + 1  # = 29
+# MAX_CANDIDATE_GOALS / CANDIDATE_FEATURE_DIM / HUMAN_SCALAR_DIM_V6 /
+# HUMAN_FEATURE_DIM_V6 live in intent_runtime_config so the packed layout has
+# ONE definition shared by the feature builder and the encoder that unpacks it.
+HUMAN_FEATURE_DIM_V5 = HUMAN_FEATURE_DIM_V6   # name kept: every call site passes it to the model
 MAX_HUMANS = 20
 
 
@@ -55,6 +69,48 @@ def remaining_time_fraction(global_time: float, time_limit: float) -> float:
     return float(np.clip((time_limit - global_time) / time_limit, 0.0, 1.0))
 
 
+def _candidate_block(
+    human: HumanObservation,
+    goal_belief: np.ndarray,
+    candidate_routes: Sequence[np.ndarray],
+    waypoint_index: Sequence[int],
+    show_candidates: bool,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """[G, CANDIDATE_FEATURE_DIM] candidate features + [G] validity mask.
+
+    Every candidate carries its OWN geometry, so the network identifies a
+    candidate by where it goes rather than by which slot it landed in. See
+    FEATURE_SCHEMA_V6 for why the slot index was not identifying.
+
+    ``show_candidates`` is False for the mean/cv arms, whose frozen
+    definition is that they receive NO per-goal information. Their block is
+    all zeros but their VALIDITY MASK is still set, exactly as in v5: the
+    number of public destinations is public scene geometry, not posterior
+    information, and every arm has always been allowed to know it. What they
+    must not see is which candidate is which or how likely it is -- and with
+    an all-zero block the pooled candidate embedding is a function of
+    cardinality alone.
+
+    Giving them the coordinates while zeroing only the probabilities would
+    quietly widen what those arms can see and stop the ablation measuring
+    what it claims to; zeroing the mask as well would instead take away a
+    public fact they used to have. Neither is the frozen definition.
+    """
+    feats = np.zeros((MAX_CANDIDATE_GOALS, CANDIDATE_FEATURE_DIM), dtype=np.float32)
+    mask = np.zeros(MAX_CANDIDATE_GOALS, dtype=np.float32)
+    pos = np.array([human.px, human.py], dtype=np.float64)
+    for ci in range(len(goal_belief)):
+        mask[ci] = 1.0
+        if not show_candidates:
+            continue
+        route = np.asarray(candidate_routes[ci], dtype=np.float64)
+        end_dx, end_dy = norm.normalize_position(*(route[-1] - pos))
+        wp = route[min(int(waypoint_index[ci]), len(route) - 1)]
+        wp_dx, wp_dy = norm.normalize_position(*(wp - pos))
+        feats[ci] = (float(goal_belief[ci]), end_dx, end_dy, wp_dx, wp_dy)
+    return feats, mask
+
+
 def _intent_human_feature_vector(
     robot: RobotObservation,
     human: HumanObservation,
@@ -62,6 +118,9 @@ def _intent_human_feature_vector(
     track_age: int,
     future_mean_delta: np.ndarray,   # [2] posterior-future mean position delta vs CV, meters
     future_spread: float,             # trace of the posterior-future sample covariance, m^2
+    candidate_routes: Sequence[np.ndarray],
+    waypoint_index: Sequence[int],
+    show_candidates: bool,
 ) -> np.ndarray:
     raw_dx, raw_dy = human.px - robot.px, human.py - robot.py
     raw_speed = float(np.hypot(human.vx, human.vy))
@@ -80,10 +139,8 @@ def _intent_human_feature_vector(
     n = len(goal_belief)
     if n == 0 or n > MAX_CANDIDATE_GOALS:
         raise IntentPolicyError(f"goal_belief cardinality must be in [1,{MAX_CANDIDATE_GOALS}], got {n}")
-    padded = np.zeros(MAX_CANDIDATE_GOALS, dtype=np.float32)
-    padded[:n] = goal_belief.astype(np.float32)
-    mask = np.zeros(MAX_CANDIDATE_GOALS, dtype=np.float32)
-    mask[:n] = 1.0
+    cand_feats, cand_mask = _candidate_block(
+        human, goal_belief, candidate_routes, waypoint_index, show_candidates)
 
     max_entropy = float(np.log(n)) if n > 1 else 1.0  # n=1 is deterministic; avoid /0, entropy is 0 anyway
     entropy = float(-np.sum(goal_belief * np.log(np.clip(goal_belief, 1e-12, 1.0))))
@@ -97,12 +154,13 @@ def _intent_human_feature_vector(
     spread_scale = max(NORMALIZATION_CONSTANTS["max_human_speed"] ** 2, 1e-6)
     norm_spread = float(np.clip(future_spread / spread_scale, 0.0, 4.0))
 
+    # V6 packed row: scalars, then the candidate block, then its mask.
     return np.concatenate([
         np.array([dx, dy, rel_vx, rel_vy, radius, speed, ttc], dtype=np.float32),
         np.array([norm_age], dtype=np.float32),
-        padded, mask,
         np.array([norm_entropy, top1_margin], dtype=np.float32),
         np.array([fdx, fdy, norm_spread], dtype=np.float32),
+        cand_feats.reshape(-1), cand_mask,
     ])
 
 
@@ -192,7 +250,7 @@ def build_intent_human_feature_batch(
     """
     if mode not in ("full", "mean", "cv", "uniform"):
         raise IntentPolicyError(f"unknown mode {mode!r}")
-    features = np.zeros((MAX_HUMANS, HUMAN_FEATURE_DIM_V5), dtype=np.float32)
+    features = np.zeros((MAX_HUMANS, HUMAN_FEATURE_DIM_V6), dtype=np.float32)
     mask = np.zeros(MAX_HUMANS, dtype=bool)
     for i, human in enumerate(humans[:MAX_HUMANS]):
         try:
@@ -220,7 +278,10 @@ def build_intent_human_feature_batch(
             future_trajs = tracker.sample_futures(pos, vel, horizon=horizon, mode=mode, rng=rng, n_samples=n_samples)
         mean_delta, spread = _future_summary(future_trajs, cv_future)
         track_age = bank.track_age_for(human.track_id)
-        features[i] = _intent_human_feature_vector(robot, human, network_belief, track_age=track_age, future_mean_delta=mean_delta, future_spread=spread)
+        features[i] = _intent_human_feature_vector(
+            robot, human, network_belief, track_age=track_age, future_mean_delta=mean_delta,
+            future_spread=spread, candidate_routes=tracker._routes,
+            waypoint_index=tracker._wp_idx, show_candidates=(mode in ("full", "uniform")))
         mask[i] = True
     return features, mask
 
@@ -280,7 +341,8 @@ def score_candidates_v5(
 # with identical tensor shapes but was fit under the buggy
 # online-samples-get-ranking objective, so it MUST fail closed here rather
 # than be silently accepted.
-CHECKPOINT_SCHEMA_V6 = "bdvl_intent_checkpoint_v6"
+CHECKPOINT_SCHEMA_V7 = "bdvl_intent_checkpoint_v7_candidate_set"
+CHECKPOINT_SCHEMA_V6_RETIRED = "bdvl_intent_checkpoint_v6"
 CHECKPOINT_SCHEMA_V5_RETIRED = "bdvl_intent_checkpoint_v5"
 
 
@@ -296,8 +358,8 @@ def save_intent_checkpoint(
     from ``feature_schema``: it pins the data/loss semantics the weights
     were fit under, which tensor shapes cannot distinguish."""
     payload = {
-        "checkpoint_schema": CHECKPOINT_SCHEMA_V6,
-        "feature_schema": FEATURE_SCHEMA_V5,
+        "checkpoint_schema": CHECKPOINT_SCHEMA_V7,
+        "feature_schema": FEATURE_SCHEMA_V6,
         "training_contract_schema": TRAINING_CONTRACT_V4_RANKING_GATE_GRACE,
         "model_state_dict": model.state_dict(),
         "action_grid_hash": action_grid_hash,
@@ -327,12 +389,12 @@ def load_intent_checkpoint(
         raise IntentPolicyError(
             f"checkpoint {path} uses the RETIRED {CHECKPOINT_SCHEMA_V5_RETIRED!r} schema: those weights were fit "
             f"with the expert ranking loss wrongly applied to online (epsilon-random) samples and with a hybrid "
-            f"MAP+mean ablation arm. Fail closed -- retrain under {CHECKPOINT_SCHEMA_V6!r}, no compat loading."
+            f"MAP+mean ablation arm. Fail closed -- retrain under {CHECKPOINT_SCHEMA_V7!r}, no compat loading."
         )
-    if checkpoint["checkpoint_schema"] != CHECKPOINT_SCHEMA_V6:
-        raise IntentPolicyError(f"checkpoint schema {checkpoint['checkpoint_schema']!r} != {CHECKPOINT_SCHEMA_V6!r}, fail closed, no compat loading")
-    if checkpoint["feature_schema"] != FEATURE_SCHEMA_V5:
-        raise IntentPolicyError(f"feature schema {checkpoint['feature_schema']!r} != {FEATURE_SCHEMA_V5!r}, fail closed")
+    if checkpoint["checkpoint_schema"] != CHECKPOINT_SCHEMA_V7:
+        raise IntentPolicyError(f"checkpoint schema {checkpoint['checkpoint_schema']!r} != {CHECKPOINT_SCHEMA_V7!r}, fail closed, no compat loading")
+    if checkpoint["feature_schema"] != FEATURE_SCHEMA_V6:
+        raise IntentPolicyError(f"feature schema {checkpoint['feature_schema']!r} != {FEATURE_SCHEMA_V6!r}, fail closed")
     if checkpoint["training_contract_schema"] == TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC:
         raise IntentPolicyError(
             f"checkpoint {path} was trained under the RETIRED {TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC!r} "
