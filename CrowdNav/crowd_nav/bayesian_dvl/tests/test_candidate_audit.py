@@ -57,6 +57,26 @@ def test_the_current_junction_crowd_model_passes_the_audit(is_heldout, seeds):
     assert r.n_observations > 0 and r.n_episodes == len(seeds)
 
 
+@pytest.mark.parametrize("is_heldout", [False, True])
+def test_junction_audit_oracle_uses_the_public_crossing_dictionary(is_heldout):
+    """Assignment regret must compare against the same public rule used by
+    the tracker, including the crossing-band candidates.
+
+    Before this check, the audit used only the two junction exits as its
+    dictionary.  A lateral crosser could therefore have a negative regret:
+    its assigned crossing candidate was closer to the hidden endpoint than
+    the incomplete "oracle".  That made the audit metric mathematically
+    incoherent even though the candidate model itself was correct.
+    """
+    r = audit_scenario(
+        _episodes((JUNCTION_CROWD_HELDOUT_SEEDS if is_heldout else JUNCTION_CROWD_TRAIN_SEEDS)[:8], is_heldout),
+        public_junction_crowd_scene(is_heldout=is_heldout),
+        scenario="junction_crowd", ambiguous_index=AMBIGUOUS_TRACK_INDEX, max_steps=20,
+    )
+    assert r.n_regret_offenders == 0, r.failures
+    assert r.worst_assignment_regret_m >= -1e-9
+
+
 def test_audit_measures_something_and_does_not_pass_vacuously():
     """A vacuous audit (no observations) would pass every budget with zeros;
     the checks below only mean anything if data was actually collected."""

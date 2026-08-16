@@ -179,7 +179,7 @@ CANDIDATE_FEATURE_DIM = 5
 # in v5. test_candidate_count_reaches_the_network pins it.
 HUMAN_SCALAR_DIM_V6 = 14
 HUMAN_FEATURE_DIM_V6 = (HUMAN_SCALAR_DIM_V6 + MAX_CANDIDATE_GOALS * CANDIDATE_FEATURE_DIM
-                        + MAX_CANDIDATE_GOALS)   # = 61
+                        + MAX_CANDIDATE_GOALS)   # = 62
 
 
 # C0.5 (plan section 5, 2026-08-11): the GOAL-INTENT chain's own training
@@ -528,5 +528,4 @@ class ActionGridSpec:
     def table_hash(self) -> str:
         table = self.build_action_table()
         return _sha256_of_obj([[round(vx, 12), round(vy, 12)] for vx, vy in table])
-
 

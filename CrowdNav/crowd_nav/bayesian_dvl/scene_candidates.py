@@ -151,6 +151,24 @@ class PublicScene:
         centres = 0.5 * (edges[:-1] + edges[1:])
         return [CandidateGoal(f"cross{i}", ((target_x, float(y)),)) for i, y in enumerate(centres)]
 
+    def public_dictionary_for(self, first_position: np.ndarray) -> List[CandidateGoal]:
+        """Return the complete public candidate dictionary for an entry.
+
+        This is deliberately different from :meth:`candidates_for`: the
+        latter is the filtered set actually handed to a tracker, while this
+        method is the unfiltered public reference set used by the offline
+        audit to measure assignment regret.  For a junction crosser the
+        dictionary is the crossing band; for an approacher it is the public
+        exit set.  Neither path reads a hidden human goal.
+        """
+        entry = np.asarray(first_position, dtype=np.float64)
+        if entry.shape != (2,) or not np.all(np.isfinite(entry)):
+            raise SceneCandidatesError(
+                f"first_position must be a finite 2D point, got {first_position!r}")
+        if self.crossing_band is not None and not self.in_approach_corridor(entry):
+            return self._crossing_candidates(entry)
+        return [CandidateGoal(d.name, (tuple(d.position),)) for d in self.destinations]
+
     def candidates_for(self, first_position: np.ndarray) -> List[CandidateGoal]:
         """PUBLIC-only derivation: from an entry position (observable) +
         this public map, build one CandidateGoal route per plausible

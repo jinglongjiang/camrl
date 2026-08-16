@@ -155,9 +155,6 @@ def audit_scenario(
     dt = float(FROZEN_VALUES["dt"]) if dt is None else float(dt)
     cov, resid, n_obs, n_single, n_flat_tracks, n_tracks, n_eps = [], [], 0, 0, 0, 0, 0
     oracle, regret, regret_offenders = [], [], []
-    # the FULL public dictionary, before any per-entry filtering
-    dictionary = [np.asarray(d.position, dtype=np.float64) for d in scene.destinations]
-
     for env, advance in episodes:
         n_eps += 1
         bank = IntentBeliefBank(make_candidate_fn(scene), dt=dt,
@@ -187,7 +184,18 @@ def audit_scenario(
                     ends = [np.asarray(c.waypoints[-1]) for c in bank.tracker_for(i).candidates]
                     assigned = min(float(np.hypot(e[0] - h.gx, e[1] - h.gy)) for e in ends)
                     cov.append(assigned)
-                    best = min(float(np.hypot(d[0] - h.gx, d[1] - h.gy)) for d in dictionary)
+                    # Compare against the complete public dictionary for
+                    # this observable entry, not merely the scene's base
+                    # exits. Junction crossers have a public crossing
+                    # band whose candidates are derived from the entry;
+                    # omitting that band makes a correct assignment look
+                    # artificially better than the oracle.
+                    dictionary = scene.public_dictionary_for(np.array([h.px, h.py]))
+                    best = min(
+                        float(np.hypot(c.waypoints[-1][0] - h.gx,
+                                       c.waypoints[-1][1] - h.gy))
+                        for c in dictionary
+                    )
                     oracle.append(best)
                     r_ = assigned - best
                     regret.append(r_)
