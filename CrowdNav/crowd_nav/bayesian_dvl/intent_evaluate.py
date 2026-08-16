@@ -60,7 +60,7 @@ class IntentEvaluateError(ValueError):
 
 
 # The three result KINDS must never share a directory (plan C3.3).
-RESULT_KINDS = ("paper_main", "heldout_junction", "ablation", "dev_standard")
+RESULT_KINDS = ("paper_main", "heldout_junction", "ablation", "dev_standard", "selection_dev")
 
 
 def initial_state_hash(robot, humans) -> str:
