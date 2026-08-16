@@ -1,0 +1,24 @@
+{
+  "status": "INVALID_GATE_DIAGNOSTIC",
+  "base_seed": 20260816,
+  "episodes_per_scenario": 100,
+  "suite": "test8",
+  "reason": "The absolute metre coverage budget (mean <= 0.60 m, worst <= 1.20 m) was measured on the junction crossing band, where public destinations are DISCRETE. Test8 circle/square goals are CONTINUOUS, so the achievable error is set by how finely 8 candidates tile the goal region. Applying the junction budget there measured the discretization, not the candidate model.",
+  "must_not": [
+    "be deleted or overwritten",
+    "be reinterpreted as a PASS",
+    "be used to justify relaxing any threshold"
+  ],
+  "measured_at_25_episodes_per_scenario": {
+    "note": "assigned-error under the WRONG gate, before the square double-filtering fix",
+    "baseline_circle": {"cov_mean": 0.925, "cov_max": 1.629, "discretization_floor_mean": 0.79},
+    "baseline_square": {"cov_mean": 1.449, "cov_max": 2.696, "discretization_floor_mean": 1.40},
+    "dense_circle":    {"cov_mean": 0.938, "cov_max": 1.681, "discretization_floor_mean": 0.79},
+    "dense_square":    {"cov_mean": 1.482, "cov_max": 2.722, "discretization_floor_mean": 1.40},
+    "large_circle":    {"cov_mean": 1.298, "cov_max": 2.473, "discretization_floor_mean": 1.18},
+    "large_square":    {"cov_mean": 2.078, "cov_max": 5.830, "discretization_floor_mean": 1.96}
+  },
+  "finding_that_was_real": "square scenes applied the generic forward cone ON TOP of the exact opposite-half-plane rule, so a legitimate opposite-side candidate could still be deleted. Fixed separately; it is not what made this gate fail.",
+  "superseded_by": {"base_seed": 40260817, "gate": "assignment_regret <= 1e-6 m + analytic oracle bound"},
+  "base_seed_retired": true
+}

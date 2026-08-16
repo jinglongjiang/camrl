@@ -1544,7 +1544,14 @@ from crowd_nav.bayesian_dvl.junction_scenario import (  # noqa: E402
 PAPER_MAIN_BASE_SEED = 30_260_816
 # A separate, model-INDEPENDENT base used only by audit-test8-candidates, so
 # the candidate audit never touches a formal episode identity.
-TEST8_AUDIT_BASE_SEED = 20_260_816
+#
+# 20_260_816 is RETIRED. Its 600-episode run is kept as
+# INVALID_GATE_DIAGNOSTIC: it was gated with the junction's absolute metre
+# budget, which measures discretization rather than the model on a continuous
+# goal space, so its FAIL is not a statement about the candidate model and
+# must never be reinterpreted as a PASS.
+TEST8_AUDIT_BASE_SEED_RETIRED = 20_260_816
+TEST8_AUDIT_BASE_SEED = 40_260_817
 PAPER_MAIN_EPISODES_PER_SCENARIO = 500
 # case_id follows FORMAL_SIX_SCENARIOS' insertion order, which matches
 # test8.py's hardcoded list: baseline_circle=0 ... large_square=5.

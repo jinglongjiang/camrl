@@ -128,7 +128,7 @@ def test_training_refuses_test8_derived_identities(base):
 
 def test_test8_base_seed_42_is_retired():
     assert PAPER_MAIN_BASE_SEED == 30_260_816
-    assert TEST8_AUDIT_BASE_SEED == 20_260_816
+    assert TEST8_AUDIT_BASE_SEED == 40_260_817
     assert PAPER_MAIN_BASE_SEED != TEST8_AUDIT_BASE_SEED, (
         "the candidate audit must not run on formal episode identities")
     assert not set(paper_main_jobs(episodes_per_scenario=100, base_seed=PAPER_MAIN_BASE_SEED)) & \
@@ -144,3 +144,113 @@ def test_no_production_module_still_defaults_to_base_seed_42():
             if "base_seed" in line and "= 42" in line.replace(" ", " "):
                 offenders.append(f"{f.name}: {line.strip()}")
     assert not offenders, f"base_seed 42 is retired but still appears as a default: {offenders}"
+
+
+# ------------------------------------------------ Test8 audit gate revision
+
+def test_square_scene_never_double_filters_the_opposite_half_plane():
+    """The exact opposite-half-plane rule and the generic forward cone were
+    BOTH applied, so a legitimate opposite-side candidate could still be cut
+    by the cone -- a crosser starting near a corner has real goals more than
+    107 degrees off the entry-to-centroid direction."""
+    from crowd_nav.bayesian_dvl.scene_candidates import make_candidate_fn, square_scene
+    for width in (10.0, 14.0):
+        scene = square_scene(width=width, n_rows=4)
+        fn = make_candidate_fn(scene)
+        half = width / 2
+        for x in np.linspace(-half + 0.05, half - 0.05, 11):
+            if abs(x) < 1e-9:
+                continue                    # entry exactly on the axis has no side
+            for y in np.linspace(-half + 0.05, half - 0.05, 11):
+                cands = fn(0, np.array([x, y]))
+                assert len(cands) == 4, (
+                    f"entry ({x:.2f}, {y:.2f}) kept {len(cands)} candidates, expected all 4 on the "
+                    "opposite side")
+                for c in cands:
+                    assert np.sign(c.waypoints[-1][0]) == -np.sign(x), (
+                        f"entry ({x:.2f}, {y:.2f}) was given a SAME-side candidate {c.waypoints[-1]}")
+
+
+def test_square_filter_never_deletes_the_dictionary_best_candidate():
+    """Assignment regret, on real episodes: the public filter must not remove
+    the candidate that best describes a pedestrian."""
+    from crowd_nav.bayesian_dvl.intent_train import build_formal_scenario_env, paper_main_episode_seed
+    from crowd_nav.bayesian_dvl.scene_candidates import make_candidate_fn, square_scene
+    for scenario, width in (("baseline_square", 10.0), ("large_square", 14.0)):
+        scene = square_scene(width=width, n_rows=4)
+        fn = make_candidate_fn(scene)
+        dictionary = [np.asarray(d.position) for d in scene.destinations]
+        for i in range(6):
+            sd = paper_main_episode_seed(scenario, i, TEST8_AUDIT_BASE_SEED)
+            env, _robot, _s, _z = build_formal_scenario_env(ENV, scenario)
+            env.case_counter["test"] = sd % (2 ** 32 - 1)
+            env.reset()
+            for h in env.humans:
+                ends = [np.asarray(c.waypoints[-1]) for c in fn(0, np.array([h.px, h.py]))]
+                assigned = min(float(np.hypot(e[0] - h.gx, e[1] - h.gy)) for e in ends)
+                oracle = min(float(np.hypot(d[0] - h.gx, d[1] - h.gy)) for d in dictionary)
+                assert assigned - oracle <= 1e-6, (
+                    f"{scenario}: filter cost this pedestrian {assigned - oracle:.3f} m of "
+                    f"representability (assigned {assigned:.3f}, oracle {oracle:.3f})")
+
+
+def test_circle_and_junction_candidate_behaviour_is_unchanged_by_the_square_fix():
+    from crowd_nav.bayesian_dvl.scene_candidates import circle_scene, make_candidate_fn
+    from crowd_nav.bayesian_dvl.junction_scenario import public_junction_crowd_scene
+    fn = make_candidate_fn(circle_scene(radius=4.0, n_sectors=8))
+    for t in np.linspace(0, 2 * np.pi, 12, endpoint=False):
+        assert len(fn(0, np.array([4 * np.cos(t), 4 * np.sin(t)]))) == 8
+    jf = make_candidate_fn(public_junction_crowd_scene(is_heldout=True))
+    assert len(jf(0, np.array([0.0, 4.0]))) == 2          # corridor -> two exits
+    assert len(jf(0, np.array([2.0, 4.0]))) == 4          # outside  -> crossing band
+
+
+def test_analytic_oracle_bounds_come_from_geometry_not_measurement():
+    from crowd_nav.bayesian_dvl.candidate_audit import analytic_oracle_bound
+    # circle: half-chord between adjacent sectors + the entry noise CrowdSim adds
+    assert analytic_oracle_bound("circle", 4.0, v_pref=1.0) == pytest.approx(
+        2 * 4.0 * np.sin(np.pi / 16) + 1.0 / np.sqrt(2) + 1e-6)
+    # square: (w/4) in x, (w/16) in y -> sqrt(5)/8 * w
+    assert analytic_oracle_bound("square", 10.0) == pytest.approx(np.sqrt(5) / 8 * 10.0 + 1e-6)
+    assert analytic_oracle_bound("square", 14.0) > analytic_oracle_bound("square", 10.0)
+    with pytest.raises(Exception):
+        analytic_oracle_bound("hexagon", 3.0)
+
+
+def test_representability_mode_requires_an_analytic_bound():
+    """Leaving the bound unset would turn the check into whatever the
+    measurement happened to be."""
+    from crowd_nav.bayesian_dvl.candidate_audit import CandidateAuditError, audit_scenario
+    from crowd_nav.bayesian_dvl.scene_candidates import circle_scene
+    with pytest.raises(CandidateAuditError, match="ANALYTIC"):
+        audit_scenario(iter(()), circle_scene(radius=4.0, n_sectors=8), scenario="x",
+                       coverage_mode="representability")
+
+
+def test_retired_audit_base_seed_is_refused():
+    from crowd_nav.bayesian_dvl.intent_train import TEST8_AUDIT_BASE_SEED_RETIRED
+    assert TEST8_AUDIT_BASE_SEED == 40_260_817
+    assert TEST8_AUDIT_BASE_SEED_RETIRED == 20_260_816
+    for base in (PAPER_MAIN_BASE_SEED, TEST8_AUDIT_BASE_SEED, TEST8_AUDIT_BASE_SEED_RETIRED):
+        for _sc, seed, _hd in paper_main_jobs(episodes_per_scenario=2, base_seed=base)[:4]:
+            with pytest.raises(IntentCLIError, match="Test8"):
+                _assert_not_formal_seed(seed)
+
+
+def test_the_three_test8_bases_derive_disjoint_identities():
+    from crowd_nav.bayesian_dvl.intent_train import TEST8_AUDIT_BASE_SEED_RETIRED
+    sets = [{s for _sc, s, _hd in paper_main_jobs(episodes_per_scenario=500, base_seed=b)}
+            for b in (PAPER_MAIN_BASE_SEED, TEST8_AUDIT_BASE_SEED, TEST8_AUDIT_BASE_SEED_RETIRED)]
+    for i in range(len(sets)):
+        for j in range(i + 1, len(sets)):
+            assert not sets[i] & sets[j]
+
+
+def test_the_invalid_gate_diagnostic_record_exists_and_is_not_a_pass():
+    import json
+    root = Path(__file__).resolve().parents[3]
+    rec = root / "runs" / "v2" / "test8_candidate_audit_20260816_INVALID_GATE_DIAGNOSTIC.json"
+    assert rec.exists(), "the failed 20_260_816 audit must be kept, not deleted"
+    payload = json.loads(rec.read_text())
+    assert payload["status"] == "INVALID_GATE_DIAGNOSTIC"
+    assert payload.get("passed") is None and payload["base_seed_retired"] is True

@@ -52,6 +52,27 @@ class CandidateAuditError(ValueError):
 # 0.26 m, and 0% single-candidate. Not to be relaxed after seeing a result.
 MAX_MEAN_COVERAGE_ERROR_M = 0.60
 MAX_WORST_COVERAGE_ERROR_M = 1.20
+
+# --- representability gate (continuous-goal scenes) -------------------
+# The absolute metre budgets above were measured on the junction's crossing
+# band, where the public destinations are DISCRETE. Test8's circle and square
+# goals are CONTINUOUS, so the achievable error is set by how finely 8
+# candidates can tile the goal region -- 0.79 m for an 8-sector circle of
+# radius 4 -- and no correct candidate model can beat that. Applying the
+# junction number there measured the discretization, not the model.
+#
+# What the check always meant is: does the PUBLIC FILTER delete the candidate
+# that best describes this person? That is answered without any tunable
+# number at all:
+#
+#   oracle_error      truth -> nearest candidate in the FULL public dictionary
+#   assigned_error    truth -> nearest candidate actually GIVEN to this person
+#   assignment_regret assigned_error - oracle_error
+#
+# Regret must be zero. A non-zero regret means the filter threw away the best
+# available description of that pedestrian -- exactly the junction defect,
+# stated in a form that does not depend on scene scale.
+MAX_ASSIGNMENT_REGRET_M = 1e-6
 MAX_MEAN_SPEED_RESIDUAL = 0.45
 MAX_UNEXPECTED_SINGLE_CANDIDATE_RATE = 0.02
 MAX_PERSISTENTLY_FLAT_RATE = 0.25
@@ -68,6 +89,12 @@ class AuditResult:
     mean_speed_residual: float
     single_candidate_rate: float
     persistently_flat_rate: float
+    # continuous-goal scenes: representability rather than an absolute budget
+    mean_oracle_error_m: float = 0.0
+    worst_oracle_error_m: float = 0.0
+    worst_assignment_regret_m: float = 0.0
+    n_regret_offenders: int = 0
+    oracle_bound_m: Optional[float] = None
     permutation_max_delta: Optional[float] = None
     failures: List[str] = field(default_factory=list)
 
@@ -94,7 +121,20 @@ def audit_scenario(
     ambiguous_index: Optional[int] = None,
     dt: Optional[float] = None,
     max_steps: int = 60,
+    coverage_mode: str = "absolute",
+    oracle_bound_m: Optional[float] = None,
 ) -> AuditResult:
+    """``coverage_mode``:
+
+      "absolute"        junction: candidates are discrete public destinations,
+                        so an absolute metre budget is meaningful.
+      "representability" circle/square: goals are continuous, so the budget is
+                        set by the discretization. Gate on assignment regret
+                        (the filter must not drop the dictionary's best
+                        candidate) plus an ANALYTIC bound on the oracle error
+                        derived from the 8-candidate geometry -- never from a
+                        measured result.
+    """
     """``episodes`` yields ``(env, advance_hidden_state)``, where the second
     element is the per-step hook that reveals the scenario's hidden state (or
     None). Pedestrians are advanced with their own policies only -- no robot,
@@ -106,8 +146,17 @@ def audit_scenario(
     waypoint until it reaches the fork, so scoring it against a final exit
     would measure the scenario's design rather than the candidate model.
     """
+    if coverage_mode not in ("absolute", "representability"):
+        raise CandidateAuditError(f"unknown coverage_mode {coverage_mode!r}")
+    if coverage_mode == "representability" and oracle_bound_m is None:
+        raise CandidateAuditError(
+            "representability mode needs an ANALYTIC oracle bound; leaving it unset would turn the "
+            "check into whatever the measurement happened to be")
     dt = float(FROZEN_VALUES["dt"]) if dt is None else float(dt)
     cov, resid, n_obs, n_single, n_flat_tracks, n_tracks, n_eps = [], [], 0, 0, 0, 0, 0
+    oracle, regret, regret_offenders = [], [], []
+    # the FULL public dictionary, before any per-entry filtering
+    dictionary = [np.asarray(d.position, dtype=np.float64) for d in scene.destinations]
 
     for env, advance in episodes:
         n_eps += 1
@@ -136,7 +185,17 @@ def audit_scenario(
                     if ambiguous_index is not None and i == ambiguous_index:
                         continue
                     ends = [np.asarray(c.waypoints[-1]) for c in bank.tracker_for(i).candidates]
-                    cov.append(min(float(np.hypot(e[0] - h.gx, e[1] - h.gy)) for e in ends))
+                    assigned = min(float(np.hypot(e[0] - h.gx, e[1] - h.gy)) for e in ends)
+                    cov.append(assigned)
+                    best = min(float(np.hypot(d[0] - h.gx, d[1] - h.gy)) for d in dictionary)
+                    oracle.append(best)
+                    r_ = assigned - best
+                    regret.append(r_)
+                    if r_ > MAX_ASSIGNMENT_REGRET_M:
+                        regret_offenders.append(
+                            {"human": i, "assigned_error_m": round(assigned, 4),
+                             "oracle_error_m": round(best, 4), "regret_m": round(r_, 4),
+                             "entry": [round(float(h.px), 3), round(float(h.py), 3)]})
             if advance is not None:
                 advance()
             actions = [h.act([o.get_observable_state() for o in env.humans if o is not h])
@@ -155,14 +214,32 @@ def audit_scenario(
         mean_speed_residual=float(np.mean(resid)) if resid else 0.0,
         single_candidate_rate=n_single / max(n_obs, 1),
         persistently_flat_rate=n_flat_tracks / max(n_tracks, 1),
+        mean_oracle_error_m=float(np.mean(oracle)) if oracle else 0.0,
+        worst_oracle_error_m=float(np.max(oracle)) if oracle else 0.0,
+        worst_assignment_regret_m=float(np.max(regret)) if regret else 0.0,
+        n_regret_offenders=len(regret_offenders),
+        oracle_bound_m=oracle_bound_m,
     )
-    if res.mean_coverage_error_m > MAX_MEAN_COVERAGE_ERROR_M:
-        res.failures.append(
-            f"mean candidate-coverage error {res.mean_coverage_error_m:.2f} m > "
-            f"{MAX_MEAN_COVERAGE_ERROR_M} m -- the candidates do not describe where these humans go")
-    if res.worst_coverage_error_m > MAX_WORST_COVERAGE_ERROR_M:
-        res.failures.append(
-            f"worst candidate-coverage error {res.worst_coverage_error_m:.2f} m > {MAX_WORST_COVERAGE_ERROR_M} m")
+    if coverage_mode == "absolute":
+        if res.mean_coverage_error_m > MAX_MEAN_COVERAGE_ERROR_M:
+            res.failures.append(
+                f"mean candidate-coverage error {res.mean_coverage_error_m:.2f} m > "
+                f"{MAX_MEAN_COVERAGE_ERROR_M} m -- the candidates do not describe where these humans go")
+        if res.worst_coverage_error_m > MAX_WORST_COVERAGE_ERROR_M:
+            res.failures.append(
+                f"worst candidate-coverage error {res.worst_coverage_error_m:.2f} m > {MAX_WORST_COVERAGE_ERROR_M} m")
+    else:
+        if res.n_regret_offenders:
+            ex = regret_offenders[:3]
+            res.failures.append(
+                f"{res.n_regret_offenders} pedestrian(s) were denied the dictionary's best candidate "
+                f"(worst regret {res.worst_assignment_regret_m:.4f} m > {MAX_ASSIGNMENT_REGRET_M:g} m); "
+                f"the public filter is deleting the candidate that best describes them: {ex}")
+        if res.worst_oracle_error_m > oracle_bound_m:
+            res.failures.append(
+                f"worst oracle error {res.worst_oracle_error_m:.3f} m exceeds the ANALYTIC "
+                f"{oracle_bound_m:.3f} m bound for this scene's 8-candidate geometry -- the public "
+                "dictionary itself cannot represent where these pedestrians go")
     if res.mean_speed_residual > MAX_MEAN_SPEED_RESIDUAL:
         res.failures.append(
             f"mean candidate-velocity residual {res.mean_speed_residual:.2f} m/s > {MAX_MEAN_SPEED_RESIDUAL} "
@@ -207,6 +284,27 @@ def audit_permutation_invariance(model, n_candidates: int = 5, n_perms: int = 8,
     return worst
 
 
+def analytic_oracle_bound(shape: str, size: float, v_pref: float = 1.0) -> float:
+    """The largest oracle error the 8-candidate dictionary can possibly leave,
+    derived from GEOMETRY -- never from a measured run.
+
+    circle: goals are the antipode of a noisy entry, so they sit within
+      |noise| of the radius-``size`` circle that the 8 sector points tile.
+      Worst in-plane miss is the half-chord between adjacent sectors,
+      2R*sin(pi/16); CrowdSim adds up to v_pref/2 of noise per axis, i.e.
+      v_pref/sqrt(2) in norm (generate_circle_crossing_human).
+
+    square: candidates sit at x = -+w/4 and at 4 band centres in y, while the
+      goal spans |gx| <= w/2 and |gy| <= w/2 in the opposite half-plane. Worst
+      miss is (w/4) in x and (w/16) in y, i.e. sqrt(5)/8 * w.
+    """
+    if shape == "circle":
+        return 2.0 * size * float(np.sin(np.pi / 16)) + v_pref / float(np.sqrt(2.0)) + 1e-6
+    if shape == "square":
+        return float(np.sqrt(5.0)) / 8.0 * size + 1e-6
+    raise CandidateAuditError(f"no analytic oracle bound for shape {shape!r}")
+
+
 def run_pretraining_audit(results: Sequence[AuditResult], permutation_delta: float,
                           out_path: Optional[Path] = None) -> dict:
     """Collect every check and REFUSE to continue if any failed. There is no
@@ -216,6 +314,7 @@ def run_pretraining_audit(results: Sequence[AuditResult], permutation_delta: flo
         "permutation_max_delta": permutation_delta,
         "permutation_tolerance": PERMUTATION_TOLERANCE,
         "budgets": {
+            "max_assignment_regret_m": MAX_ASSIGNMENT_REGRET_M,
             "max_mean_coverage_error_m": MAX_MEAN_COVERAGE_ERROR_M,
             "max_worst_coverage_error_m": MAX_WORST_COVERAGE_ERROR_M,
             "max_mean_speed_residual": MAX_MEAN_SPEED_RESIDUAL,

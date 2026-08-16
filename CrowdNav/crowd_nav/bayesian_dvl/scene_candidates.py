@@ -180,7 +180,16 @@ class PublicScene:
             dest = np.asarray(d.position, dtype=np.float64)
             if axis_i is not None and entry[axis_i] * dest[axis_i] > 0:
                 continue  # same half-plane as the entry -> not a plausible crossing goal
-            if self.forward_only and fwd_n.any():
+            # DOUBLE-FILTERING BUG. The opposite-half-plane rule is the
+            # scenario type's OWN, exact statement of where a square-crossing
+            # pedestrian may go; the forward cone is a generic fallback for
+            # scenes that have no such rule. Applying both meant a legitimate
+            # opposite-side destination could still be cut by the cone,
+            # because the cone is measured from the entry toward the scene
+            # CENTROID and a crosser starting near a corner has real goals
+            # more than 107 degrees off that direction. The strong rule wins;
+            # the fallback is skipped when it applies.
+            if axis_i is None and self.forward_only and fwd_n.any():
                 to_dest = dest - entry
                 if np.linalg.norm(to_dest) > 1e-9 and float(np.dot(to_dest / np.linalg.norm(to_dest), fwd_n)) < -0.3:
                     continue  # destination is behind the entry -> implausible

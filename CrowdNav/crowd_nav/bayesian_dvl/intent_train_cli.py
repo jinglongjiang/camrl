@@ -58,7 +58,7 @@ from crowd_nav.bayesian_dvl.intent_policy import (
     CHECKPOINT_SCHEMA_V7, HUMAN_FEATURE_DIM_V5, load_intent_checkpoint, save_intent_checkpoint,
 )
 from crowd_nav.bayesian_dvl.intent_train import (
-    TEST8_AUDIT_BASE_SEED,
+    TEST8_AUDIT_BASE_SEED, TEST8_AUDIT_BASE_SEED_RETIRED,
     FORMAL_EVAL_HELDOUT_SEEDS, FORMAL_SIX_SCENARIOS, PAPER_MAIN_BASE_SEED,
     STANDARD_DEV_DIAGNOSTIC_SEEDS, STANDARD_SELECTION_DEV_SEEDS, JUNCTION_SELECTION_DEV_SEEDS,
     PAPER_MAIN_EPISODES_PER_SCENARIO, EMAModel,
@@ -724,7 +724,7 @@ def _assert_not_formal_seed(seed: int) -> None:
 def _test8_derived_seeds() -> frozenset:
     from crowd_nav.bayesian_dvl.intent_train import paper_main_jobs
     seeds = set()
-    for base in (PAPER_MAIN_BASE_SEED, TEST8_AUDIT_BASE_SEED):
+    for base in (PAPER_MAIN_BASE_SEED, TEST8_AUDIT_BASE_SEED, TEST8_AUDIT_BASE_SEED_RETIRED):
         seeds.update(s for _sc, s, _hd in paper_main_jobs(episodes_per_scenario=500, base_seed=base))
     return frozenset(seeds)
 
@@ -759,6 +759,17 @@ def seed_inventory(cfg: IntentTrainingConfig) -> Dict[str, object]:
         "training_seeds": cfg.training_seeds,
         "validation_seeds": cfg.validation_seeds,
     }
+    # Test8 identities are DERIVED from a base seed, so they cannot be an
+    # enumerated block; they are proven disjoint from every block and from
+    # each other below.
+    test8_blocks = {}
+    for label, base in (("test8_formal", PAPER_MAIN_BASE_SEED),
+                        ("test8_audit", TEST8_AUDIT_BASE_SEED),
+                        ("test8_audit_retired", TEST8_AUDIT_BASE_SEED_RETIRED)):
+        from crowd_nav.bayesian_dvl.intent_train import paper_main_jobs as _pmj
+        test8_blocks[label] = tuple(sorted({s for _sc, s, _hd in _pmj(episodes_per_scenario=500, base_seed=base)}))
+    blocks.update(test8_blocks)
+
     # scenarios whose seeds are DERIVED rather than enumerated
     # C4RF.1 / audit point 4: the online_standard upper bound was reported
     # one HIGHER than the schedule ever produces (the last standard episode
@@ -894,6 +905,16 @@ def cmd_audit_candidates(args) -> int:
     print(f"audit PASSED -> {out}", flush=True)
     return 0
 
+def _human_v_pref(env_config: Path) -> float:
+    """The pedestrian speed the circle noise bound is derived from -- read
+    from the env config, not assumed."""
+    import configparser
+    c = configparser.RawConfigParser(inline_comment_prefixes=(";", "#"), strict=False)
+    if not c.read(str(env_config)):
+        raise IntentCLIError(f"env config not found: {env_config}")
+    return float(c.get("humans", "v_pref"))
+
+
 def run_test8_candidate_audit(cfg, env_config: Path, out_path: Path, base_seed: int,
                               episodes: int, max_steps: int = 40) -> dict:
     """Model-INDEPENDENT candidate audit over the six Test8 scenarios.
@@ -910,11 +931,14 @@ def run_test8_candidate_audit(cfg, env_config: Path, out_path: Path, base_seed: 
     from crowd_nav.bayesian_dvl.intent_evaluate import initial_state_hash
     from crowd_nav.bayesian_dvl.scene_candidates import circle_scene, square_scene
 
+    from crowd_nav.bayesian_dvl.candidate_audit import analytic_oracle_bound
+
     results, seed_table = [], []
     for scenario in FORMAL_SIX_SCENARIOS:
         shape, size, _humans = FORMAL_SIX_SCENARIOS[scenario]
         scene = (circle_scene(radius=size, n_sectors=8) if shape == "circle"
                  else square_scene(width=size, n_rows=4))
+        bound = analytic_oracle_bound(shape, size, v_pref=_human_v_pref(env_config))
         seeds = [paper_main_episode_seed(scenario, i, base_seed) for i in range(episodes)]
 
         def episodes_iter(scenario=scenario, seeds=seeds):
@@ -926,10 +950,13 @@ def run_test8_candidate_audit(cfg, env_config: Path, out_path: Path, base_seed: 
                                    "initial_state_hash": initial_state_hash(robot, env.humans)})
                 yield env, None          # no hidden state to reveal in circle/square
 
-        r = audit_scenario(episodes_iter(), scene, scenario=scenario,
-                           ambiguous_index=None, max_steps=max_steps)
+        r = audit_scenario(episodes_iter(), scene, scenario=scenario, ambiguous_index=None,
+                           max_steps=max_steps, coverage_mode="representability",
+                           oracle_bound_m=bound)
         results.append(r)
-        print(f"  {scenario:16} coverage {r.mean_coverage_error_m:.3f}/{r.worst_coverage_error_m:.3f} m | "
+        print(f"  {scenario:16} regret max {r.worst_assignment_regret_m:.2e} m ({r.n_regret_offenders} "
+              f"offenders) | oracle {r.mean_oracle_error_m:.3f}/{r.worst_oracle_error_m:.3f} m "
+              f"(bound {bound:.3f}) | assigned {r.mean_coverage_error_m:.3f} m | "
               f"speed residual {r.mean_speed_residual:.3f} | single {r.single_candidate_rate:.2%} | "
               f"flat {r.persistently_flat_rate:.1%} | {'PASS' if r.passed else 'FAIL'}", flush=True)
         if not r.passed:
@@ -959,6 +986,11 @@ def cmd_audit_test8_candidates(args) -> int:
         raise IntentCLIError(
             f"--base-seed {args.base_seed} is the FORMAL Test8 base; the candidate audit must not touch "
             f"formal episode identities. Use {TEST8_AUDIT_BASE_SEED}.")
+    if args.base_seed == TEST8_AUDIT_BASE_SEED_RETIRED:
+        raise IntentCLIError(
+            f"--base-seed {args.base_seed} is RETIRED. Its run is kept as INVALID_GATE_DIAGNOSTIC -- it was "
+            f"gated with the junction's absolute metre budget on a continuous goal space. Use "
+            f"{TEST8_AUDIT_BASE_SEED}.")
     print(f"=== Test8 candidate audit (base seed {args.base_seed}, "
           f"{args.episodes} episodes x 6 scenarios) ===", flush=True)
     try:
