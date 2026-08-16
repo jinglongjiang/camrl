@@ -436,7 +436,7 @@ def test_order1r_clearance_uses_the_simulator_swept_dmin() -> None:
         ActionGridSpec.from_env_config(str(_env_config_path())).build_action_table(), dtype=np.float64)
 
     def run(patch_step):
-        ep = _ScenarioEpisode(_env_config_path(), "standard", 700_001)
+        ep = _ScenarioEpisode(_env_config_path(), "standard", 2_600_000)
         env = ep.env
         # push every human far away so a PRE-ACTION snapshot is large
         for h in env.humans:

@@ -69,6 +69,7 @@ from crowd_nav.bayesian_dvl.intent_train import (
     run_il_update, run_online_training_step, summarize_scenario_results, train_step,
 )
 from crowd_nav.bayesian_dvl.junction_scenario import (
+    JUNCTION_CROWD_PAPER_TEST_SEEDS,
     JUNCTION_CROWD_HELDOUT_SEEDS, JUNCTION_CROWD_IL_SEEDS, JUNCTION_CROWD_ONLINE_SEEDS,
     JUNCTION_CROWD_TRAIN_SEEDS, JUNCTION_CROWD_VALIDATION_SEEDS,
     JUNCTION_HELDOUT_SEEDS, JUNCTION_TRAIN_SEEDS, SCENARIO_REGISTRY_ID,
@@ -95,8 +96,17 @@ IL_CORPUS_SCHEMA = "bdvl_intent_raw_il_corpus_v2"  # A3: arm-INDEPENDENT raw epi
 COMPATIBLE_RAW_IL_CORPUS_CODE_HASHES = frozenset({
     "129fc80c7897ed3a448652b08dbebc2e7cf5df39136db267fc9c1a306da8874c",
 })
-STANDARD_IL_SEED_BASE = 700_001      # standard-scenario IL seeds
-STANDARD_ONLINE_SEED_BASE = 800_001  # standard-scenario online seeds
+# V2 blocks. The V1 bases (700_001 / 800_001) are retired along with every
+# other V1 block: the standard scenario's candidate SEMANTICS changed too
+# (candidates now carry geometry and a count, so a V1 corpus materialises
+# into a different feature vector), and mixing the two would pool episodes
+# from two different feature schemas.
+STANDARD_IL_SEED_BASE = 2_600_000      # standard-scenario IL seeds (2_600_000-2_602_499)
+STANDARD_ONLINE_SEED_BASE = 2_700_000  # standard-scenario online seeds (2_700_000-2_704_999)
+# The standard validation block. The config's ``validation_seeds`` IS this
+# block -- it is not listed separately in the inventory, because listing the
+# same seeds twice would report a self-overlap.
+STANDARD_VALIDATION_SEEDS = tuple(range(2_800_000, 2_800_010))    # 10
 FINAL_EMA_NAME = "final_ema.pth"
 RUN_STATE_NAME = "run_state.json"
 # A1: ONE atomic full resume. The two-slot A/B scheme still cost 2 x ~1.1 GB
@@ -718,6 +728,10 @@ def seed_inventory(cfg: IntentTrainingConfig) -> Dict[str, object]:
         "standard_dev_diagnostic": STANDARD_DEV_DIAGNOSTIC_SEEDS,
         "standard_selection_dev": STANDARD_SELECTION_DEV_SEEDS,
         "junction_selection_dev": JUNCTION_SELECTION_DEV_SEEDS,
+        # Never used by training or selection. Listed here so the mutual-
+        # exclusion proof covers it; the V1 paper-test block was spent the
+        # moment it was read, and this one must stay unread until the end.
+        "junction_paper_test": JUNCTION_CROWD_PAPER_TEST_SEEDS,
         "training_seeds": cfg.training_seeds,
         "validation_seeds": cfg.validation_seeds,
     }
@@ -753,6 +767,108 @@ def seed_inventory(cfg: IntentTrainingConfig) -> Dict[str, object]:
     return inventory
 
 
+# --------------------------------------------------------------------- #
+# Pre-training candidate audit (gap found by review: the audit module and
+# its tests existed, but nothing in the production path called them, so a
+# failing audit did not stop training).
+# --------------------------------------------------------------------- #
+
+CANDIDATE_AUDIT_FILENAME = "candidate_audit.json"
+
+
+def audit_identity(cfg) -> dict:
+    """What an audit result is only valid FOR. A PASS collected under
+    different code, config or scene rules says nothing about this run."""
+    return {
+        "code_sha256": code_sha256(),
+        "config_content_sha256": cfg.content_hash(),
+        "scene_registry_sha256": scene_registry_sha256(cfg),
+        "scenario_registry_id": SCENARIO_REGISTRY_ID,
+        "feature_schema": FEATURE_SCHEMA_V6,
+    }
+
+
+def run_candidate_audit(cfg, env_config: Path, out_path: Path, n_episodes: int = 40,
+                        max_steps: int = 40) -> dict:
+    from crowd_nav.bayesian_dvl.candidate_audit import (
+        audit_permutation_invariance, audit_scenario, run_pretraining_audit,
+    )
+    from crowd_nav.bayesian_dvl.junction_scenario import (
+        AMBIGUOUS_TRACK_INDEX, JunctionCrowdEpisodeConfig, build_junction_crowd_episode,
+        maybe_reveal_crowd_exit, public_junction_crowd_scene,
+    )
+    from crowd_nav.bayesian_dvl.model import DistributionalValueModel
+
+    def episodes(seeds, is_heldout):
+        for seed in seeds:
+            env, _robot, true_exit = build_junction_crowd_episode(
+                env_config, JunctionCrowdEpisodeConfig(episode_seed=seed, is_heldout=is_heldout))
+            state = {"wp": False}
+
+            def advance(env=env, true_exit=true_exit, state=state, hd=is_heldout):
+                state["wp"] = maybe_reveal_crowd_exit(
+                    env.humans[AMBIGUOUS_TRACK_INDEX], true_exit, state["wp"], is_heldout=hd)
+            yield env, advance
+
+    results = []
+    for is_heldout, block, name in (
+        (False, JUNCTION_CROWD_TRAIN_SEEDS, "junction_crowd_train"),
+        (True, JUNCTION_CROWD_HELDOUT_SEEDS, "junction_crowd_heldout"),
+    ):
+        seeds = list(block)[:n_episodes]
+        r = audit_scenario(episodes(seeds, is_heldout), public_junction_crowd_scene(is_heldout=is_heldout),
+                           scenario=name, ambiguous_index=AMBIGUOUS_TRACK_INDEX, max_steps=max_steps)
+        results.append(r)
+        print(f"  {name:24} coverage {r.mean_coverage_error_m:.3f}/{r.worst_coverage_error_m:.3f} m | "
+              f"speed residual {r.mean_speed_residual:.3f} | single {r.single_candidate_rate:.2%} | "
+              f"flat {r.persistently_flat_rate:.1%} | {'PASS' if r.passed else 'FAIL'}", flush=True)
+
+    torch.manual_seed(0)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    delta = audit_permutation_invariance(model)
+    print(f"  permutation invariance   max delta {delta:.2e}", flush=True)
+
+    payload = run_pretraining_audit(results, delta)     # raises on any failure
+    payload["identity"] = audit_identity(cfg)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(payload, indent=2))
+    return payload
+
+
+def require_candidate_audit(cfg, audit_path: Path) -> dict:
+    """Training refuses to start without a PASS collected under THIS code,
+    config and scene registry."""
+    if not audit_path.exists():
+        raise IntentCLIError(
+            f"no candidate audit at {audit_path}. Run:\n"
+            f"  python -m crowd_nav.bayesian_dvl.intent_train_cli audit-candidates --out {audit_path}\n"
+            "Training is refused without one: the last run reached a 10,500-episode paper test with a "
+            "candidate model that did not describe 80% of its pedestrians.")
+    payload = json.loads(audit_path.read_text())
+    if not payload.get("passed"):
+        raise IntentCLIError(
+            f"candidate audit at {audit_path} FAILED:\n  - " + "\n  - ".join(payload.get("failures", [])))
+    want, got = audit_identity(cfg), payload.get("identity", {})
+    drift = sorted(k for k in want if want[k] != got.get(k))
+    if drift:
+        raise IntentCLIError(
+            f"candidate audit at {audit_path} was collected under different {drift}; it does not certify "
+            "this configuration. Re-run audit-candidates.")
+    return payload
+
+
+def cmd_audit_candidates(args) -> int:
+    cfg = load_intent_training_config(args.config)
+    out = Path(args.out)
+    print("=== pre-training candidate audit ===", flush=True)
+    try:
+        run_candidate_audit(cfg, args.env_config, out, n_episodes=args.episodes)
+    except Exception as exc:      # CandidateAuditError, and anything the scene raises
+        print(f"AUDIT FAILED -- training must not start:\n{exc}", flush=True)
+        return 2
+    print(f"audit PASSED -> {out}", flush=True)
+    return 0
+
 def cmd_preflight(args) -> int:
     cfg = load_intent_training_config(args.config)
     grid = ActionGridSpec.from_env_config(str(args.env_config))
@@ -779,6 +895,7 @@ def cmd_preflight(args) -> int:
     print(f"code hash         : {code_sha256()}")
     print(f"action grid       : {len(table)} actions, hash {grid.table_hash()}")
     print(f"scene registry    : {scene_hash}")
+    print(f"scenario registry : {cfg.scenario_registry_id}")
     print(f"feature schema    : {cfg.feature_schema}")
     print(f"training contract : {cfg.training_contract_schema}")
     print(f"checkpoint schema : {cfg.checkpoint_schema}")
@@ -886,6 +1003,12 @@ def cmd_train(args, resume: bool = False) -> int:
     action_table = np.asarray(grid.build_action_table(), dtype=np.float64)
     action_grid_hash = grid.table_hash()
     scene_hash = scene_registry_sha256(cfg)
+
+    # Gap found by review: candidate_audit.py and its tests existed but the
+    # production path never called them, so a failing audit did not stop
+    # training. It does now.
+    require_candidate_audit(cfg, Path(args.candidate_audit))
+    print(f"candidate audit OK ({args.candidate_audit})")
 
     seed = args.seed if args.seed is not None else cfg.training_seeds[0]
     if seed not in cfg.training_seeds:
@@ -1548,6 +1671,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--device", type=str, default="cpu", help="'cpu' or 'cuda[:N]'; cuda fails closed if unavailable")
     sub = p.add_subparsers(dest="cmd", required=True)
 
+    ac = sub.add_parser("audit-candidates",
+                        help="run the pre-training candidate audit and write its artifact")
+    ac.add_argument("--out", type=Path, default=Path("runs/candidate_audit.json"))
+    ac.add_argument("--episodes", type=int, default=40)
+    ac.set_defaults(func=cmd_audit_candidates)
+
     pf = sub.add_parser("preflight")
     pf.add_argument("--run-dir", type=Path, default=None)
     # A5-fix: two DIFFERENT numbers. --concurrent-runs drives the gate (what
@@ -1566,6 +1695,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     for name in ("train", "resume"):
         t = sub.add_parser(name)
+        t.add_argument("--candidate-audit", type=Path, default=Path("runs/candidate_audit.json"),
+                       help="PASS artifact from audit-candidates, matching this code/config/scene")
         t.add_argument("--run-dir", type=Path, required=True)
         t.add_argument("--target-online-episodes", type=int, default=None,
                        help="TOTAL target, not 'run N more'")
@@ -1611,6 +1742,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        if args.cmd == "audit-candidates":
+            return cmd_audit_candidates(args)
         if args.cmd == "preflight":
             return cmd_preflight(args)
         if args.cmd == "train":

@@ -8,7 +8,7 @@ iqn, model -- NONE of belief.py / rollout.py / world_model.py / counterfactual.p
 what "final train/inference entry must not import the old branches" means
 at the actual Python import-graph level, not just "doesn't call it".
 
-Human feature layout (FEATURE_SCHEMA_V6, HUMAN_FEATURE_DIM_V6 = 61 dims).
+Human feature layout (FEATURE_SCHEMA_V6, HUMAN_FEATURE_DIM_V6 = 62 dims).
 V5 handed the network a bare p0..p7 vector whose slots were POSITIONAL;
 measured on the held-out junction crowd, p0 meant "left exit" for 412
 humans and "right exit" for 68 others, and no coordinates were supplied to
@@ -21,10 +21,13 @@ the set, so candidate ORDER cannot affect the output.
   [9]                top1-minus-top2 probability margin
   [10:12]            posterior-future mean position delta vs CV, normalized
   [12]               posterior-future position spread, normalized
-  [13 : 13+G*F]      G candidates x F features, row-major:
+  [13]               candidate count / MAX_CANDIDATE_GOALS (public cardinality;
+                     identical across arms, and NOT recoverable from the
+                     pooled candidate embedding when the block is zeroed)
+  [14 : 14+G*F]      G candidates x F features, row-major:
                        probability, endpoint relative to the human (dx,dy),
                        next waypoint relative to the human (dx,dy)
-  [13+G*F : 13+G*F+G]  per-candidate validity mask
+  [14+G*F : 14+G*F+G]  per-candidate validity mask
 where G = MAX_CANDIDATE_GOALS = 8 and F = CANDIDATE_FEATURE_DIM = 5.
 
 set_encoder.SetEncoder is the ONLY place that unpacks this; it is one
@@ -87,14 +90,17 @@ def _candidate_block(
     all zeros but their VALIDITY MASK is still set, exactly as in v5: the
     number of public destinations is public scene geometry, not posterior
     information, and every arm has always been allowed to know it. What they
-    must not see is which candidate is which or how likely it is -- and with
-    an all-zero block the pooled candidate embedding is a function of
-    cardinality alone.
+    must not see is which candidate is which or how likely it is.
 
-    Giving them the coordinates while zeroing only the probabilities would
-    quietly widen what those arms can see and stop the ablation measuring
-    what it claims to; zeroing the mask as well would instead take away a
-    public fact they used to have. Neither is the frozen definition.
+    The COUNT itself is carried by a scalar in the row, not by this mask.
+    Pooling identical all-zero candidate rows gives the same vector for two
+    valid candidates as for four, so an all-zero block plus a mask conveys
+    nothing about cardinality -- the mask only stops padding rows from
+    entering the pool.
+
+    Giving these arms the coordinates while zeroing only the probabilities
+    would quietly widen what they can see and stop the ablation measuring
+    what it claims to.
     """
     feats = np.zeros((MAX_CANDIDATE_GOALS, CANDIDATE_FEATURE_DIM), dtype=np.float32)
     mask = np.zeros(MAX_CANDIDATE_GOALS, dtype=np.float32)
@@ -154,12 +160,19 @@ def _intent_human_feature_vector(
     spread_scale = max(NORMALIZATION_CONSTANTS["max_human_speed"] ** 2, 1e-6)
     norm_spread = float(np.clip(future_spread / spread_scale, 0.0, 4.0))
 
+    # Candidate CARDINALITY as an explicit scalar. It is public scene
+    # geometry (how many destinations exist), identical across all four arms,
+    # and it cannot be recovered from the pooled candidate embedding when the
+    # block is all zeros -- see HUMAN_SCALAR_DIM_V6.
+    norm_count = float(n) / float(MAX_CANDIDATE_GOALS)
+
     # V6 packed row: scalars, then the candidate block, then its mask.
     return np.concatenate([
         np.array([dx, dy, rel_vx, rel_vy, radius, speed, ttc], dtype=np.float32),
         np.array([norm_age], dtype=np.float32),
         np.array([norm_entropy, top1_margin], dtype=np.float32),
         np.array([fdx, fdy, norm_spread], dtype=np.float32),
+        np.array([norm_count], dtype=np.float32),
         cand_feats.reshape(-1), cand_mask,
     ])
 

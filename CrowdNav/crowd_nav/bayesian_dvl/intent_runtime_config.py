@@ -129,7 +129,7 @@ FEATURE_SCHEMA_V5 = "bdvl_z_state_goal_intent_v5"
 # The row stays ONE packed vector so replay storage, batching and every call
 # site keep their [B, N, D] shapes; set_encoder.SetEncoder is the single
 # place that knows the layout:
-#   [0 : S]                       scalar block (S = HUMAN_SCALAR_DIM_V6)
+#   [0 : S]                       scalar block (S = HUMAN_SCALAR_DIM_V6, incl. candidate count)
 #   [S : S + G*F]                 G candidates x F features, row-major
 #   [S + G*F : S + G*F + G]       per-candidate validity mask
 # Checkpoint-incompatible with v5 by dimensionality, and must fail closed.
@@ -168,8 +168,16 @@ TRACKER_DEFAULTS = {
 CANDIDATE_FEATURE_DIM = 5
 # scalar block: rel dx, dy, rel vx, vy, radius, speed, ttc (7) + track_age
 # + normalized entropy + top1 margin + posterior-future mean delta (2)
-# + posterior-future spread
-HUMAN_SCALAR_DIM_V6 = 13
+# + posterior-future spread + normalized candidate COUNT
+#
+# The count is a scalar and not merely implied by the validity mask. An
+# earlier version of this fix claimed the mask carried it, which was wrong:
+# the candidate encoder pools with masked mean/max, and pooling identical
+# all-zero candidate rows gives the SAME vector whether two or four of them
+# are valid. So the mean/cv arms -- whose block is all zeros by definition --
+# could not see how many public destinations existed, a public fact they had
+# in v5. test_candidate_count_reaches_the_network pins it.
+HUMAN_SCALAR_DIM_V6 = 14
 HUMAN_FEATURE_DIM_V6 = (HUMAN_SCALAR_DIM_V6 + MAX_CANDIDATE_GOALS * CANDIDATE_FEATURE_DIM
                         + MAX_CANDIDATE_GOALS)   # = 61
 

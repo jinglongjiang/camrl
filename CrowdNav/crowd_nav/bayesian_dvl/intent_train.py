@@ -1510,8 +1510,14 @@ STANDARD_DEV_DIAGNOSTIC_SEEDS: Tuple[int, ...] = tuple(range(97401, 97501))  # 1
 #
 # Never used for training (rejected by _assert_not_formal_seed), never used
 # for the paper's formal/Test8 numbers.
-STANDARD_SELECTION_DEV_SEEDS: Tuple[int, ...] = tuple(range(97501, 97601))  # 100
-JUNCTION_SELECTION_DEV_SEEDS: Tuple[int, ...] = tuple(range(97601, 97701))  # 100
+STANDARD_SELECTION_DEV_SEEDS: Tuple[int, ...] = tuple(range(2_900_000, 2_900_100))  # 100 (V2)
+# V2: junction selection-dev now lives in junction_scenario.py beside the
+# other junction blocks, so a block can never again be wired into the
+# inventory without also being wired into the scenario's allowlist.
+from crowd_nav.bayesian_dvl.junction_scenario import (  # noqa: E402
+    JUNCTION_CROWD_SELECTION_DEV_SEEDS as JUNCTION_SELECTION_DEV_SEEDS,
+    JUNCTION_CROWD_PAPER_TEST_SEEDS,
+)
 
 # C4RF.5: the PAPER-MAIN protocol. To be comparable episode-for-episode
 # with Mamba-VL / SARL / LSTM (which are scored through test8.py) the

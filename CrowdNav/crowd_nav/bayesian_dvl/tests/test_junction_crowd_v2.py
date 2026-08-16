@@ -285,3 +285,65 @@ def test_mean_and_cv_get_a_valid_mask_but_an_empty_candidate_block():
         assert np.all(out[mode][0] == 0.0), f"{mode} must not see any candidate probability or geometry"
         assert np.array_equal(out[mode][1], out["full"][1]), (
             f"{mode}'s validity mask must match full's -- cardinality is public")
+
+
+def test_candidate_count_reaches_the_network():
+    """The gap this test exists for: an earlier version claimed the validity
+    mask carried candidate cardinality to the mean/cv arms. It does not.
+    Masked mean/max pooling over IDENTICAL all-zero candidate rows returns
+    the same vector whether two or four are valid, so without an explicit
+    count scalar those arms could not see how many public destinations
+    existed -- a public fact they had in v5."""
+    torch.manual_seed(0)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model.eval()
+    robot, action = torch.zeros(1, 7), torch.zeros(1, 5)
+    tau = torch.linspace(0.05, 0.95, 8)[None]
+    hmask = torch.ones(1, 1, dtype=torch.bool)
+
+    def row_for(n_cand):
+        # exactly the mean/cv arm's shape: zeroed candidate block, valid mask
+        row = np.zeros(HUMAN_FEATURE_DIM_V5, dtype=np.float32)
+        row[HUMAN_SCALAR_DIM_V6 - 1] = n_cand / MAX_CANDIDATE_GOALS
+        _c, mask = _packed(row)
+        mask[:n_cand] = 1.0
+        return torch.as_tensor(row[None, None, :])
+
+    with torch.no_grad():
+        two, four = model(robot, row_for(2), hmask, action, tau), model(robot, row_for(4), hmask, action, tau)
+    assert not torch.allclose(two, four, atol=1e-6), (
+        "2 and 4 public destinations must be distinguishable even when the candidate block is zeroed")
+
+    # and the count must be the ONLY thing carrying it: blank the scalar and
+    # the two become identical again, which is the bug this guards.
+    def row_without_count(n_cand):
+        row = np.zeros(HUMAN_FEATURE_DIM_V5, dtype=np.float32)
+        _c, mask = _packed(row)
+        mask[:n_cand] = 1.0
+        return torch.as_tensor(row[None, None, :])
+
+    with torch.no_grad():
+        a = model(robot, row_without_count(2), hmask, action, tau)
+        b = model(robot, row_without_count(4), hmask, action, tau)
+    assert torch.allclose(a, b, atol=1e-7), (
+        "precondition: with the count scalar blanked, the mask alone conveys nothing about cardinality")
+
+
+def test_all_arms_report_the_same_candidate_count():
+    """Cardinality is public geometry, so it must be identical across arms --
+    it is not part of what the ablation withholds."""
+    scene = public_junction_crowd_scene(is_heldout=True)
+    bank = IntentBeliefBank(make_candidate_fn(scene), dt=FROZEN_VALUES["dt"],
+                            speed=TRACKER_DEFAULTS["speed_prior"])
+    for k in range(6):
+        bank.update({0: (2.0, 4.0 - 0.2 * k)})       # outside the corridor -> 4 crossing candidates
+    robot = RobotObservation(px=0.0, py=0.5, gx=0.0, gy=5.0, vx=0.0, vy=0.5,
+                             radius=0.3, v_pref=1.0, theta=np.pi / 2)
+    humans = [HumanObservation(0, 2.0, 2.9, 0.0, -0.8, 0.3)]
+    counts = {}
+    for mode in ("full", "mean", "cv", "uniform"):
+        f, _m = build_intent_human_feature_batch(
+            bank, robot, humans, mode=mode, rng=np.random.default_rng(0), n_samples=32)
+        counts[mode] = float(f[0][HUMAN_SCALAR_DIM_V6 - 1])
+    assert len(set(counts.values())) == 1, f"arms disagree on public candidate count: {counts}"
+    assert counts["full"] == pytest.approx(CROSSING_BAND_N / MAX_CANDIDATE_GOALS)

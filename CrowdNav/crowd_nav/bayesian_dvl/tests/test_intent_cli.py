@@ -30,9 +30,9 @@ def test_c2_formal_config_is_the_single_source_of_truth() -> None:
     assert abs(cfg.gamma - 0.99) < 1e-12
     assert (cfg.epsilon_start, cfg.epsilon_end) == (0.30, 0.05)
     assert cfg.updates_per_episode == 1
-    # lambda_rank must NOT be the unproven 0.5 the audit rejected
-    assert cfg.lambda_rank != 0.5
-    assert cfg.lambda_rank > 100, "lambda_rank must come from the gradient-scale audit"
+    assert not hasattr(cfg, 'lambda_rank'), (
+        'lambda_rank is retired: gradients are combined by projection with rank_share, so a '
+        'scalar weight here would be hashed into provenance and never used')
     # C4R: the stability + mixing settings must be present and usable
     assert 0.0 < cfg.demo_sample_ratio < 1.0
     assert cfg.demo_capacity > 0 and cfg.ranking_batch_size <= cfg.batch_size
@@ -68,16 +68,16 @@ def test_c2_config_validation_fails_closed() -> None:
             ("mix not summing to 1", lambda c: c.set("online", "mix_standard", "0.9")),
             ("gamma out of range", lambda c: c.set("optim", "gamma", "1.5")),
             ("epsilon_end > start", lambda c: c.set("exploration", "epsilon_end", "0.9")),
-            ("negative lambda_rank", lambda c: c.set("ranking", "lambda_rank", "-1")),
+            ("retired lambda_rank present at all", lambda c: c.set("ranking", "lambda_rank", "380")),
             ("ema_decay >= 1", lambda c: c.set("ema", "ema_decay", "1.0")),
             ("wrong feature schema", lambda c: c.set("schema", "feature_schema", "bogus_v9")),
             ("wrong training contract", lambda c: c.set("schema", "training_contract_schema", "bogus")),
             ("wrong checkpoint schema", lambda c: c.set("schema", "checkpoint_schema", "bogus")),
-            ("duplicate training seed", lambda c: c.set("seeds", "training_seeds", "97201, 97201")),
+            ("duplicate training seed", lambda c: c.set("seeds", "training_seeds", "98201, 98201")),
             ("training seed steals a formal eval seed",
              lambda c: c.set("seeds", "training_seeds", "97001, 97202")),
             ("training seed steals a crowd-heldout seed",
-             lambda c: c.set("seeds", "training_seeds", "96901, 97202")),
+             lambda c: c.set("seeds", "training_seeds", "2010000, 98202")),
             ("zero batch size", lambda c: c.set("optim", "batch_size", "0")),
             ("demo_sample_ratio out of range", lambda c: c.set("optim", "demo_sample_ratio", "1.5")),
             ("ranking_batch_size exceeds batch", lambda c: c.set("ranking", "ranking_batch_size", "99999")),
@@ -249,7 +249,34 @@ def test_c2_vectorized_ranking_matches_the_per_sample_loop() -> None:
     assert abs(got.rank_loss - ref_rank) < 1e-6, (got.rank_loss, ref_rank)
 
 
+_AUDIT_ARTIFACT = REPO_ROOT / "runs" / "candidate_audit.json"
+
+
+def _ensure_candidate_audit():
+    """train/resume refuse to start without a PASSING audit collected under
+    the current code/config/scene. Produce a REAL one once per session --
+    never a stub, because a stub would also disable the gate for every test
+    that relies on it."""
+    if _AUDIT_ARTIFACT.exists():
+        import json
+        try:
+            payload = json.loads(_AUDIT_ARTIFACT.read_text())
+        except ValueError:
+            payload = {}
+        from crowd_nav.bayesian_dvl.intent_train_cli import audit_identity
+        from crowd_nav.bayesian_dvl.intent_config import load_intent_training_config
+        if payload.get("passed") and payload.get("identity") == audit_identity(load_intent_training_config()):
+            return
+    r = subprocess.run(
+        [_sys.executable, "-m", "crowd_nav.bayesian_dvl.intent_train_cli",
+         "audit-candidates", "--out", str(_AUDIT_ARTIFACT), "--episodes", "8"],
+        cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=900)
+    assert r.returncode == 0, f"the candidate audit itself failed:\n{r.stdout}\n{r.stderr}"
+
+
 def _cli(*argv, expect_ok=True):
+    if argv and argv[0] in ("train", "resume"):
+        _ensure_candidate_audit()
     cmd = [_sys.executable, "-m", "crowd_nav.bayesian_dvl.intent_train_cli", *argv]
     r = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=900)
     if expect_ok:
@@ -270,7 +297,7 @@ def test_c2_cli_resume_is_a_total_target_and_bit_identical_to_continuous() -> No
     # already-finished run must do nothing rather than run N more.
     with tempfile.TemporaryDirectory() as d:
         a, b = Path(d) / "runA", Path(d) / "runB"
-        common = ["--il-episodes", "2", "--audit-episodes", "1", "--il-passes", "3", "--seed", "97201",
+        common = ["--il-episodes", "2", "--audit-episodes", "1", "--il-passes", "3", "--seed", "98201",
                   "--il-corpus-dir", str(Path(d) / "corpus"), "--keep-resume"]
         _cli("train", "--run-dir", str(a), "--target-online-episodes", "4", *common)
         _cli("train", "--run-dir", str(b), "--target-online-episodes", "2", *common)
@@ -320,7 +347,7 @@ def test_c2_final_ema_artifact_holds_ema_weights_not_raw() -> None:
     with tempfile.TemporaryDirectory() as d:
         run = Path(d) / "run"
         _cli("train", "--run-dir", str(run), "--target-online-episodes", "2",
-             "--il-episodes", "2", "--audit-episodes", "1", "--il-passes", "3", "--seed", "97201", "--keep-resume")
+             "--il-episodes", "2", "--audit-episodes", "1", "--il-passes", "3", "--seed", "98201", "--keep-resume")
         assert (run / "final_ema.pth").exists() and (run / "run_state.json").exists()
         from crowd_nav.bayesian_dvl.intent_train_cli import _resume_path
         raw = torch.load(str(_resume_path(run)), map_location="cpu", weights_only=False)
@@ -341,7 +368,7 @@ def test_c2_pilot_runs_are_marked_so_they_cannot_pass_as_formal() -> None:
     with tempfile.TemporaryDirectory() as d:
         run = Path(d) / "run"
         r = _cli("train", "--run-dir", str(run), "--target-online-episodes", "2",
-                 "--il-episodes", "2", "--audit-episodes", "1", "--il-passes", "3", "--seed", "97201")
+                 "--il-episodes", "2", "--audit-episodes", "1", "--il-passes", "3", "--seed", "98201")
         assert "PILOT RUN" in r.stdout
         state = json.loads((run / "run_state.json").read_text())
         assert state["is_pilot"] is True
@@ -823,7 +850,7 @@ def test_a1_single_atomic_resume_no_slots() -> None:
     with tempfile.TemporaryDirectory() as d:
         run = Path(d) / "run"
         _cli("train", "--run-dir", str(run), "--target-online-episodes", "2",
-             "--il-episodes", "2", "--audit-episodes", "1", "--il-passes", "3", "--seed", "97201",
+             "--il-episodes", "2", "--audit-episodes", "1", "--il-passes", "3", "--seed", "98201",
              "--il-corpus-dir", str(Path(d) / "corpus"), "--keep-resume")
         big = sorted(p.name for p in run.glob("*.pth") if p.stat().st_size > 500_000)
         assert big == [RESUME_NAME], f"exactly one full resume expected, got {big}"
@@ -865,7 +892,7 @@ def test_a3_one_raw_corpus_serves_every_arm() -> None:
     env_config_path = _env_config_path()
     action_table = np.asarray(
         ActionGridSpec.from_env_config(str(env_config_path)).build_action_table(), dtype=np.float64)
-    for scenario, seed in (("standard", 700001), ("junction_crowd", 1_100_000)):
+    for scenario, seed in (("standard", 2_600_000), ("junction_crowd", 2_100_000)):
         reference = collect_orca_episode(env_config_path, scenario, seed, belief_mode="full").transitions
         raw = collect_raw_orca_episode(env_config_path, scenario, seed)
         assert len(raw.steps) == len(reference)
@@ -924,7 +951,7 @@ def test_a4_resume_is_reclaimed_only_after_final_ema_verifies() -> None:
     with tempfile.TemporaryDirectory() as d:
         run = Path(d) / "run"
         r = _cli("train", "--run-dir", str(run), "--target-online-episodes", "2",
-                 "--il-episodes", "2", "--audit-episodes", "1", "--il-passes", "3", "--seed", "97201",
+                 "--il-episodes", "2", "--audit-episodes", "1", "--il-passes", "3", "--seed", "98201",
                  "--il-corpus-dir", str(Path(d) / "corpus"))
         assert "final_ema verified" in r.stdout
         assert "run incomplete" in r.stdout, "a partial run must keep its resume"
@@ -1071,8 +1098,8 @@ def test_order5_selection_dev_seed_blocks_are_frozen_and_separate_from_diagnosis
     )
     from crowd_nav.bayesian_dvl.intent_train_cli import seed_inventory
 
-    assert (min(STANDARD_SELECTION_DEV_SEEDS), max(STANDARD_SELECTION_DEV_SEEDS)) == (97501, 97600)
-    assert (min(JUNCTION_SELECTION_DEV_SEEDS), max(JUNCTION_SELECTION_DEV_SEEDS)) == (97601, 97700)
+    assert (min(STANDARD_SELECTION_DEV_SEEDS), max(STANDARD_SELECTION_DEV_SEEDS)) == (2_900_000, 2_900_099)
+    assert (min(JUNCTION_SELECTION_DEV_SEEDS), max(JUNCTION_SELECTION_DEV_SEEDS)) == (2_400_000, 2_400_099)
     assert len(STANDARD_SELECTION_DEV_SEEDS) == len(JUNCTION_SELECTION_DEV_SEEDS) == 100
 
     sel_s, sel_j = set(STANDARD_SELECTION_DEV_SEEDS), set(JUNCTION_SELECTION_DEV_SEEDS)
@@ -1089,7 +1116,7 @@ def test_order5_selection_dev_seed_blocks_are_frozen_and_separate_from_diagnosis
     assert inv["ok"], inv["overlaps"]
 
     # never trainable, and never the paper's formal seeds
-    for seed in (97501, 97600, 97601, 97700):
+    for seed in (2_900_000, 2_900_099, 2_400_000, 2_400_099):
         try:
             _assert_not_formal_seed(seed)
             assert False, f"training must reject selection-dev seed {seed}"
@@ -1124,7 +1151,7 @@ def test_order2w_audit_episodes_are_held_out_of_replay_entirely() -> None:
         # 12 episodes with 2 audit episodes per scenario -> 8 train / 4 audit
         r = _cli("train", "--run-dir", str(run), "--target-online-episodes", "1",
                  "--il-episodes", "12", "--audit-episodes", "2", "--warmup-steps", "0",
-                 "--il-passes", "2", "--seed", "97201",
+                 "--il-passes", "2", "--seed", "98201",
                  "--il-corpus-dir", str(Path(d) / "corpus"), "--keep-resume")
         assert "split BY EPISODE" in r.stdout, r.stdout[-3000:]
         assert "audit rows never enter replay" in r.stdout
@@ -1183,10 +1210,10 @@ def test_order5w_formal_plan_pairs_the_three_arms_on_the_same_seeds() -> None:
     assert FORMAL_ARMS == ("full", "mean", "cv")
 
     cfg = load_intent_training_config(DEFAULT_TRAINING_CONFIG)
-    plan = build_formal_plan([97201, 97202], code_sha256(), cfg.content_hash(),
+    plan = build_formal_plan([98201, 98202], code_sha256(), cfg.content_hash(),
                              cfg.corpus_identity_hash(), 5000, 10000)
     assert len(plan["runs"]) == 6                       # 3 arms x 2 seeds
-    assert {r["seed"] for r in plan["runs"]} == {97201, 97202}
+    assert {r["seed"] for r in plan["runs"]} == {98201, 98202}
     for seed in plan["seeds"]:
         assert {r["arm"] for r in plan["runs"] if r["seed"] == seed} == set(FORMAL_ARMS)
 
@@ -1194,7 +1221,7 @@ def test_order5w_formal_plan_pairs_the_three_arms_on_the_same_seeds() -> None:
         pf = Path(d) / "plan.json"
         pf.write_text(json.dumps(plan))
         # a full-budget run without a plan must be refused outright
-        r = _cli("train", "--run-dir", str(Path(d) / "r1"), "--seed", "97201", expect_ok=False)
+        r = _cli("train", "--run-dir", str(Path(d) / "r1"), "--seed", "98201", expect_ok=False)
         assert r.returncode != 0 and "--formal-plan" in r.stderr
         # a seed outside the plan must be refused even WITH a plan
         r2 = _cli("train", "--run-dir", str(Path(d) / "r2"), "--seed", "97203",

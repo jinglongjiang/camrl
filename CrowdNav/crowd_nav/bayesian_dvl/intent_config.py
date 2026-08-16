@@ -60,7 +60,6 @@ class IntentTrainingConfig:
     epsilon_decay_episodes: int
     # [ranking]
     ranking_margin: float
-    lambda_rank: float
     ranking_batch_size: int
     gradient_diagnostic_interval: int
     # [iqn]
@@ -172,6 +171,18 @@ def load_intent_training_config(path: Path = DEFAULT_TRAINING_CONFIG) -> IntentT
     parser = configparser.RawConfigParser(inline_comment_prefixes=(";", "#"), strict=False)
     if not parser.read(str(path)):
         raise IntentConfigError(f"training config not found: {path}")
+    # RETIRED keys: present in the file means the config is describing a
+    # training procedure the code no longer runs. lambda_rank was a scalar
+    # weight on the ranking term; gradients are now combined by projection
+    # with rank_share, so a value here would be hashed into provenance and
+    # take no part in training -- the same provenance lie as the tracker
+    # knobs that were declared and never passed.
+    for section, key, why in (("ranking", "lambda_rank",
+                               "retired: gradients are combined by projection with rank_share, "
+                               "not by a scalar weight"),):
+        if parser.has_option(section, key):
+            raise IntentConfigError(f"config declares [{section}] {key}, which is {why}; remove it")
+
     for section in ("schema", "il", "online", "optim", "exploration", "ranking", "iqn", "belief", "ema",
                     "checkpoint", "monitoring", "seeds"):
         if not parser.has_section(section):
@@ -202,7 +213,6 @@ def load_intent_training_config(path: Path = DEFAULT_TRAINING_CONFIG) -> IntentT
         epsilon_end=gf("exploration", "epsilon_end"),
         epsilon_decay_episodes=gi("exploration", "epsilon_decay_episodes"),
         ranking_margin=gf("ranking", "ranking_margin"),
-        lambda_rank=gf("ranking", "lambda_rank"),
         ranking_batch_size=gi("ranking", "ranking_batch_size"),
         gradient_diagnostic_interval=gi("ranking", "gradient_diagnostic_interval"),
         iqn_train_quantiles=gi("iqn", "iqn_train_quantiles"),
@@ -267,6 +277,12 @@ def _validate(cfg: IntentTrainingConfig) -> None:
     # uses. These were previously hashed into provenance and then ignored,
     # because the bank was constructed without passing them; they matched the
     # defaults, so the gap was invisible. Fail closed instead.
+    from crowd_nav.bayesian_dvl.junction_scenario import SCENARIO_REGISTRY_ID
+    if cfg.scenario_registry_id != SCENARIO_REGISTRY_ID:
+        raise IntentConfigError(
+            f"config scenario_registry_id {cfg.scenario_registry_id!r} != code's {SCENARIO_REGISTRY_ID!r}. "
+            "Nothing compared these before, so a V1 config passed preflight against V2 code -- the exact "
+            "way two different environments get recorded as one.")
     from crowd_nav.bayesian_dvl.intent_runtime_config import TRACKER_DEFAULTS
     for cfg_name, code_name in (
         ("tracker_sigma", "sigma"), ("tracker_persistence", "persistence"),
@@ -308,7 +324,7 @@ def _validate(cfg: IntentTrainingConfig) -> None:
         if v <= 0:
             raise IntentConfigError(f"{name} must be positive, got {v}")
     for name, v in (("learning_rate", cfg.learning_rate), ("grad_clip_norm", cfg.grad_clip_norm),
-                    ("lambda_rank", cfg.lambda_rank), ("ranking_margin", cfg.ranking_margin),
+                    ("ranking_margin", cfg.ranking_margin),
                     ("tracker_sigma", cfg.tracker_sigma), ("tracker_waypoint_radius", cfg.tracker_waypoint_radius)):
         if not v > 0:
             raise IntentConfigError(f"{name} must be positive, got {v}")
