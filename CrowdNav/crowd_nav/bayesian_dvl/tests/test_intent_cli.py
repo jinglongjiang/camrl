@@ -13,7 +13,7 @@ from crowd_nav.bayesian_dvl.intent_config import (
 )
 from crowd_nav.bayesian_dvl.intent_train_cli import (
     RunState, code_sha256, il_episode_plan, online_episode_at, resolve_device, scene_registry_sha256,
-    IntentCLIError, _assert_not_formal_seed,
+    IntentCLIError, _assert_not_formal_seed, _select_il_audit_rows,
 )
 
 
@@ -1197,6 +1197,31 @@ def test_order2w_audit_episodes_are_held_out_of_replay_entirely() -> None:
             # identity is content-based, so an audit score can never be
             # compared against a different row set
             assert il_audit_identity(audit_rows) != il_audit_identity(train_rows[:len(audit_rows)])
+
+
+def test_order4_production_audit_selector_is_fixed_512_and_balanced() -> None:
+    """The production selector must not silently score every held-out row.
+
+    The previous wiring passed all 4k+ held-out rows directly to the health
+    gate even though the frozen contract is 256 rows per scenario.
+    """
+    rows = [object() for _ in range(700)]
+    labels = ["standard"] * 350 + ["junction_crowd"] * 350
+    selected = _select_il_audit_rows(rows, labels, is_pilot=False)
+    assert len(selected) == 512
+    assert len({id(x) for x in selected}) == 512
+    assert set(selected) <= set(rows)
+
+    # A tiny pilot remains usable, but a formal run must fail closed when the
+    # frozen per-scenario minimum cannot be formed.
+    tiny_rows = [object() for _ in range(10)]
+    tiny_labels = ["standard"] * 5 + ["junction_crowd"] * 5
+    assert _select_il_audit_rows(tiny_rows, tiny_labels, is_pilot=True) == tiny_rows
+    try:
+        _select_il_audit_rows(tiny_rows, tiny_labels, is_pilot=False)
+        assert False, "formal run must reject an undersized fixed audit set"
+    except IntentCLIError:
+        pass
 
 
 def test_order5w_formal_plan_pairs_the_three_arms_on_the_same_seeds() -> None:

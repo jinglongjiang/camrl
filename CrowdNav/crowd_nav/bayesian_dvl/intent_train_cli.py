@@ -62,7 +62,8 @@ from crowd_nav.bayesian_dvl.intent_train import (
     FORMAL_EVAL_HELDOUT_SEEDS, FORMAL_SIX_SCENARIOS, PAPER_MAIN_BASE_SEED,
     STANDARD_DEV_DIAGNOSTIC_SEEDS, STANDARD_SELECTION_DEV_SEEDS, JUNCTION_SELECTION_DEV_SEEDS,
     PAPER_MAIN_EPISODES_PER_SCENARIO, EMAModel,
-    IntentReplay, paper_main_jobs, IL_AUDIT_PER_SCENARIO, build_il_audit_set,
+    IntentReplay, paper_main_jobs, IL_AUDIT_SET_SIZE, IL_AUDIT_PER_SCENARIO,
+    build_il_audit_set,
     il_audit_identity, evaluate_il_audit, TrainingHealthMonitor, run_ranking_warmup,
     expert_rank_diagnostics, select_checkpoint, build_formal_plan, assert_in_formal_plan,
     FORMAL_ARMS,
@@ -89,6 +90,38 @@ class IntentCLIError(RuntimeError):
     pass
 
 
+def _select_il_audit_rows(audit_rows, scenario_labels, *, is_pilot: bool):
+    """Select the fixed, balanced IL audit rows used by the health gate.
+
+    The episode split establishes independence from replay. This second,
+    deterministic selection establishes the fixed-size audit contract:
+    256 rows per scenario, 512 total. Tiny engineering pilots may have too
+    few held-out rows; they retain the small-pilot behavior, while a formal
+    run fails closed instead of silently changing the audit definition.
+    """
+    if len(audit_rows) != len(scenario_labels):
+        raise IntentCLIError(
+            f"IL audit row/label length mismatch: {len(audit_rows)} != {len(scenario_labels)}")
+    counts = Counter(str(sc) for sc in scenario_labels)
+    if len(counts) < 2:
+        raise IntentCLIError(f"IL audit set needs both scenarios, got {sorted(counts)}")
+    if any(n < IL_AUDIT_PER_SCENARIO for n in counts.values()):
+        if not is_pilot:
+            raise IntentCLIError(
+                "formal run cannot build the frozen 512-row IL audit set: "
+                f"rows per scenario are {dict(sorted(counts.items()))}, "
+                f"need at least {IL_AUDIT_PER_SCENARIO} each")
+        return list(audit_rows)
+
+    labels_by_id = {id(t): str(sc) for t, sc in zip(audit_rows, scenario_labels)}
+    selected = build_il_audit_set(
+        audit_rows, lambda t: labels_by_id[id(t)], n_per_scenario=IL_AUDIT_PER_SCENARIO)
+    if len(selected) != IL_AUDIT_SET_SIZE:
+        raise IntentCLIError(
+            f"IL audit selector produced {len(selected)} rows, expected {IL_AUDIT_SET_SIZE}")
+    return selected
+
+
 DEFAULT_ENV_CONFIG = Path("crowd_nav/configs/env_bayesian_dvl.config")
 IL_CORPUS_SCHEMA = "bdvl_intent_raw_il_corpus_v2"  # A3: arm-INDEPENDENT raw episodes
 # The formal raw corpus was collected immediately before materialization
@@ -97,6 +130,9 @@ IL_CORPUS_SCHEMA = "bdvl_intent_raw_il_corpus_v2"  # A3: arm-INDEPENDENT raw epi
 # main-chain hash is accepted.
 COMPATIBLE_RAW_IL_CORPUS_CODE_HASHES = frozenset({
     "129fc80c7897ed3a448652b08dbebc2e7cf5df39136db267fc9c1a306da8874c",
+    # The 2026-08-17 audit-wiring fix only changes which already-materialized
+    # held-out rows are scored; it cannot change raw ORCA transitions.
+    "e7c5a081b078fe45bf831a02b59eaee6208ad8f1d25fc00c34ca1736f1fe8922",
 })
 # V2 blocks. The V1 bases (700_001 / 800_001) are retired along with every
 # other V1 block: the standard scenario's candidate SEMANTICS changed too
@@ -1377,18 +1413,27 @@ def cmd_train(args, resume: bool = False) -> int:
                   f"need > {n_audit_eps}")
             audit_eps = set()
         if audit_eps:
-            train_rows, audit_rows = [], []
-            for t, ep in zip(demo_transitions, episode_of_row):
-                (audit_rows if ep in audit_eps else train_rows).append(t)
+            train_rows, audit_rows, audit_labels = [], [], []
+            for t, ep, sc in zip(demo_transitions, episode_of_row, scenario_rows):
+                if ep in audit_eps:
+                    audit_rows.append(t)
+                    audit_labels.append(str(sc))
+                else:
+                    train_rows.append(t)
             # HARD invariant: not one audit row may reach the replay.
             train_ids = {id(t) for t in train_rows}
             assert not any(id(t) in train_ids for t in audit_rows)
             art.buffer.add_demo(train_rows, art.reservoir_rng)
-            audit_set = audit_rows
+            audit_set = _select_il_audit_rows(
+                audit_rows, audit_labels, is_pilot=art.state.is_pilot)
             art.state.il_audit_identity = il_audit_identity(audit_set)
             art.state.il_audit_episodes = len(audit_eps)
+            audit_scope = (
+                f"fixed {len(audit_set)} rows (256/scenario)"
+                if len(audit_set) == IL_AUDIT_SET_SIZE
+                else f"pilot-small {len(audit_set)} rows")
             print(f"IL corpus split BY EPISODE: {len(train_rows)} training rows in replay, "
-                  f"{len(audit_rows)} audit rows from {len(audit_eps)} held-out episodes "
+                  f"{len(audit_rows)} held-out rows -> {audit_scope} from {len(audit_eps)} episodes "
                   f"({n_audit_eps}/scenario) -- audit rows never enter replay, warm-up or any "
                   f"gradient update; identity {art.state.il_audit_identity[:12]}")
     else:
