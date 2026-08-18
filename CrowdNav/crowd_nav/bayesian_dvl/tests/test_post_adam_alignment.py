@@ -9,8 +9,10 @@ coordinate by its own accumulated second moment: the realised parameter
 change is a different direction, and its alignment with MC descent can be
 driven to nearly zero without the dot product ever changing sign.
 
-These tests pin that distinction in two places: a 2-D case where it can be
-read off by hand, and the real model.
+The 2-D case below reads that off by hand. The per-step alignment
+diagnostics that measured it during the 2x2 are gone with the experiment;
+what remains is the property itself, and the rule that health is judged on
+the fixed audit set rather than on a projection argument.
 """
 import tempfile
 from pathlib import Path
@@ -91,33 +93,6 @@ def test_the_docstring_no_longer_claims_ranking_can_never_undo_mc():
         assert banned not in lowered, (
             f"combine_gradients still claims {banned!r}; the guarantee is about the RAW gradient only")
     assert "adam" in lowered, "the docstring must state that the guarantee is pre-optimizer"
-
-
-def test_train_step_reports_both_metrics_and_only_when_asked():
-    from crowd_nav.bayesian_dvl.tests._common import (
-        DistributionalValueModel, HUMAN_FEATURE_DIM_V5, batch_to_tensors,
-        collect_orca_episode, _env_config_path)
-    import crowd_nav.bayesian_dvl.intent_train as T
-
-    tr = []
-    for sc, sd in (("standard", 2_600_000), ("junction", 96001)):
-        tr += collect_orca_episode(_env_config_path(), sc, sd).transitions
-    torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
-    opt = torch.optim.Adam(model.parameters(), lr=1e-3)
-    batch = batch_to_tensors(tr)
-    gen = torch.Generator().manual_seed(0)
-
-    off = T.train_step(model, opt, batch, gen, rho=2.0, diagnose=False)
-    assert off.post_adam_cos_mc == 0.0 and off.module_diagnostics == {}, (
-        "diagnostics cost two full parameter copies; they must be opt-in")
-
-    on = T.train_step(model, opt, batch, gen, rho=2.0, diagnose=True)
-    assert on.adam_step > 0
-    assert 0.0 <= on.active_hinge_fraction <= 1.0
-    assert set(on.module_diagnostics) == {"encoder", "action_encoder", "value_network"}
-    for m in on.module_diagnostics.values():
-        assert {"mc_grad_norm", "rank_grad_norm", "delta_norm", "dot_mc", "cos_mc"} <= set(m)
 
 
 # ------------------------------------------------- capped ranking budget

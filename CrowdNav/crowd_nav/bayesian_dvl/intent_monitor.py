@@ -285,33 +285,6 @@ class TrainingMonitor:
         os.fsync(self._metrics_handle.fileno())
         self.records.append(row)
 
-    def record_diagnostics(self, il_pass: int, result) -> None:
-        """Per-step gradient/optimizer diagnostics for the 2x2 experiment.
-
-        Written as its own record_type so the training curve files stay
-        readable and a diagnostic run's extra rows can never be mistaken for
-        the loss series.
-        """
-        row = {
-            "record_type": "il_diagnostics", "il_pass": int(il_pass),
-            "mc_grad_norm": float(result.mc_grad_norm),
-            "rank_grad_norm": float(result.rank_grad_norm),
-            "projected_rank_norm": float(result.projected_rank_norm),
-            "raw_cosine": float(result.gradient_cosine),
-            "active_hinge_count": int(result.active_hinge_count),
-            "active_hinge_fraction": float(result.active_hinge_fraction),
-            "rank_scale": float(result.lambda_used),
-            "combined_grad_norm": float(result.combined_grad_norm),
-            "post_adam_cos_mc": float(result.post_adam_cos_mc),
-            "post_adam_dot_mc": float(result.post_adam_dot_mc),
-            "post_adam_cos_rank": float(result.post_adam_cos_rank),
-            "adam_step": int(result.adam_step),
-            "adam_exp_avg_norm": float(result.adam_exp_avg_norm),
-            "adam_exp_avg_sq_norm": float(result.adam_exp_avg_sq_norm),
-            "modules": result.module_diagnostics,
-        }
-        self._append(row)
-
     def record_il(self, il_pass: int, total: int, result) -> None:
         row = {
             "record_type": "il",

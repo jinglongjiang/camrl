@@ -484,29 +484,6 @@ class TrainStepResult:
     # from past gradients), and the angle between the two objectives.
     lambda_used: float = 0.0
     gradient_cosine: float = 0.0
-    # --- post-Adam diagnostics (populated only when diagnose=True) -----
-    # The projection makes the RAW combined gradient non-opposing to g_MC.
-    # It does NOT make Adam's realised parameter change do the same: Adam
-    # rescales per-parameter by accumulated second moments, so the step
-    # actually taken points somewhere else. Measured at the aborted V6
-    # run's final checkpoint, cos(-delta, g_MC) was 0.03-0.06 with the
-    # carried optimizer state versus 0.20-0.46 with a fresh one, while
-    # dot(g_MC, delta) stayed NEGATIVE in every case -- so a sign test on
-    # the dot reports "healthy" for an update that has nearly stopped
-    # descending MC. Both are recorded: the cosine is the efficiency
-    # metric, the dot only says which way it moved. Neither replaces the
-    # fixed held-out audit.
-    post_adam_dot_mc: float = 0.0
-    post_adam_cos_mc: float = 0.0
-    post_adam_cos_rank: float = 0.0
-    active_hinge_fraction: float = 0.0
-    active_hinge_count: int = 0
-    projected_rank_norm: float = 0.0
-    combined_grad_norm: float = 0.0
-    adam_step: int = 0
-    adam_exp_avg_norm: float = 0.0
-    adam_exp_avg_sq_norm: float = 0.0
-    module_diagnostics: dict = field(default_factory=dict)
     # Populated by ``run_online_training_step``. Keeping these on the
     # existing result preserves the public ``result.loss`` contract while
     # making navigation quality observable at every online episode.
@@ -528,7 +505,7 @@ def train_step(
     batch: IntentBatch, generator: torch.Generator, n_taus: int = 16,
     ranking_margin: float = 0.1, ranking_batch_size: Optional[int] = None,
     grad_clip_norm: Optional[float] = None, measure_gradient_ratio: bool = False,
-    rho: float = RANK_CAP_RHO, diagnose: bool = False,
+    rho: float = RANK_CAP_RHO,
 ) -> TrainStepResult:
     """ONE gradient step. Plan section 3.1's FROZEN objective:
 
@@ -633,14 +610,6 @@ def train_step(
         for row, i in enumerate(demo_positions):
             rank_losses.append(expert_ranking_loss(scores[row], batch.expert_indices[i], ranking_margin))
 
-    # How many of the scored rows still VIOLATE the margin. A hinge that is
-    # satisfied contributes exactly zero gradient, so this is what says
-    # whether the ranking term still has anything to teach -- as opposed to
-    # its gradient norm, which the share renormalisation fixes by
-    # construction and which therefore cannot answer the question.
-    active_hinges = int(sum(1 for l in rank_losses if float(l.detach()) > 0.0))
-    active_fraction = active_hinges / max(len(rank_losses), 1)
-
     if rank_losses:
         rank_loss = torch.stack(rank_losses).mean()
     else:
@@ -699,46 +668,10 @@ def train_step(
     ratio = weighted / max(mc_grad_norm, 1e-12)
     cosine = info["gradient_cosine"]
 
-    # ---- post-Adam diagnostics ---------------------------------------
-    # Snapshot BEFORE the step so the realised parameter change can be
-    # compared against the gradient that was supposed to drive it.
-    diag = {}
-    pre = [p_.detach().clone() for p_ in params] if diagnose else None
     optimizer.step()
-    if diagnose:
-        delta = [p_.detach() - b for p_, b in zip(params, pre)]
-        d_norm = sum(float((d ** 2).sum()) for d in delta) ** 0.5
-        dot_mc = sum(float((g * d).sum()) for g, d in zip(mc_grads, delta) if g is not None)
-        cos_mc = -dot_mc / max(d_norm * mc_grad_norm, 1e-12)
-        cos_rank = 0.0
-        if rank_grads is not None and rank_grad_norm > 0:
-            dot_rank = sum(float((g * d).sum()) for g, d in zip(rank_grads, delta) if g is not None)
-            cos_rank = -dot_rank / max(d_norm * rank_grad_norm, 1e-12)
-        a_step, a_m, a_v = adam_state_norms(optimizer)
-        per_module = {}
-        mc_by = _grouped_norms(model, mc_grads)
-        rk_by = _grouped_norms(model, rank_grads) if rank_grads is not None else {}
-        dl_by = _grouped_norms(model, delta)
-        dot_by = _grouped_dot(model, mc_grads, delta)
-        for g in MODULE_GROUPS:
-            per_module[g] = {
-                "mc_grad_norm": mc_by.get(g, 0.0),
-                "rank_grad_norm": rk_by.get(g, 0.0),
-                "delta_norm": dl_by.get(g, 0.0),
-                "dot_mc": dot_by.get(g, 0.0),
-                "cos_mc": -dot_by.get(g, 0.0) / max(dl_by.get(g, 0.0) * mc_by.get(g, 0.0), 1e-12),
-            }
-        diag = {"post_adam_dot_mc": dot_mc, "post_adam_cos_mc": cos_mc,
-                "post_adam_cos_rank": cos_rank, "adam_step": a_step,
-                "adam_exp_avg_norm": a_m, "adam_exp_avg_sq_norm": a_v,
-                "module_diagnostics": per_module}
     return TrainStepResult(
         loss=float(loss.item()), mc_loss=float(mc_loss.item()), rank_loss=float(rank_loss.item()),
         grad_norm_preclip=grad_norm, clipped=clipped,
-        projected_rank_norm=float(info["projected_rank_norm"]),
-        combined_grad_norm=float(grad_norm),
-        active_hinge_count=int(active_hinges), active_hinge_fraction=float(active_fraction),
-        **diag,
         n_demo=int(batch.demo_mask.sum()), n_online=int((~batch.demo_mask).sum()),
         mc_grad_norm=mc_grad_norm, rank_grad_norm=rank_grad_norm,
         weighted_rank_grad_norm=weighted, gradient_ratio=ratio, ratio_measured=measure_gradient_ratio,
@@ -1487,7 +1420,7 @@ def run_il_update(
     n_taus: int = 16, ranking_margin: float = 0.1,
     ranking_batch_size: Optional[int] = None, device: str = "cpu",
     grad_clip_norm: Optional[float] = None, measure_gradient_ratio: bool = False,
-    rho: float = RANK_CAP_RHO, diagnose: bool = False,
+    rho: float = RANK_CAP_RHO,
 ) -> TrainStepResult:
     """ONE IL mini-batch update (C4R.1).
 
@@ -1508,7 +1441,6 @@ def run_il_update(
         model, optimizer, batch_to_tensors(batch, device=device), tau_generator, n_taus=n_taus,
         ranking_margin=ranking_margin, rho=rho, ranking_batch_size=ranking_batch_size,
         grad_clip_norm=grad_clip_norm, measure_gradient_ratio=measure_gradient_ratio,
-        diagnose=diagnose,
     )
 
 
@@ -1593,13 +1525,6 @@ FORMAL_SIX_SCENARIOS: Dict[str, Tuple[str, float, int]] = {
 # collection, or checkpoint selection, only for this one-time formal report.
 FORMAL_EVAL_HELDOUT_SEEDS: Tuple[int, ...] = tuple(range(97001, 97101))  # 100
 
-# OPTIMIZER seeds for the 2x2 causal diagnostic. Deliberately a separate
-# ROLE from the formal optimizer seeds (98201-98205): the 2x2 exists to
-# decide how the update is assembled, so its runs must never be able to
-# become a formal result, seed a selection, or touch a paper number. The
-# launcher refuses them in a formal plan and preflight proves them disjoint
-# from every other block.
-DIAGNOSTIC_OPTIMIZER_SEEDS: Tuple[int, ...] = (98211, 98212, 98213)
 
 # Order 1: DEVELOPMENT-ONLY standard-scenario diagnostic seeds.
 #
@@ -2027,49 +1952,6 @@ def select_checkpoint(candidates: Sequence[dict], min_sr: float = CHECKPOINT_SEL
 
 
 
-MODULE_GROUPS = ("encoder", "action_encoder", "value_network")
-
-
-def _module_of(name: str) -> str:
-    for g in MODULE_GROUPS:
-        if name.startswith(g + "."):
-            return g
-    return "other"
-
-
-def _grouped_norms(model, vectors) -> dict:
-    """{module: l2 norm} for a per-parameter vector list aligned to
-    ``[p for p in model.parameters() if p.requires_grad]``."""
-    out = {g: 0.0 for g in MODULE_GROUPS + ("other",)}
-    names = [n for n, p in model.named_parameters() if p.requires_grad]
-    for n, v in zip(names, vectors):
-        if v is not None:
-            out[_module_of(n)] += float((v ** 2).sum())
-    return {g: v ** 0.5 for g, v in out.items()}
-
-
-def _grouped_dot(model, a_list, b_list) -> dict:
-    out = {g: 0.0 for g in MODULE_GROUPS + ("other",)}
-    names = [n for n, p in model.named_parameters() if p.requires_grad]
-    for n, a, b in zip(names, a_list, b_list):
-        if a is not None and b is not None:
-            out[_module_of(n)] += float((a * b).sum())
-    return out
-
-
-def adam_state_norms(optimizer) -> tuple:
-    """(step, |exp_avg|, |exp_avg_sq|) summed over all parameters."""
-    step, m_sq, v_sq = 0, 0.0, 0.0
-    for st in optimizer.state.values():
-        if "step" in st:
-            sv = st["step"]
-            step = max(step, int(sv.item()) if torch.is_tensor(sv) else int(sv))
-        if "exp_avg" in st:
-            m_sq += float((st["exp_avg"] ** 2).sum())
-        if "exp_avg_sq" in st:
-            v_sq += float((st["exp_avg_sq"] ** 2).sum())
-    return step, m_sq ** 0.5, v_sq ** 0.5
-
 
 def combine_gradients(mc_grads, rank_grads, rho: float = RANK_CAP_RHO,
                       epsilon: float = 1e-12):
@@ -2367,11 +2249,6 @@ def build_formal_plan(seeds: Sequence[int], code_hash: str, config_hash: str,
         raise IntentTrainError("formal plan needs at least one seed")
     if len(set(seeds)) != len(seeds):
         raise IntentTrainError(f"formal plan seeds must be unique, got {seeds}")
-    diagnostic = sorted(set(seeds) & set(DIAGNOSTIC_OPTIMIZER_SEEDS))
-    if diagnostic:
-        raise IntentTrainError(
-            f"formal plan names DIAGNOSTIC optimizer seed(s) {diagnostic}; those runs exist to decide "
-            "how the update is assembled and must never become a formal result")
     return {
         "plan_schema": "bdvl_intent_formal_plan_v1",
         "arms": list(FORMAL_ARMS),

@@ -58,7 +58,7 @@ from crowd_nav.bayesian_dvl.intent_policy import (
     CHECKPOINT_SCHEMA_V7, HUMAN_FEATURE_DIM_V5, load_intent_checkpoint, save_intent_checkpoint,
 )
 from crowd_nav.bayesian_dvl.intent_train import (
-    ABORT_CLIPPING, ABORT_TYPES, ABORT_WARMUP_FAILURE, DIAGNOSTIC_OPTIMIZER_SEEDS, TEST8_AUDIT_BASE_SEED, TEST8_AUDIT_BASE_SEED_RETIRED,
+    ABORT_CLIPPING, ABORT_TYPES, ABORT_WARMUP_FAILURE, TEST8_AUDIT_BASE_SEED, TEST8_AUDIT_BASE_SEED_RETIRED,
     FORMAL_EVAL_HELDOUT_SEEDS, FORMAL_SIX_SCENARIOS, PAPER_MAIN_BASE_SEED,
     STANDARD_DEV_DIAGNOSTIC_SEEDS, STANDARD_SELECTION_DEV_SEEDS, JUNCTION_SELECTION_DEV_SEEDS,
     PAPER_MAIN_EPISODES_PER_SCENARIO, EMAModel,
@@ -807,14 +807,6 @@ def online_episode_at(cfg: IntentTrainingConfig, index: int) -> tuple:
     return "junction_crowd", crowd[j]
 
 
-def assert_not_diagnostic_seed(seed: int, what: str) -> None:
-    """Selection and paper evaluation must never read a 2x2 diagnostic run."""
-    if seed in set(DIAGNOSTIC_OPTIMIZER_SEEDS):
-        raise IntentCLIError(
-            f"{what} named diagnostic optimizer seed {seed}; the 2x2 runs decide how the update is "
-            "assembled and are not eligible for selection or any paper number")
-
-
 def _assert_not_formal_seed(seed: int) -> None:
     """Section 6: train/resume must never touch a formal, held-out,
     selection or paper seed -- nor a Test8 episode identity."""
@@ -877,7 +869,6 @@ def seed_inventory(cfg: IntentTrainingConfig) -> Dict[str, object]:
         # moment it was read, and this one must stay unread until the end.
         "junction_paper_test": JUNCTION_CROWD_PAPER_TEST_SEEDS,
         "training_seeds": cfg.training_seeds,
-        "diagnostic_optimizer_seeds": DIAGNOSTIC_OPTIMIZER_SEEDS,
         "validation_seeds": cfg.validation_seeds,
     }
     # Test8 identities are DERIVED from a base seed, so they cannot be an
@@ -1123,77 +1114,6 @@ def cmd_audit_test8_candidates(args) -> int:
     return 0
 
 
-# --------------------------------------------------------------------- #
-# 2x2 diagnostic support: fork the run at the warm-up boundary.
-# --------------------------------------------------------------------- #
-
-FORK_SCHEMA = "bdvl_warmup_fork_v1"
-DIAGNOSTIC_IL_PASSES = (100, 300, 500, 700, 900, 1100, 1500, 2000)
-
-
-def save_warmup_fork(path: Path, art, cfg, arm: str) -> None:
-    """Everything a branch needs to continue from the SAME point: weights,
-    optimizer state, EMA, both RNG streams and the replay identity. The 2x2
-    is only a controlled experiment if every branch starts here bit-for-bit
-    and then differs in exactly one declared way."""
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    torch.save({
-        "fork_schema": FORK_SCHEMA,
-        "model_state_dict": art.model.state_dict(),
-        "optimizer_state_dict": art.optimizer.state_dict(),
-        "ema_state_dict": art.ema.state_dict() if hasattr(art.ema, "state_dict") else art.ema.shadow,
-        "tau_generator_state": art.tau_generator.get_state(),
-        "sample_rng_state": art.sample_rng.bit_generator.state,
-        "warmup_steps": int(art.state.warmup_steps),
-        "warmup_top1": float(art.state.warmup_top1),
-        "warmup_rank_loss": float(art.state.warmup_rank_loss),
-        "il_corpus_ref": art.il_corpus_ref,
-        "arm": arm,
-        "code_sha256": code_sha256(),
-        "config_content_sha256": cfg.content_hash(),
-        "scene_registry_sha256": scene_registry_sha256(cfg),
-    }, str(path))
-    print(f"warm-up fork saved -> {path}")
-
-
-def load_warmup_fork(path: Path, art, cfg, arm: str, reset_optimizer: bool) -> dict:
-    payload = torch.load(str(path), map_location="cpu", weights_only=False)
-    if payload.get("fork_schema") != FORK_SCHEMA:
-        raise IntentCLIError(f"{path} is not a warm-up fork ({payload.get('fork_schema')!r})")
-    for key, want in (("code_sha256", code_sha256()),
-                      ("config_content_sha256", cfg.content_hash()),
-                      ("scene_registry_sha256", scene_registry_sha256(cfg)),
-                      ("arm", arm)):
-        if payload.get(key) != want:
-            raise IntentCLIError(
-                f"fork {path} was taken under a different {key} ({payload.get(key)} != {want}); "
-                "branches of one experiment must share their starting point exactly")
-    art.model.load_state_dict(payload["model_state_dict"])
-    if reset_optimizer:
-        # A FRESH Adam, deliberately. The warm-up runs 400 pure-ranking
-        # steps through the same optimizer as joint IL, so its second
-        # moments are built entirely from ranking-gradient magnitudes and
-        # decay only with beta2's ~693-step half-life. Whether that matters
-        # is exactly what R1/R3 exist to answer -- this switch is the only
-        # difference between R0/R1 and between R2/R3.
-        art.optimizer = torch.optim.Adam(art.model.parameters(), lr=cfg.learning_rate)
-        print("warm-up fork loaded with a RESET optimizer (fresh Adam state)")
-    else:
-        art.optimizer.load_state_dict(payload["optimizer_state_dict"])
-        print("warm-up fork loaded, optimizer state CARRIED from warm-up")
-    if hasattr(art.ema, "load_state_dict"):
-        art.ema.load_state_dict(payload["ema_state_dict"])
-    else:
-        art.ema.shadow = payload["ema_state_dict"]
-    art.tau_generator.set_state(payload["tau_generator_state"])
-    art.sample_rng.bit_generator.state = payload["sample_rng_state"]
-    art.state.warmup_passed = True
-    art.state.warmup_steps = int(payload["warmup_steps"])
-    art.state.warmup_top1 = float(payload["warmup_top1"])
-    art.state.warmup_rank_loss = float(payload["warmup_rank_loss"])
-    return payload
-
-
 def cmd_preflight(args) -> int:
     cfg = load_intent_training_config(args.config)
     grid = ActionGridSpec.from_env_config(str(args.env_config))
@@ -1329,31 +1249,6 @@ def cmd_train(args, resume: bool = False) -> int:
     action_grid_hash = grid.table_hash()
     scene_hash = scene_registry_sha256(cfg)
 
-    # DIAGNOSTIC ranking-gate exemption. Five conditions, ALL required: the
-    # 2x2's independent variable is ranking pressure, and two of its four
-    # cells carry no ranking gradient at all, so gating them on ranking
-    # quality answers the question instead of measuring it. Everywhere else
-    # the gate must stay, which is why the exemption is this narrow.
-    ranking_gate_disabled = bool(getattr(args, "diagnostic_disable_ranking_gate", False))
-    if ranking_gate_disabled:
-        why = []
-        _seed = args.seed if args.seed is not None else cfg.training_seeds[0]
-        if _seed not in set(DIAGNOSTIC_OPTIMIZER_SEEDS):
-            why.append(f"--seed {_seed} is not a diagnostic optimizer seed "
-                       f"{list(DIAGNOSTIC_OPTIMIZER_SEEDS)}")
-        if args.fork_from is None:
-            why.append("--fork-from is required (the exemption only applies to a 2x2 branch)")
-        if args.formal_plan is not None:
-            why.append("--formal-plan present (a formal run may never disable a gate)")
-        if resume:
-            why.append("resume is not a diagnostic branch start")
-        if why:
-            raise IntentCLIError(
-                "--diagnostic-disable-ranking-gate refused: " + "; ".join(why))
-        print("DIAGNOSTIC: ranking-quality ABORT suspended for this branch. The ranking metrics are "
-              "still computed and recorded; MC regression, non-finite values and the clipping gate "
-              "all remain live.")
-
     # Gap found by review: candidate_audit.py and its tests existed but the
     # production path never called them, so a failing audit did not stop
     # training. It does now.
@@ -1361,22 +1256,8 @@ def cmd_train(args, resume: bool = False) -> int:
     print(f"candidate audit OK ({args.candidate_audit})")
 
     seed = args.seed if args.seed is not None else cfg.training_seeds[0]
-    is_diagnostic_seed = seed in set(DIAGNOSTIC_OPTIMIZER_SEEDS)
-    if seed not in cfg.training_seeds and not is_diagnostic_seed:
-        raise IntentCLIError(
-            f"--seed {seed} is neither a frozen training seed {list(cfg.training_seeds)} nor a "
-            f"diagnostic optimizer seed {list(DIAGNOSTIC_OPTIMIZER_SEEDS)}")
-    if is_diagnostic_seed:
-        # Allowed to RUN, never allowed to COUNT. build_formal_plan and
-        # assert_not_diagnostic_seed already refuse these seeds; the banner
-        # and the run-state stamp make it visible in the artefacts too.
-        art_diagnostic_banner = (
-            f"DIAGNOSTIC RUN: optimizer seed {seed} is a 2x2 diagnostic seed. This run decides how the "
-            "update is assembled; it can never become a formal result, seed a selection, or reach a "
-            "paper number.")
-        print(art_diagnostic_banner)
-        if args.formal_plan is not None:
-            raise IntentCLIError("a diagnostic optimizer seed cannot be run under a formal plan")
+    if seed not in cfg.training_seeds:
+        raise IntentCLIError(f"--seed {seed} is not one of the frozen training seeds {list(cfg.training_seeds)}")
 
     # Order 5W: a FORMAL run must name the frozen plan that pairs the arms.
     # The comparison this project exists to make is only valid if full/mean/cv
@@ -1433,16 +1314,7 @@ def cmd_train(args, resume: bool = False) -> int:
 
     arm = art.state.training_arm
     diag_every = max(1, cfg.gradient_diagnostic_interval)
-    # A branch of the 2x2 may override the frozen share; a FORMAL run may
-    # not. R2/R3 need rho=0 (MC-only), which is a diagnostic setting.
     effective_rho = cfg.rank_cap_rho
-    if args.rank_cap_rho is not None:
-        if not art.state.is_pilot and args.fork_from is None:
-            raise IntentCLIError(
-                "--rank-cap-rho is a DIAGNOSTIC override; a formal run must use the frozen "
-                f"{cfg.rank_cap_rho}")
-        effective_rho = float(args.rank_cap_rho)
-        print(f"rank_cap_rho OVERRIDE for this branch: {effective_rho} (frozen is {cfg.rank_cap_rho})")
 
     def _sync_monitor() -> None:
         if art.health is not None:
@@ -1780,7 +1652,7 @@ def cmd_train(args, resume: bool = False) -> int:
                                            d["expert_top1_rate"],
                                            check_ranking=art.state.warmup_passed,
                                            il_pass=art.state.il_passes_done,
-                                           disable_ranking_gate=ranking_gate_disabled)
+                                           )
         art.state.il_audit_best_mc_loss = float(art.health.best_mc or 0.0)
         append_durable_log(
             run_dir,
@@ -1802,13 +1674,6 @@ def cmd_train(args, resume: bool = False) -> int:
     # MC supervises only the executed action, so it constrains nothing about
     # the other 79 -- the ranking structure has to exist BEFORE value
     # regression starts moving the scores.
-    if args.fork_from is not None:
-        if art.state.il_passes_done:
-            raise IntentCLIError("--fork-from only starts a branch; it cannot be combined with a resume")
-        load_warmup_fork(Path(args.fork_from), art, cfg, arm, bool(args.reset_optimizer))
-        telemetry.log(f"FORK loaded from {args.fork_from} "
-                      f"reset_optimizer={bool(args.reset_optimizer)} "
-                      f"rank_cap_rho={cfg.rank_cap_rho if args.rank_cap_rho is None else args.rank_cap_rho}")
     _wu_max = args.warmup_steps if args.warmup_steps is not None else cfg.warmup_max_steps
     if _wu_max == 0 and not art.state.is_pilot:
         raise IntentCLIError('--warmup-steps 0 skips the warm-up gate; PILOT ONLY')
@@ -1849,21 +1714,18 @@ def cmd_train(args, resume: bool = False) -> int:
                 f"Joint training must not start on an unlearned ranking term.")
         telemetry.log(f"WARMUP PASSED steps={wu['steps']} top1={art.state.warmup_top1:.3f} "
                       f"rank={art.state.warmup_rank_loss:.5f}")
-        if args.save_warmup_fork is not None:
-            save_warmup_fork(Path(args.save_warmup_fork), art, cfg, arm)
 
     if art.state.il_passes_done < total_il_passes:
         result = None
         _audit_gate("pass=0")
         while art.state.il_passes_done < total_il_passes:
             measure = (art.state.global_updates % diag_every == 0)
-            diagnose = (art.state.il_passes_done % args.diagnostic_interval == 0)
             result = run_il_update(
                 art.model, art.optimizer, art.buffer, cfg.batch_size, art.sample_rng, art.tau_generator,
                 n_taus=cfg.iqn_train_quantiles, ranking_margin=cfg.ranking_margin,
                 rho=effective_rho, ranking_batch_size=cfg.ranking_batch_size,
                 device=str(device), grad_clip_norm=cfg.grad_clip_norm,
-                measure_gradient_ratio=measure, diagnose=diagnose)
+                measure_gradient_ratio=measure)
             art.ema.update(art.model)
             art.state.il_passes_done += 1
             art.state.global_updates += 1
@@ -1877,15 +1739,6 @@ def cmd_train(args, resume: bool = False) -> int:
                     + (f" ratio={result.gradient_ratio:.3f}" if result.ratio_measured else "")
                     + f" lambda={result.lambda_used:.4g}"
                 )
-            if diagnose:
-                telemetry.record_diagnostics(art.state.il_passes_done, result)
-            if (args.diagnostic_checkpoint_dir is not None
-                    and art.state.il_passes_done in DIAGNOSTIC_IL_PASSES):
-                d = Path(args.diagnostic_checkpoint_dir)
-                d.mkdir(parents=True, exist_ok=True)
-                save_intent_checkpoint(
-                    art.model, str(d / f"diag_ilpass{art.state.il_passes_done:05d}.pth"),
-                    action_grid_hash=action_grid_hash, scene_registry_sha256=scene_hash)
             if art.state.il_passes_done % cfg.health_check_interval == 0:
                 _audit_gate(f"pass={art.state.il_passes_done}")
 
@@ -2158,23 +2011,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     for name in ("train", "resume"):
         t = sub.add_parser(name)
-        t.add_argument("--save-warmup-fork", type=Path, default=None,
-                       help="write a fork checkpoint when warm-up passes (2x2 branch point)")
-        t.add_argument("--fork-from", type=Path, default=None,
-                       help="start joint IL from a warm-up fork instead of running warm-up")
-        t.add_argument("--reset-optimizer", action="store_true",
-                       help="with --fork-from: start joint IL with a FRESH Adam (R1/R3)")
-        t.add_argument("--diagnostic-disable-ranking-gate", action="store_true",
-                       help="2x2 ONLY: suspend the ranking-QUALITY abort. Requires a diagnostic "
-                            "optimizer seed AND --fork-from, and is refused with --formal-plan or on "
-                            "resume. Ranking metrics are still recorded; every other gate stays live.")
-        t.add_argument("--rank-cap-rho", type=float, default=None,
-                       help="DIAGNOSTIC override of the frozen rank_cap_rho, the UPPER BOUND on the "
-                            "ranking contribution as a fraction of |g_MC| (0 = MC-only)")
-        t.add_argument("--diagnostic-interval", type=int, default=50,
-                       help="record gradient/optimizer diagnostics every N IL passes")
-        t.add_argument("--diagnostic-checkpoint-dir", type=Path, default=None,
-                       help="save small checkpoints at the frozen diagnostic IL passes")
         t.add_argument("--materialized-cache", type=Path, default=None,
                        help="reuse an already-materialized IL row set; identity covers the raw corpus, "
                             "arm, feature schema, scene, action grid and materialization code -- NOT the "

@@ -381,15 +381,7 @@ def test_c2_cli_rejects_a_seed_outside_the_frozen_training_seeds() -> None:
     with tempfile.TemporaryDirectory() as d:
         r = _cli("train", "--run-dir", str(Path(d) / "r"), "--target-online-episodes", "1",
                  "--il-episodes", "2", "--audit-episodes", "1", "--il-passes", "1", "--seed", "12345", expect_ok=False)
-        assert r.returncode != 0 and "neither a frozen training seed" in r.stderr
-        # A DIAGNOSTIC optimizer seed is allowed to run -- it is refused
-        # elsewhere, by build_formal_plan and by selection/paper, so that it
-        # can never COUNT rather than never run.
-        r = _cli("train", "--run-dir", str(Path(d) / "r2"), "--target-online-episodes", "1",
-                 "--il-episodes", "2", "--audit-episodes", "1", "--il-passes", "1",
-                 "--seed", "98211", "--formal-plan", str(Path(d) / "nonexistent.json"),
-                 expect_ok=False)
-        assert r.returncode != 0 and "formal plan" in r.stderr, r.stderr
+        assert r.returncode != 0 and "not one of the frozen training seeds" in r.stderr
 
 
 def test_c4_cpu_cuda_top1_action_agreement() -> None:
