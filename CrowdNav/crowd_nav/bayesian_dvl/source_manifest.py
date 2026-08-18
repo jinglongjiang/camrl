@@ -49,6 +49,7 @@ MAIN_CHAIN_SOURCES: List[str] = [
     "crowd_nav/bayesian_dvl/intent_config.py",
     "crowd_nav/bayesian_dvl/intent_train_cli.py",
     "crowd_nav/bayesian_dvl/intent_monitor.py",
+    "crowd_nav/bayesian_dvl/evaluation_protocol.py",
     "crowd_nav/bayesian_dvl/intent_evaluate.py",
     "crowd_nav/bayesian_dvl/intent_crowdnav_policy.py",
     "crowd_nav/bayesian_dvl/geometry_features.py",

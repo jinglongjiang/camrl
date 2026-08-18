@@ -128,24 +128,6 @@ IL_CORPUS_SCHEMA = "bdvl_intent_raw_il_corpus_v2"  # A3: arm-INDEPENDENT raw epi
 # progress reporting was added.  Its producer differs only in CLI telemetry
 # and fresh-run directory handling, so it is safe to reuse.  No other stale
 # main-chain hash is accepted.
-COMPATIBLE_RAW_IL_CORPUS_CODE_HASHES = frozenset({
-    "129fc80c7897ed3a448652b08dbebc2e7cf5df39136db267fc9c1a306da8874c",
-    # The 2026-08-17 audit-wiring fix only changes which already-materialized
-    # held-out rows are scored; it cannot change raw ORCA transitions.
-    "e7c5a081b078fe45bf831a02b59eaee6208ad8f1d25fc00c34ca1736f1fe8922",
-    # The formal V2 corpus (runs/v2/formal_corpus, identity 0ebebd0d1029),
-    # collected 2026-08-17. Everything the 2x2 changed afterwards is in the
-    # TRAINER and in observability: gradient diagnostics, the warm-up fork,
-    # the materialized cache, per-scenario audit reporting. A raw ORCA
-    # episode is a recording of the teacher acting in the environment; it is
-    # produced before any gradient exists and cannot be altered by how the
-    # update is later assembled. What COULD alter it -- the tracker, the
-    # candidate provider, the scenario, the feature builder -- is covered
-    # separately and exactly by materialization_code_sha256(), which the
-    # cache identity checks on every load.
-    "346c7892bfae72b1f6c2be089689aca73f335f2640be2584461cf65667c7d70d",
-    "e384b8ce4bdbabfc831978c4f8e6c99512c9268e5ed779a083ed4a757f118188",
-})
 # V2 blocks. The V1 bases (700_001 / 800_001) are retired along with every
 # other V1 block: the standard scenario's candidate SEMANTICS changed too
 # (candidates now carry geometry and a count, so a V1 corpus materialises
@@ -572,11 +554,14 @@ def load_il_corpus(
             f"corpus was collected under different CORPUS-DETERMINING settings "
             f"(env/teacher/reward/gamma/action table/scenes/seeds): {stored[:12]} != "
             f"{cfg.corpus_identity_hash()[:12]}")
-    corpus_code_hash = payload["code_hash"]
-    current_code_hash = code_sha256()
-    if (corpus_code_hash != current_code_hash
-            and corpus_code_hash not in COMPATIBLE_RAW_IL_CORPUS_CODE_HASHES):
-        raise IntentCLIError("corpus was collected by incompatible main-chain code")
+    # NO source-hash whitelist. A raw ORCA episode is a recording of the
+    # teacher acting in the environment, made before any gradient exists, so
+    # a trainer edit cannot alter it -- yet the old check keyed on the whole
+    # main-chain hash and had to be hand-waived every time the trainer moved.
+    # What CAN change a materialized row -- the tracker, the candidate
+    # provider, the scenario, the feature builder, the action grid -- is
+    # covered exactly by corpus_identity_hash() above and by
+    # materialization_code_sha256() in the cache identity.
     meta = {k: v for k, v in payload.items() if k not in ("episodes", "episode_identities")}
     meta["corpus_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
     meta["path"] = str(path)

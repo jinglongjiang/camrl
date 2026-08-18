@@ -556,7 +556,7 @@ def test_c4rf_checkpoint_omits_the_immutable_demo_corpus() -> None:
 def test_c4rf_il_corpus_is_immutable_shared_and_identity_checked() -> None:
     # C4RF.2: collect once per ARM, share across the 5 optimizer seeds.
     from crowd_nav.bayesian_dvl.intent_train_cli import (
-        COMPATIBLE_RAW_IL_CORPUS_CODE_HASHES, build_il_corpus, il_corpus_path, load_il_corpus,
+        build_il_corpus, il_corpus_path, load_il_corpus,
     )
     cfg = load_intent_training_config(DEFAULT_TRAINING_CONFIG)
     with tempfile.TemporaryDirectory() as d:
@@ -620,22 +620,20 @@ def test_c4rf_il_corpus_is_immutable_shared_and_identity_checked() -> None:
             assert False, "expected IntentCLIError on a corpus-identity mismatch"
         except IntentCLIError:
             pass
-        # Only the explicitly audited telemetry-only predecessor may reuse
-        # this raw corpus. An arbitrary stale producer remains fail-closed.
+        # Order 4: the producer's SOURCE hash no longer decides compatibility.
+        # A raw ORCA episode is recorded before any gradient exists, so a
+        # trainer edit cannot alter it -- the old whitelist had to be waived
+        # by hand every time the trainer moved. What CAN change a
+        # materialized row is covered by corpus_identity_hash (env, teacher,
+        # reward, gamma, action table, scenes, seeds) and, for the cache, by
+        # materialization_code_sha256.
         payload = torch.load(str(path), map_location="cpu", weights_only=False)
-        payload["code_hash"] = next(iter(COMPATIBLE_RAW_IL_CORPUS_CODE_HASHES))
-        compatible_hash = d / "compatible_hash.pth"
-        torch.save(payload, str(compatible_hash))
-        compatible, _ = load_il_corpus(compatible_hash, cfg, "full")
-        assert len(compatible) == meta["n_transitions"]
         payload["code_hash"] = "0" * 64
-        bad_hash = d / "bad_hash.pth"
-        torch.save(payload, str(bad_hash))
-        try:
-            load_il_corpus(bad_hash, cfg, "full")
-            assert False, "expected IntentCLIError on an unknown producer hash"
-        except IntentCLIError:
-            pass
+        other_producer = d / "other_producer.pth"
+        torch.save(payload, str(other_producer))
+        rows, _ = load_il_corpus(other_producer, cfg, "full")
+        assert len(rows) == meta["n_transitions"], (
+            "a different producer hash must not block a corpus whose IDENTITY matches")
         try:
             load_il_corpus(d / "missing.pth", cfg, "full")
             assert False, "expected IntentCLIError on a missing corpus"
