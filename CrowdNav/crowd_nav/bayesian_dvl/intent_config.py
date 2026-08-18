@@ -91,7 +91,7 @@ class IntentTrainingConfig:
     training_seeds: Tuple[int, ...]
     validation_seeds: Tuple[int, ...]
     # Order 2R/3R: projected-gradient balance, warm-up and effect-based health
-    rank_share: float = 2.0
+    rank_cap_rho: float = 0.5
     audit_episodes_per_scenario: int = 50
     rank_zero_tolerance: float = 1e-8
     warmup_max_steps: int = 750
@@ -177,9 +177,15 @@ def load_intent_training_config(path: Path = DEFAULT_TRAINING_CONFIG) -> IntentT
     # with rank_share, so a value here would be hashed into provenance and
     # take no part in training -- the same provenance lie as the tracker
     # knobs that were declared and never passed.
-    for section, key, why in (("ranking", "lambda_rank",
-                               "retired: gradients are combined by projection with rank_share, "
-                               "not by a scalar weight"),):
+    for section, key, why in (
+        ("ranking", "lambda_rank",
+         "retired: gradients are combined by projection with a capped ranking budget, "
+         "not by a scalar weight"),
+        ("gradient_balance", "rank_share",
+         "retired: it normalised the ranking gradient to a FIXED multiple of |g_MC|, which is a "
+         "floor as well as a ceiling and degraded held-out MC on 3/3 diagnostic seeds. Use "
+         "rank_cap_rho, which is an upper bound only"),
+    ):
         if parser.has_option(section, key):
             raise IntentConfigError(f"config declares [{section}] {key}, which is {why}; remove it")
 
@@ -238,7 +244,7 @@ def load_intent_training_config(path: Path = DEFAULT_TRAINING_CONFIG) -> IntentT
         tensorboard_enabled=parser.getboolean("monitoring", "tensorboard_enabled"),
         training_seeds=_seed_tuple(g("seeds", "training_seeds"), "training_seeds"),
         validation_seeds=_seed_tuple(g("seeds", "validation_seeds"), "validation_seeds"),
-        rank_share=gf("gradient_balance", "rank_share"),
+        rank_cap_rho=gf("gradient_balance", "rank_cap_rho"),
         audit_episodes_per_scenario=gi("audit_split", "audit_episodes_per_scenario"),
         rank_zero_tolerance=gf("gradient_balance", "rank_zero_tolerance"),
         warmup_max_steps=gi("ranking_warmup", "warmup_max_steps"),
@@ -334,8 +340,8 @@ def _validate(cfg: IntentTrainingConfig) -> None:
         raise IntentConfigError(
             f"ranking_batch_size {cfg.ranking_batch_size} cannot exceed batch_size {cfg.batch_size}")
     # Order 2R/3R validation -- fail closed on every gate parameter.
-    if not (0.0 <= cfg.rank_share <= 10.0):
-        raise IntentConfigError(f"rank_share must be in [0,10], got {cfg.rank_share}")
+    if not (0.0 <= cfg.rank_cap_rho <= 10.0):
+        raise IntentConfigError(f"rank_cap_rho must be in [0,10], got {cfg.rank_cap_rho}")
     if cfg.audit_episodes_per_scenario <= 0:
         raise IntentConfigError(
             f"audit_episodes_per_scenario must be positive, got {cfg.audit_episodes_per_scenario}")

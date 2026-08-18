@@ -59,7 +59,7 @@ ABORT_WARMUP_FAILURE = "warmup_failure"
 ABORT_TYPES = (ABORT_MC_REGRESSION, ABORT_RANKING_QUALITY, ABORT_NON_FINITE,
                ABORT_CLIPPING, ABORT_WARMUP_FAILURE)
 
-RANK_GRADIENT_SHARE = 0.25
+RANK_CAP_RHO = 0.5
 # |g'_rank| at or below this fraction of max(|g_MC|, 1) is treated as zero.
 RANK_GRADIENT_ZERO_TOL = 1e-8
 
@@ -528,7 +528,7 @@ def train_step(
     batch: IntentBatch, generator: torch.Generator, n_taus: int = 16,
     ranking_margin: float = 0.1, ranking_batch_size: Optional[int] = None,
     grad_clip_norm: Optional[float] = None, measure_gradient_ratio: bool = False,
-    rank_share: float = RANK_GRADIENT_SHARE, diagnose: bool = False,
+    rho: float = RANK_CAP_RHO, diagnose: bool = False,
 ) -> TrainStepResult:
     """ONE gradient step. Plan section 3.1's FROZEN objective:
 
@@ -671,7 +671,7 @@ def train_step(
     if rank_loss.requires_grad:
         rank_grads = torch.autograd.grad(rank_loss, params, retain_graph=True, allow_unused=True)
 
-    if rank_grads is None or rank_share <= 0.0:
+    if rank_grads is None or rho <= 0.0:
         # online-only batch (or ranking disabled): pure MC, no projection
         combined = list(mc_grads)
         info = {"mc_grad_norm": _grad_l2(mc_grads), "rank_grad_norm": 0.0,
@@ -679,7 +679,7 @@ def train_step(
                 "projection_coefficient": 0.0, "rank_scale": 0.0,
                 "conflict_removed": False, "rank_negligible": True}
     else:
-        combined, info = combine_gradients(mc_grads, rank_grads, rank_share=rank_share)
+        combined, info = combine_gradients(mc_grads, rank_grads, rho=rho)
 
     optimizer.zero_grad()
     for p_, g_ in zip(params, combined):
@@ -781,13 +781,15 @@ def _grad_cosine(a, b) -> float:
 class TrainingHealthMonitor:
     """Order 3R: health is judged on MEASURED EFFECT, not on gradient ratios.
 
-    The ratio gate is gone entirely. Under projected, norm-normalised
-    gradients the ranking contribution is exactly ``rank_share`` of |g_MC|
-    by construction, so any gate on that number is tautological -- it can
-    only ever fail when the projection degenerates. The previous
-    incarnation of this class learned that the expensive way: it aborted a
-    pilot for exceeding a gradient budget while the fixed audit set showed
-    value regression improving the whole time.
+    The ratio gate is gone entirely. The ranking contribution is now bounded
+    above by ``rho`` * |g_MC| by construction, so a gate on that number could
+    only ever fire when the projection degenerates -- it cannot detect the
+    thing that actually went wrong. The previous incarnation of this class
+    learned that the expensive way: it aborted a pilot for exceeding a
+    gradient budget while the fixed audit set showed value regression
+    improving the whole time. And the reverse also holds: at the old fixed
+    2x share the ratio sat exactly where it was told to, while the held-out
+    MC degraded on 3/3 seeds. Only the measured effect catches that.
 
     What is checked instead, every ``interval`` updates, on the FIXED audit
     set (stationary rows, fixed midpoint quantiles, no RNG):
@@ -1428,7 +1430,7 @@ def run_online_training_step(
     buffer: IntentReplay, batch_size: int, explore_rng: np.random.Generator,
     sample_rng: np.random.Generator, tau_generator: torch.Generator, is_heldout: bool = False,
     gamma: float = 0.95, n_taus: int = 16, ranking_margin: float = 0.1,
-    rank_share: float = RANK_GRADIENT_SHARE,
+    rho: float = RANK_CAP_RHO,
     ranking_batch_size: Optional[int] = None, n_samples: int = 60, horizon: int = 8, device: str = "cpu",
     demo_ratio: float = 0.20, grad_clip_norm: Optional[float] = None,
     measure_gradient_ratio: bool = False, updates: int = 1, belief_mode: str = "full",
@@ -1460,7 +1462,7 @@ def run_online_training_step(
         batch = buffer.sample(min(batch_size, len(buffer)), sample_rng, demo_ratio=demo_ratio)
         result = train_step(
             model, optimizer, batch_to_tensors(batch, device=device), tau_generator, n_taus=n_taus,
-            ranking_margin=ranking_margin, rank_share=rank_share, ranking_batch_size=ranking_batch_size,
+            ranking_margin=ranking_margin, rho=rho, ranking_batch_size=ranking_batch_size,
             grad_clip_norm=grad_clip_norm, measure_gradient_ratio=measure_gradient_ratio,
         )
     return replace(
@@ -1485,7 +1487,7 @@ def run_il_update(
     n_taus: int = 16, ranking_margin: float = 0.1,
     ranking_batch_size: Optional[int] = None, device: str = "cpu",
     grad_clip_norm: Optional[float] = None, measure_gradient_ratio: bool = False,
-    rank_share: float = RANK_GRADIENT_SHARE, diagnose: bool = False,
+    rho: float = RANK_CAP_RHO, diagnose: bool = False,
 ) -> TrainStepResult:
     """ONE IL mini-batch update (C4R.1).
 
@@ -1504,7 +1506,7 @@ def run_il_update(
     batch = buffer.sample(min(batch_size, len(buffer)), sample_rng, demo_ratio=1.0)
     return train_step(
         model, optimizer, batch_to_tensors(batch, device=device), tau_generator, n_taus=n_taus,
-        ranking_margin=ranking_margin, rank_share=rank_share, ranking_batch_size=ranking_batch_size,
+        ranking_margin=ranking_margin, rho=rho, ranking_batch_size=ranking_batch_size,
         grad_clip_norm=grad_clip_norm, measure_gradient_ratio=measure_gradient_ratio,
         diagnose=diagnose,
     )
@@ -2069,50 +2071,60 @@ def adam_state_norms(optimizer) -> tuple:
     return step, m_sq ** 0.5, v_sq ** 0.5
 
 
-def combine_gradients(mc_grads, rank_grads, rank_share: float = RANK_GRADIENT_SHARE,
+def combine_gradients(mc_grads, rank_grads, rho: float = RANK_CAP_RHO,
                       epsilon: float = 1e-12):
-    """g = g_MC + rank_share * (|g_MC| / |g'_rank|) * g'_rank, where g'_rank
-    has had any component OPPOSING g_MC removed.
+    """g = g_MC + scale * g'_rank, where g'_rank has had any component
+    OPPOSING g_MC removed and is CAPPED at rho * |g_MC| -- never amplified.
 
-        c        = (g_rank . g_MC) / |g_MC|^2
-        g'_rank  = g_rank - min(0, c) * g_MC
-        g        = g_MC + rank_share * |g_MC| / (|g'_rank| + eps) * g'_rank
+        c           = (g_rank . g_MC) / |g_MC|^2
+        g'_rank     = g_rank - min(0, c) * g_MC
+        rank_budget = min(|g'_rank|, rho * |g_MC|)
+        scale       = rank_budget / (|g'_rank| + eps)      # always <= 1
+        g           = g_MC + scale * g'_rank
 
-    Replaces the adaptive-lambda scheme, and is not the same idea. A scalar
-    lambda can only decide which term is LOUDER; it cannot stop the two from
-    pulling against each other, and its EMA could not track how fast |g_MC|
-    collapses during IL (the pilot aborted on exactly that). Here the
-    conflicting component is removed outright and the ranking term's size
-    is set by construction every step -- no lambda, no EMA, no lag.
+    WHAT THIS REPLACES, AND WHY. The previous rule normalised the projected
+    ranking gradient to EXACTLY rank_share * |g_MC| whenever it was not
+    numerically zero. That is a floor as well as a ceiling: a hinge that is
+    nearly satisfied, contributing a tiny gradient, was scaled back UP to a
+    fixed multiple of the value gradient, so the ranking term never yielded
+    as it converged. Measured at rank_share=2.0 on three diagnostic seeds
+    (12-branch 2x2, IL 2000 each):
+
+        share=2.0, Adam kept    final/best MC = 1.500 / 1.285 / 1.162
+        share=2.0, Adam reset   final/best MC = 1.526 / 1.282 / 1.217
+        MC-only                 final/best MC = 1.056 / 1.059 / 1.036
+
+    The damage is not only late over-fitting: the FIXED TRAINING set degraded
+    too (0.139-0.175 against MC-only's 0.102-0.109), and the best MC ever
+    reached was ~0.117-0.123 against MC-only's ~0.086-0.089. Ranking pressure
+    was costing roughly 30% of the achievable value fit from the start.
+
+    Resetting Adam at the phase transition was tested in the same experiment
+    and did NOT help -- worse on 2 of 3 seeds -- so the earlier "carried
+    optimizer state" hypothesis is retired.
+
+    MC-only is not the answer either: it left rank loss at 0.10-0.13, margin
+    NEGATIVE and top-1 at 22-31%. So the ranking supervision has to stay; it
+    just must not be able to outbid value regression.
 
     Consequences worth stating plainly:
-      * after projection g'_rank . g_MC >= 0 always, so the combined RAW
-        gradient still has a non-negative MC component. This is a statement
-        about the GRADIENT, not about the step: Adam rescales each
-        coordinate by its own accumulated second moment, so the realised
-        parameter change points somewhere else and its alignment with MC
-        descent can fall to nearly zero WITHOUT dot(g_MC, delta) changing
-        sign. Measured on the aborted V6 run's final checkpoint,
-        cos(-delta, g_MC) was 0.03-0.06 with the carried optimizer state
-        against 0.20-0.46 with a fresh one, while the dot stayed negative
-        in every case. Health is therefore judged on the fixed audit set,
-        with cos(-delta, g_MC) as the efficiency diagnostic -- never on the
-        sign of the dot, and never on this projection property alone
-        (test_post_adam_alignment);
-      * the ranking contribution is exactly rank_share of |g_MC| whenever
-        g'_rank is non-zero, so an "effective ratio" gate on it would be
-        tautological -- health is judged on the fixed audit set instead;
-        ``rank_share`` is NOT a "weak auxiliary" setting: it is the weight of
-        the JOINT DEMONSTRATION RANKING SUPERVISION in the IL phase, and it
-        is calibrated, not assumed;
-      * a hinge that is fully satisfied gives EXACTLY zero gradient, and the
-        update degenerates to pure MC.
+      * after projection g'_rank . g_MC >= 0, so the combined RAW gradient
+        keeps a non-negative MC component. This is a statement about the
+        GRADIENT, not the step: Adam rescales per coordinate, so the realised
+        parameter change points elsewhere and its alignment with MC descent
+        can fall close to zero WITHOUT dot(g_MC, delta) changing sign. Health
+        is judged on the fixed audit set, with cos(-delta, g_MC) as the
+        efficiency diagnostic (test_post_adam_alignment);
+      * scale <= 1 ALWAYS: a ranking gradient smaller than its budget passes
+        through untouched, and only one larger than the budget is shrunk;
+      * a hinge that is fully satisfied gives exactly zero gradient, and the
+        update is then bitwise the pure-MC update.
 
     Returns ``(combined, info)``; info carries the raw norms, the cosine and
     the scale actually applied, for diagnostics only.
     """
-    if not (0.0 <= rank_share):
-        raise IntentTrainError(f"rank_share must be non-negative, got {rank_share}")
+    if not (0.0 <= rho):
+        raise IntentTrainError(f"rho must be non-negative, got {rho}")
     flat_mc = [g if g is not None else None for g in mc_grads]
     flat_rank = [g if g is not None else None for g in rank_grads]
     if len(flat_mc) != len(flat_rank):
@@ -2152,15 +2164,20 @@ def combine_gradients(mc_grads, rank_grads, rank_share: float = RANK_GRADIENT_SH
     proj_norm = proj_sq ** 0.5
 
     # Numerical guard: a projected ranking gradient that is negligible
-    # RELATIVE to the MC gradient is treated as exactly zero. Without this,
-    # dividing by a denormal norm would turn pure floating-point noise into
-    # a full rank_share of the update. No empirical cap is needed beyond it:
-    # the ranking contribution is already bounded at rank_share * |g_MC| by
-    # construction.
+    # RELATIVE to the MC gradient is treated as exactly zero, so the update
+    # degenerates to pure MC rather than carrying floating-point noise.
+    # Under the cap this is belt-and-braces -- noise below the budget now
+    # passes through at its own (negligible) size instead of being scaled up
+    # -- but it keeps the zero case bitwise exact.
     negligible = proj_norm <= RANK_GRADIENT_ZERO_TOL * max(mc_norm, 1.0)
     scale = 0.0
     if proj_norm > 0.0 and mc_norm > 0.0 and not negligible:
-        scale = rank_share * mc_norm / (proj_norm + epsilon)
+        # CAP, never amplify: the budget is an upper bound, so a ranking
+        # gradient already inside it passes through at scale 1.0.
+        rank_budget = min(proj_norm, rho * mc_norm)
+        scale = rank_budget / (proj_norm + epsilon)
+        if scale > 1.0:      # only reachable through the epsilon; clamp anyway
+            scale = 1.0
     if not np.isfinite(scale):
         raise IntentTrainError(
             f"non-finite rank scale {scale} (|g_MC|={mc_norm}, |g'_rank|={proj_norm})")

@@ -31,7 +31,7 @@ def test_c2_formal_config_is_the_single_source_of_truth() -> None:
     assert (cfg.epsilon_start, cfg.epsilon_end) == (0.30, 0.05)
     assert cfg.updates_per_episode == 1
     assert not hasattr(cfg, 'lambda_rank'), (
-        'lambda_rank is retired: gradients are combined by projection with rank_share, so a '
+        'lambda_rank is retired: gradients are combined by projection with a capped ranking '
         'scalar weight here would be hashed into provenance and never used')
     # C4R: the stability + mixing settings must be present and usable
     assert 0.0 < cfg.demo_sample_ratio < 1.0
@@ -86,7 +86,9 @@ def test_c2_config_validation_fails_closed() -> None:
             # on every one of their parameters.
             ("zero clip window", lambda c: c.set("gradient_health", "health_clip_window", "0")),
             ("clip fraction out of range", lambda c: c.set("gradient_health", "health_clip_fraction", "1.5")),
-            ("negative rank_share", lambda c: c.set("gradient_balance", "rank_share", "-1")),
+            ("negative rank_cap_rho", lambda c: c.set("gradient_balance", "rank_cap_rho", "-1")),
+            ("retired rank_share present at all",
+             lambda c: c.set("gradient_balance", "rank_share", "2.0")),
             ("zero audit split", lambda c: c.set("audit_split", "audit_episodes_per_scenario", "0")),
             ("mc regression factor <= 1",
              lambda c: c.set("gradient_health", "health_mc_regression_factor", "1.0")),
@@ -245,7 +247,7 @@ def test_c2_vectorized_ranking_matches_the_per_sample_loop() -> None:
         ref_rank = float(torch.stack(ref).mean())
     opt = torch.optim.Adam(model.parameters(), lr=0.0)
     got = intent_train_step(model, opt, b, torch.Generator().manual_seed(0),
-                            n_taus=n_taus, ranking_margin=margin, rank_share=1.0)
+                            n_taus=n_taus, ranking_margin=margin, rho=1.0)
     assert abs(got.rank_loss - ref_rank) < 1e-6, (got.rank_loss, ref_rank)
 
 
@@ -844,9 +846,9 @@ def test_c5_online_rows_persist_without_dead_action_features() -> None:
     rng_a, rng_b = np.random.default_rng(5), np.random.default_rng(5)
     opt = torch.optim.Adam(model.parameters(), lr=0.0)
     ra = intent_train_step(model, opt, batch_to_tensors(a.sample(64, rng_a, demo_ratio=0.2)),
-                           torch.Generator().manual_seed(1), rank_share=380.0)
+                           torch.Generator().manual_seed(1), rho=380.0)
     rb = intent_train_step(model, opt, batch_to_tensors(b.sample(64, rng_b, demo_ratio=0.2)),
-                           torch.Generator().manual_seed(1), rank_share=380.0)
+                           torch.Generator().manual_seed(1), rho=380.0)
     assert abs(ra.loss - rb.loss) < 1e-9, (ra.loss, rb.loss)
     assert abs(ra.rank_loss - rb.rank_loss) < 1e-9
 
@@ -1264,7 +1266,7 @@ def test_order5w_formal_plan_pairs_the_three_arms_on_the_same_seeds() -> None:
 
 
 def test_order3w_corpus_identity_is_decoupled_from_training_knobs() -> None:
-    """Order 3W: optimizer / rank_share / gate settings must not be able to
+    """Order 3W: optimizer / rank_cap_rho / gate settings must not be able to
     invalidate 5000 episodes of ORCA collection."""
     import configparser
     cfg = load_intent_training_config(DEFAULT_TRAINING_CONFIG)
@@ -1282,7 +1284,7 @@ def test_order3w_corpus_identity_is_decoupled_from_training_knobs() -> None:
             return load_intent_training_config(out)
 
     # training knobs: full config hash MOVES, corpus identity does NOT
-    for section, key, value in (("gradient_balance", "rank_share", "1.0"),
+    for section, key, value in (("gradient_balance", "rank_cap_rho", "1.0"),
                                 ("optim", "batch_size", "128"),
                                 ("optim", "learning_rate", "5e-5"),
                                 ("ema", "ema_decay", "0.95"),
@@ -1298,5 +1300,7 @@ def test_order3w_corpus_identity_is_decoupled_from_training_knobs() -> None:
         v = variant(section, key, value)
         assert v.corpus_identity_hash() != base_corpus, (section, key)
 
-    # rank_share is frozen at the calibrated value
-    assert cfg.rank_share == 2.0
+    # rank_cap_rho is the frozen UPPER BOUND on the ranking contribution
+    assert cfg.rank_cap_rho == 0.5, (
+        "rank_share=2.0 is retired: it normalised the ranking gradient to a FIXED multiple of "
+        "|g_MC|, degrading held-out MC on 3/3 diagnostic seeds")

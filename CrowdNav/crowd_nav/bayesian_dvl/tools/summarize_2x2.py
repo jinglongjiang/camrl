@@ -11,8 +11,7 @@ import numpy as np
 
 ROOT = Path(sys.argv[1] if len(sys.argv) > 1 else
             "/root/workspace/nav_data/mamba/camrl/bdvl_v6/CrowdNav/runs/v2/diag2x2")
-BRANCHES = [("R0", "2.0", "keep"), ("R1", "2.0", "reset"),
-            ("R2", "0.0", "keep"), ("R3", "0.0", "reset")]
+BRANCHES = [("rho050", "0.5", "keep"), ("rho100", "1.0", "keep")]
 SEEDS = [98211, 98212, 98213]
 # Synchronised windows: alignment early in joint IL is not comparable to
 # alignment late in it, because Adam's own bias correction and second-moment
@@ -150,6 +149,9 @@ for seed, name, diag in rows:
         cells += f"{(np.median(v) if v else float('nan')):>18.3f}"
     print(f"{seed:>6}{name:>4}{cells}")
 
-print("\nR0 (share=2.0, adam=keep) is the CURRENT implementation: it must reproduce the")
-print("failure, or nothing measured here can be attributed. Conclusions require 3/3")
-print("seeds pointing the same way; none of these diagnostics replaces the audit gate.")
+print("\nPRE-REGISTERED SELECTION RULE, frozen before this ran. A candidate passes only")
+print("if on 3/3 seeds it: triggers no mc_regression / non_finite / clipping abort;")
+print("ends with audit_rank <= 0.075 and margin > 0; and reaches a final audit MC")
+print("better than the SAME seed's old R0 (0.1818 / 0.1530 / 0.1351). Both pass ->")
+print("take rho=0.5, the smaller budget. One passes -> take it. Neither -> STOP, do")
+print("not sweep more rho. The ranking-gate exemption must not mask a final failure.")

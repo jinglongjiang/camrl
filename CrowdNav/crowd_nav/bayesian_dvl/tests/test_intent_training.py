@@ -4,6 +4,8 @@ every test body is copied VERBATIM (byte-identical) from the original
 monolithic file -- zero risk of a name/import mismatch during the split.
 """
 
+import pytest
+
 from crowd_nav.bayesian_dvl.tests._common import *  # noqa: F401,F403
 
 
@@ -253,7 +255,7 @@ def test_intent_train_rank_loss_teaches_executed_action_to_outrank_others() -> N
     opt = torch.optim.Adam(model.parameters(), lr=1e-3)
     il_batch = batch_to_tensors(transitions)
     gen = torch.Generator().manual_seed(1)
-    results = [intent_train_step(model, opt, il_batch, gen, rank_share=1.0) for _ in range(40)]
+    results = [intent_train_step(model, opt, il_batch, gen, rho=1.0) for _ in range(40)]
     rank_losses = [r.rank_loss for r in results]
     early_mean = float(np.mean(rank_losses[:5]))
     late_mean = float(np.mean(rank_losses[-5:]))
@@ -416,13 +418,13 @@ def test_c4r_mixed_replay_keeps_demo_supervision_alive_during_online() -> None:
     tb = batch_to_tensors(batch)
     assert int(tb.demo_mask.sum()) == 20
     opt = torch.optim.Adam(model.parameters(), lr=0.0)
-    r = intent_train_step(model, opt, tb, torch.Generator().manual_seed(0), rank_share=1.0)
+    r = intent_train_step(model, opt, tb, torch.Generator().manual_seed(0), rho=1.0)
     assert r.rank_loss > 0.0, "a mixed batch must still produce a real ranking loss"
     assert r.n_demo == 20 and r.n_online == 80
 
     # a pure-online batch is still exactly zero (the C0 contract holds)
     ob = batch_to_tensors(buf.sample(50, rng, demo_ratio=0.0))
-    r0 = intent_train_step(model, opt, ob, torch.Generator().manual_seed(0), rank_share=1000.0)
+    r0 = intent_train_step(model, opt, ob, torch.Generator().manual_seed(0), rho=1000.0)
     assert r0.rank_loss == 0.0 and abs(r0.loss - r0.mc_loss) < 1e-12
 
 
@@ -454,14 +456,14 @@ def test_c4r_grad_clipping_and_gradient_ratio_are_really_applied() -> None:
 
     # (a) with a tiny clip the post-clip gradient norm must equal the clip
     r = intent_train_step(model, opt, batch, torch.Generator().manual_seed(0),
-                          rank_share=380.0, grad_clip_norm=0.01)
+                          rho=380.0, grad_clip_norm=0.01)
     post = float(sum(p.grad.norm() ** 2 for p in model.parameters() if p.grad is not None) ** 0.5)
     assert r.clipped is True and r.grad_norm_preclip > 0.01
     assert abs(post - 0.01) < 1e-4, f"gradients must actually be clipped to 0.01, post-clip norm {post}"
 
     # (b) with a huge clip nothing is clipped and the norm is untouched
     r2 = intent_train_step(model, opt, batch, torch.Generator().manual_seed(0),
-                           rank_share=380.0, grad_clip_norm=1e9)
+                           rho=380.0, grad_clip_norm=1e9)
     post2 = float(sum(p.grad.norm() ** 2 for p in model.parameters() if p.grad is not None) ** 0.5)
     assert r2.clipped is False and abs(post2 - r2.grad_norm_preclip) < 1e-3
 
@@ -473,21 +475,25 @@ def test_c4r_grad_clipping_and_gradient_ratio_are_really_applied() -> None:
         pass
 
     # (d) Order 2R: the per-term norms are measured SEPARATELY and the
-    # realised ranking share is set by construction, not by a weight.
+    # ranking contribution is CAPPED by construction, not set by a weight.
     r3 = intent_train_step(model, opt, batch, torch.Generator().manual_seed(0),
-                           rank_share=0.25, measure_gradient_ratio=True)
+                           rho=0.25, measure_gradient_ratio=True)
     assert r3.ratio_measured and r3.mc_grad_norm > 0 and r3.rank_grad_norm > 0
     assert r3.mc_grad_norm != r3.grad_norm_preclip, (
         "the per-term MC gradient must not be the TOTAL gradient norm in disguise")
-    # the realised ratio is the declared share, because the projected
-    # ranking gradient is normalised to exactly that fraction of |g_MC|.
-    # This is precisely why a gate on this number would be tautological and
-    # why health is judged on the fixed audit set instead.
-    assert abs(r3.gradient_ratio - 0.25) < 1e-4, r3.gradient_ratio
-    assert abs(r3.weighted_rank_grad_norm - 0.25 * r3.mc_grad_norm) < 1e-4
+    # The realised ratio is BOUNDED by the declared budget, not equal to it:
+    # rho is an upper bound, so a ranking gradient already inside it passes
+    # through at its own size. (The retired fixed-share rule made this an
+    # equality, which is why a gate on this number was tautological -- and
+    # why it sat exactly on target while held-out MC degraded on 3/3 seeds.
+    # Health is judged on the fixed audit set instead.)
+    assert r3.gradient_ratio <= 0.25 + 1e-4, r3.gradient_ratio
+    assert r3.weighted_rank_grad_norm <= 0.25 * r3.mc_grad_norm + 1e-4
     r3b = intent_train_step(model, opt, batch, torch.Generator().manual_seed(0),
-                            rank_share=2.0, measure_gradient_ratio=True)
-    assert abs(r3b.gradient_ratio - 2.0) < 1e-4, r3b.gradient_ratio
+                            rho=2.0, measure_gradient_ratio=True)
+    assert r3b.gradient_ratio <= 2.0 + 1e-4, r3b.gradient_ratio
+    assert r3b.gradient_ratio >= r3.gradient_ratio - 1e-9, (
+        "a larger budget can only ever admit more ranking, never less")
     # Order 2R changed what `measure_gradient_ratio` means. The two per-term
     # autograd passes are no longer an optional diagnostic that can be
     # skipped -- they ARE the update: the projection needs g_MC and g_rank
@@ -1005,10 +1011,10 @@ def test_c0_online_only_batch_has_exactly_zero_rank_loss() -> None:
     batch = batch_to_tensors(ep.transitions)
     opt = torch.optim.Adam(model.parameters(), lr=1e-3)
     gen = torch.Generator().manual_seed(0)
-    result = intent_train_step(model, opt, batch, gen, rank_share=1000.0)
+    result = intent_train_step(model, opt, batch, gen, rho=1000.0)
     assert result.rank_loss == 0.0, f"online-only batch must have rank_loss exactly 0.0, got {result.rank_loss}"
     assert abs(result.loss - result.mc_loss) < 1e-12, (
-        f"with no demo samples the total loss must equal the MC loss even at rank_share=1000, "
+        f"with no demo samples the total loss must equal the MC loss even at rho=1000, "
         f"got loss={result.loss} mc={result.mc_loss}")
 
 
@@ -1030,10 +1036,10 @@ def test_c0_mixed_batch_rank_loss_averages_over_demo_mask_only() -> None:
 
     mixed = batch_to_tensors(list(demo_ts) + list(online_ts))
     assert int(mixed.demo_mask.sum()) == 4 and len(mixed.demo_mask) == 10
-    r_mixed = intent_train_step(model, opt, mixed, torch.Generator().manual_seed(11), rank_share=1.0)
+    r_mixed = intent_train_step(model, opt, mixed, torch.Generator().manual_seed(11), rho=1.0)
 
     demo_only = batch_to_tensors(list(demo_ts))
-    r_demo = intent_train_step(model, opt, demo_only, torch.Generator().manual_seed(11), rank_share=1.0)
+    r_demo = intent_train_step(model, opt, demo_only, torch.Generator().manual_seed(11), rho=1.0)
 
     assert abs(r_mixed.rank_loss - r_demo.rank_loss) < 1e-9, (
         f"mixed-batch rank_loss must equal the demo-only rank_loss (mean over the demo mask), "
@@ -1084,7 +1090,7 @@ def test_c0_checkpoint_schema_v6_rejects_retired_v5_and_wrong_training_contract(
         assert raw["checkpoint_schema"] == CHECKPOINT_SCHEMA_V7
         assert raw["training_contract_schema"] == TRAINING_CONTRACT_V4_RANKING_GATE_GRACE
 
-        # Order 4: a V2 checkpoint (fixed rank_share=380) must be refused
+        # Order 4: a V2 checkpoint (fixed rho=380) must be refused
         # BY NAME, not with a generic schema message. Its optimizer state,
         # EMA and replay were produced under a measurably unbalanced
         # objective, so resuming from it would give a run that is neither
@@ -1155,7 +1161,7 @@ def test_c0_mixed_loss_matches_hand_computation() -> None:
     # recompute against them.
     opt = torch.optim.Adam(model.parameters(), lr=0.0)
     produced = intent_train_step(model, opt, batch, torch.Generator().manual_seed(99),
-                                  n_taus=n_taus, ranking_margin=margin, rank_share=lam)
+                                  n_taus=n_taus, ranking_margin=margin, rho=lam)
 
     # --- independent recomputation ---
     model.train()
@@ -1553,8 +1559,13 @@ def test_order5_checkpoint_selection_is_pre_registered_and_can_fail_a_run() -> N
 
 
 def test_order2r_projected_gradient_matches_hand_computation() -> None:
-    """Order 2R: the projection + normalisation, verified against arithmetic
-    done by hand rather than against the implementation itself."""
+    """Order 2R: the projection + CAP, verified against arithmetic done by
+    hand rather than against the implementation itself.
+
+    The cap replaced a fixed normalisation to rho*|g_MC|. The difference is
+    the whole point: the budget is now an upper bound, so a ranking gradient
+    already inside it is left alone instead of being scaled UP to fill it.
+    """
     from crowd_nav.bayesian_dvl.intent_train import combine_gradients, IntentTrainError
 
     # --- conflicting case, worked out by hand -------------------------
@@ -1562,15 +1573,16 @@ def test_order2r_projected_gradient_matches_hand_computation() -> None:
     # g_rank = (-3, 0)   dot = -9   c = -9/25 = -0.36   (conflict)
     # g'_rank = (-3,0) - (-0.36)(3,4) = (-3+1.08, 1.44) = (-1.92, 1.44)
     #           |g'_rank| = sqrt(3.6864 + 2.0736) = 2.4
-    # scale = 0.25 * 5 / 2.4 = 0.5208333...
+    # budget = min(2.4, 0.25*5) = 1.25   -> scale = 1.25/2.4 = 0.5208333...
     # g = (3,4) + 0.5208333*(-1.92, 1.44) = (2.0, 4.75)
     mc = [torch.tensor([3.0, 4.0])]
     rank = [torch.tensor([-3.0, 0.0])]
-    out, info = combine_gradients(mc, rank, rank_share=0.25)
+    out, info = combine_gradients(mc, rank, rho=0.25)
     assert abs(info["mc_grad_norm"] - 5.0) < 1e-6
     assert abs(info["projection_coefficient"] - (-0.36)) < 1e-6
     assert abs(info["projected_rank_norm"] - 2.4) < 1e-6
-    assert abs(info["rank_scale"] - 0.25 * 5.0 / 2.4) < 1e-6
+    assert abs(info["rank_scale"] - 1.25 / 2.4) < 1e-6
+    assert info["rank_scale"] <= 1.0
     assert torch.allclose(out[0], torch.tensor([2.0, 4.75]), atol=1e-5), out[0]
     assert info["conflict_removed"]
 
@@ -1578,18 +1590,25 @@ def test_order2r_projected_gradient_matches_hand_computation() -> None:
     proj = out[0] - mc[0]
     assert float((proj * mc[0]).sum()) >= -1e-6, float((proj * mc[0]).sum())
 
-    # --- cooperative case: nothing is removed -------------------------
+    # --- cooperative case: nothing is removed, budget binds -----------
     mc = [torch.tensor([3.0, 4.0])]
-    rank = [torch.tensor([6.0, 8.0])]          # exactly parallel
-    out, info = combine_gradients(mc, rank, rank_share=0.25)
+    rank = [torch.tensor([6.0, 8.0])]          # exactly parallel, |g_rank| = 10 > 1.25
+    out, info = combine_gradients(mc, rank, rho=0.25)
     assert info["projection_coefficient"] == 0.0 and not info["conflict_removed"]
     assert abs(info["gradient_cosine"] - 1.0) < 1e-6
-    # rank contribution has norm exactly 0.25|g_MC|
     contrib = out[0] - mc[0]
-    assert abs(float(contrib.norm()) - 0.25 * 5.0) < 1e-5
+    assert abs(float(contrib.norm()) - 0.25 * 5.0) < 1e-5, "over budget -> capped at rho|g_MC|"
+
+    # --- INSIDE the budget: passed through, NOT scaled up -------------
+    # This is what the fixed-share rule got wrong. |g_rank| = 0.5 < 1.25,
+    # so the contribution must stay 0.5 rather than being lifted to 1.25.
+    out, info = combine_gradients([torch.tensor([3.0, 4.0])], [torch.tensor([0.3, 0.4])], rho=0.25)
+    assert abs(info["rank_scale"] - 1.0) < 1e-9
+    assert abs(float((out[0] - torch.tensor([3.0, 4.0])).norm()) - 0.5) < 1e-6
 
     # --- orthogonal case ----------------------------------------------
-    out, info = combine_gradients([torch.tensor([1.0, 0.0])], [torch.tensor([0.0, 2.0])], rank_share=0.25)
+    # |g_MC| = 1, budget = 0.25, |g_rank| = 2 -> capped to 0.25
+    out, info = combine_gradients([torch.tensor([1.0, 0.0])], [torch.tensor([0.0, 2.0])], rho=0.25)
     assert abs(info["gradient_cosine"]) < 1e-6 and not info["conflict_removed"]
     assert torch.allclose(out[0], torch.tensor([1.0, 0.25]), atol=1e-6)
 
@@ -1597,20 +1616,20 @@ def test_order2r_projected_gradient_matches_hand_computation() -> None:
     # be bit-identical to a pure MC update ------------------------------
     mc = [torch.tensor([3.0, 4.0]), torch.tensor([1.5])]
     zero = [torch.zeros(2), torch.zeros(1)]
-    out, info = combine_gradients(mc, zero, rank_share=0.25)
+    out, info = combine_gradients(mc, zero, rho=0.25)
     assert info["rank_scale"] == 0.0
     for a, b in zip(out, mc):
         assert torch.equal(a, b), (a, b)
 
     # --- a parameter only one loss touches is handled, not skipped -----
     out, info = combine_gradients([torch.tensor([3.0, 4.0]), torch.tensor([2.0])],
-                                  [torch.tensor([1.0, 0.0]), None], rank_share=0.25)
+                                  [torch.tensor([1.0, 0.0]), None], rho=0.25)
     assert abs(info["mc_grad_norm"] - (9 + 16 + 4) ** 0.5) < 1e-6
     assert abs(info["rank_grad_norm"] - 1.0) < 1e-6
     assert out[1] is not None and torch.allclose(out[1], torch.tensor([2.0]))
 
-    # --- rank_share = 0 degenerates to pure MC -------------------------
-    out, _ = combine_gradients([torch.tensor([3.0, 4.0])], [torch.tensor([-3.0, 0.0])], rank_share=0.0)
+    # --- rho = 0 degenerates to pure MC -------------------------
+    out, _ = combine_gradients([torch.tensor([3.0, 4.0])], [torch.tensor([-3.0, 0.0])], rho=0.0)
     assert torch.allclose(out[0], torch.tensor([3.0, 4.0]))
 
     # --- numerical guard: negligible RELATIVE to |g_MC| counts as zero --
@@ -1621,13 +1640,17 @@ def test_order2r_projected_gradient_matches_hand_computation() -> None:
     assert RANK_GRADIENT_ZERO_TOL == 1e-8
     mc = [torch.tensor([3.0, 4.0])]                       # |g_MC| = 5
     for tiny in (0.0, 1e-9, 5e-8):
-        out, info = combine_gradients(mc, [torch.tensor([tiny, 0.0])], rank_share=0.25)
+        out, info = combine_gradients(mc, [torch.tensor([tiny, 0.0])], rho=0.25)
         assert info["rank_negligible"] and info["rank_scale"] == 0.0, (tiny, info)
         assert torch.equal(out[0], mc[0]), (tiny, out[0])   # bit-identical to pure MC
     # just above the threshold it is honoured again
-    out, info = combine_gradients(mc, [torch.tensor([1e-6, 0.0])], rank_share=0.25)
+    out, info = combine_gradients(mc, [torch.tensor([1e-6, 0.0])], rho=0.25)
     assert not info["rank_negligible"] and info["rank_scale"] > 0
-    assert abs(float((out[0] - mc[0]).norm()) - 0.25 * 5.0) < 1e-4
+    # ...and it is honoured AT ITS OWN SIZE. The retired rule scaled this
+    # 1e-6 gradient up to a full 0.25*|g_MC| = 1.25; that lifting of a spent
+    # hinge back to a fixed share is what degraded MC on 3/3 seeds.
+    assert info["rank_scale"] == pytest.approx(1.0)
+    assert abs(float((out[0] - mc[0]).norm()) - 1e-6) < 1e-7   # float32 resolution at 3.0
 
     # --- fail closed on non-finite input -------------------------------
     try:
@@ -1651,13 +1674,18 @@ def test_order2r_projection_never_opposes_mc_on_random_geometry() -> None:
     for _ in range(300):
         mc = [torch.tensor(rng.normal(size=7).astype(np.float32))]
         rank = [torch.tensor(rng.normal(size=7).astype(np.float32))]
-        out, info = combine_gradients(mc, rank, rank_share=0.25)
+        out, info = combine_gradients(mc, rank, rho=0.25)
         contrib = out[0] - mc[0]
         dot = float((contrib * mc[0]).sum())
         worst = min(worst, dot / (float(mc[0].norm()) * float(contrib.norm()) + 1e-12))
         assert dot >= -1e-5, (dot, info)
-        # and the contribution's size is the declared share
-        assert abs(float(contrib.norm()) - 0.25 * info["mc_grad_norm"]) < 1e-4
+        # BOUNDED, not fixed: the contribution may be anything up to the
+        # budget. Asserting equality here is what the retired fixed-share
+        # rule guaranteed, and that guarantee is exactly what degraded MC.
+        budget = 0.25 * info["mc_grad_norm"]
+        assert float(contrib.norm()) <= budget + 1e-4, (float(contrib.norm()), budget)
+        assert float(contrib.norm()) == pytest.approx(
+            min(info["projected_rank_norm"], budget), abs=1e-4)
     assert worst >= -1e-5
 
 

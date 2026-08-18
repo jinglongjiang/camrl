@@ -508,7 +508,7 @@ def materialized_cache_identity(cfg: IntentTrainingConfig, arm: str, corpus_sha2
     """What a materialized cache is valid FOR.
 
     Deliberately EXCLUDES the training algorithm, the optimizer and
-    rank_share: materialization replays the belief bank over recorded
+    rank_cap_rho: materialization replays the belief bank over recorded
     observations and is finished before any gradient exists, so a change to
     how the update is assembled cannot alter a single row. Including them
     would force a 146-minute re-materialization for every branch of the 2x2,
@@ -1227,7 +1227,7 @@ def cmd_preflight(args) -> int:
     print(f"budget            : IL {cfg.il_episodes_total} ({cfg.il_passes} passes), online {cfg.online_episodes_total}")
     print(f"optim             : batch {cfg.batch_size}, lr {cfg.learning_rate}, gamma {cfg.gamma}, buffer {cfg.replay_capacity}")
     print(f"epsilon           : {cfg.epsilon_start} -> {cfg.epsilon_end} over {cfg.epsilon_decay_episodes} episodes")
-    print(f"gradient combine  : PROJECTED, rank_share={cfg.rank_share} of |g_MC| "
+    print(f"gradient combine  : PROJECTED + CAPPED at rho={cfg.rank_cap_rho} of |g_MC| "
           f"(margin {cfg.ranking_margin}); no lambda")
     print(f"audit split       : {cfg.audit_episodes_per_scenario} held-out episodes/scenario, "
           f"never in replay/warm-up/gradients")
@@ -1434,15 +1434,15 @@ def cmd_train(args, resume: bool = False) -> int:
     arm = art.state.training_arm
     diag_every = max(1, cfg.gradient_diagnostic_interval)
     # A branch of the 2x2 may override the frozen share; a FORMAL run may
-    # not. R2/R3 need rank_share=0 (MC-only), which is a diagnostic setting.
-    effective_rank_share = cfg.rank_share
-    if args.rank_share is not None:
+    # not. R2/R3 need rho=0 (MC-only), which is a diagnostic setting.
+    effective_rho = cfg.rank_cap_rho
+    if args.rank_cap_rho is not None:
         if not art.state.is_pilot and args.fork_from is None:
             raise IntentCLIError(
-                "--rank-share is a DIAGNOSTIC override; a formal run must use the frozen "
-                f"{cfg.rank_share}")
-        effective_rank_share = float(args.rank_share)
-        print(f"rank_share OVERRIDE for this branch: {effective_rank_share} (frozen is {cfg.rank_share})")
+                "--rank-cap-rho is a DIAGNOSTIC override; a formal run must use the frozen "
+                f"{cfg.rank_cap_rho}")
+        effective_rho = float(args.rank_cap_rho)
+        print(f"rank_cap_rho OVERRIDE for this branch: {effective_rho} (frozen is {cfg.rank_cap_rho})")
 
     def _sync_monitor() -> None:
         if art.health is not None:
@@ -1452,7 +1452,7 @@ def cmd_train(args, resume: bool = False) -> int:
         """Order 3R: gradient statistics are RECORDED, not gated.
 
         Under projected, norm-normalised gradients the ranking share is
-        exactly rank_share of |g_MC| by construction, so a gate on that
+        bounded above by rho * |g_MC| by construction, so a gate on that
         number could only fire when the projection degenerates -- it would
         be tautological. The previous version learned this the expensive
         way: it aborted a pilot for exceeding a gradient budget while the
@@ -1860,7 +1860,7 @@ def cmd_train(args, resume: bool = False) -> int:
             result = run_il_update(
                 art.model, art.optimizer, art.buffer, cfg.batch_size, art.sample_rng, art.tau_generator,
                 n_taus=cfg.iqn_train_quantiles, ranking_margin=cfg.ranking_margin,
-                rank_share=effective_rank_share, ranking_batch_size=cfg.ranking_batch_size,
+                rho=effective_rho, ranking_batch_size=cfg.ranking_batch_size,
                 device=str(device), grad_clip_norm=cfg.grad_clip_norm,
                 measure_gradient_ratio=measure, diagnose=diagnose)
             art.ema.update(art.model)
@@ -1907,7 +1907,7 @@ def cmd_train(args, resume: bool = False) -> int:
             args.env_config, art.model, art.optimizer, action_table, scenario, ep_seed, epsilon,
             art.buffer, cfg.batch_size, art.explore_rng, art.sample_rng, art.tau_generator,
             gamma=cfg.gamma, n_taus=cfg.iqn_train_quantiles, ranking_margin=cfg.ranking_margin,
-            rank_share=cfg.rank_share, ranking_batch_size=cfg.ranking_batch_size,
+            rho=cfg.rank_cap_rho, ranking_batch_size=cfg.ranking_batch_size,
             n_samples=cfg.future_n_samples, horizon=cfg.future_horizon, device=str(device),
             demo_ratio=cfg.demo_sample_ratio, grad_clip_norm=cfg.grad_clip_norm,
             measure_gradient_ratio=measure, updates=cfg.updates_per_episode, belief_mode=arm)
@@ -2167,8 +2167,9 @@ def build_parser() -> argparse.ArgumentParser:
                        help="2x2 ONLY: suspend the ranking-QUALITY abort. Requires a diagnostic "
                             "optimizer seed AND --fork-from, and is refused with --formal-plan or on "
                             "resume. Ranking metrics are still recorded; every other gate stays live.")
-        t.add_argument("--rank-share", type=float, default=None,
-                       help="DIAGNOSTIC override of the frozen rank_share (0 = MC-only, R2/R3)")
+        t.add_argument("--rank-cap-rho", type=float, default=None,
+                       help="DIAGNOSTIC override of the frozen rank_cap_rho, the UPPER BOUND on the "
+                            "ranking contribution as a fraction of |g_MC| (0 = MC-only)")
         t.add_argument("--diagnostic-interval", type=int, default=50,
                        help="record gradient/optimizer diagnostics every N IL passes")
         t.add_argument("--diagnostic-checkpoint-dir", type=Path, default=None,
@@ -2176,7 +2177,7 @@ def build_parser() -> argparse.ArgumentParser:
         t.add_argument("--materialized-cache", type=Path, default=None,
                        help="reuse an already-materialized IL row set; identity covers the raw corpus, "
                             "arm, feature schema, scene, action grid and materialization code -- NOT the "
-                            "training algorithm, optimizer or rank_share")
+                            "training algorithm, optimizer or rank_cap_rho")
         t.add_argument("--candidate-audit", type=Path, default=Path("runs/candidate_audit.json"),
                        help="PASS artifact from audit-candidates, matching this code/config/scene")
         t.add_argument("--run-dir", type=Path, required=True)
