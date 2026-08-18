@@ -133,6 +133,18 @@ COMPATIBLE_RAW_IL_CORPUS_CODE_HASHES = frozenset({
     # The 2026-08-17 audit-wiring fix only changes which already-materialized
     # held-out rows are scored; it cannot change raw ORCA transitions.
     "e7c5a081b078fe45bf831a02b59eaee6208ad8f1d25fc00c34ca1736f1fe8922",
+    # The formal V2 corpus (runs/v2/formal_corpus, identity 0ebebd0d1029),
+    # collected 2026-08-17. Everything the 2x2 changed afterwards is in the
+    # TRAINER and in observability: gradient diagnostics, the warm-up fork,
+    # the materialized cache, per-scenario audit reporting. A raw ORCA
+    # episode is a recording of the teacher acting in the environment; it is
+    # produced before any gradient exists and cannot be altered by how the
+    # update is later assembled. What COULD alter it -- the tracker, the
+    # candidate provider, the scenario, the feature builder -- is covered
+    # separately and exactly by materialization_code_sha256(), which the
+    # cache identity checks on every load.
+    "346c7892bfae72b1f6c2be089689aca73f335f2640be2584461cf65667c7d70d",
+    "e384b8ce4bdbabfc831978c4f8e6c99512c9268e5ed779a083ed4a757f118188",
 })
 # V2 blocks. The V1 bases (700_001 / 800_001) are retired along with every
 # other V1 block: the standard scenario's candidate SEMANTICS changed too
@@ -1324,8 +1336,22 @@ def cmd_train(args, resume: bool = False) -> int:
     print(f"candidate audit OK ({args.candidate_audit})")
 
     seed = args.seed if args.seed is not None else cfg.training_seeds[0]
-    if seed not in cfg.training_seeds:
-        raise IntentCLIError(f"--seed {seed} is not one of the frozen training seeds {list(cfg.training_seeds)}")
+    is_diagnostic_seed = seed in set(DIAGNOSTIC_OPTIMIZER_SEEDS)
+    if seed not in cfg.training_seeds and not is_diagnostic_seed:
+        raise IntentCLIError(
+            f"--seed {seed} is neither a frozen training seed {list(cfg.training_seeds)} nor a "
+            f"diagnostic optimizer seed {list(DIAGNOSTIC_OPTIMIZER_SEEDS)}")
+    if is_diagnostic_seed:
+        # Allowed to RUN, never allowed to COUNT. build_formal_plan and
+        # assert_not_diagnostic_seed already refuse these seeds; the banner
+        # and the run-state stamp make it visible in the artefacts too.
+        art_diagnostic_banner = (
+            f"DIAGNOSTIC RUN: optimizer seed {seed} is a 2x2 diagnostic seed. This run decides how the "
+            "update is assembled; it can never become a formal result, seed a selection, or reach a "
+            "paper number.")
+        print(art_diagnostic_banner)
+        if args.formal_plan is not None:
+            raise IntentCLIError("a diagnostic optimizer seed cannot be run under a formal plan")
 
     # Order 5W: a FORMAL run must name the frozen plan that pairs the arms.
     # The comparison this project exists to make is only valid if full/mean/cv
@@ -1531,9 +1557,18 @@ def cmd_train(args, resume: bool = False) -> int:
     # temporally adjacent and highly correlated, so a row-level split would
     # leak almost as badly.
     # ------------------------------------------------------------------
+    def _labels_for(selected, pool, labels):
+        """Labels for the SELECTED rows, matched by identity against the pool
+        they were drawn from (the selector returns row objects, not indices)."""
+        by_id = {id(t): l for t, l in zip(pool, labels)}
+        return [by_id[id(t)] for t in selected]
+
     scenario_rows = art.il_corpus_ref.get("scenario_of_row") or []
     episode_of_row = art.il_corpus_ref.get("episode_of_row") or []
     audit_set = None
+    train_diag_set = None
+    audit_labels_sel = None
+    train_diag_labels = None
     if len(episode_of_row) == len(demo_transitions) and len(scenario_rows) == len(demo_transitions):
         by_scenario_eps: Dict[str, List[int]] = {}
         for ep, sc in zip(episode_of_row, scenario_rows):
@@ -1582,6 +1617,17 @@ def cmd_train(args, resume: bool = False) -> int:
             art.buffer.add_demo(train_rows, art.reservoir_rng)
             audit_set = _select_il_audit_rows(
                 audit_rows, audit_labels, is_pilot=art.state.is_pilot)
+            # A fixed slice of the rows that ARE in replay, selected the same
+            # balanced way. Evaluated beside the held-out set so "training fit
+            # continues while generalisation degrades" is readable directly
+            # instead of being inferred from noisy minibatch losses. It
+            # explains over-fitting; it never gates anything.
+            train_labels = [str(sc) for t, ep, sc in
+                            zip(demo_transitions, episode_of_row, scenario_rows) if ep not in audit_eps]
+            train_diag_set = _select_il_audit_rows(
+                train_rows, train_labels, is_pilot=art.state.is_pilot)
+            train_diag_labels = _labels_for(train_diag_set, train_rows, train_labels)
+            audit_labels_sel = _labels_for(audit_set, audit_rows, audit_labels)
             art.state.il_audit_identity = il_audit_identity(audit_set)
             art.state.il_audit_episodes = len(audit_eps)
             audit_scope = (
@@ -1667,13 +1713,19 @@ def cmd_train(args, resume: bool = False) -> int:
     if resume:
         _run_development_if_due(art.state.online_episodes_done)
 
+    def _train_diag_mc() -> float:
+        r = evaluate_il_audit(art.model, train_diag_set, n_taus=cfg.iqn_train_quantiles,
+                              ranking_margin=cfg.ranking_margin, device=str(device))
+        return float(r["audit_mc_loss"])
+
     def _audit_gate(tag: str) -> None:
         """Order 3R: the substantive health check -- measured effect on the
         FIXED audit set, not a gradient ratio."""
         if audit_set is None or art.health is None:
             return
         m = evaluate_il_audit(art.model, audit_set, n_taus=cfg.iqn_train_quantiles,
-                              ranking_margin=cfg.ranking_margin, device=str(device))
+                              ranking_margin=cfg.ranking_margin, device=str(device),
+                              scenario_of=audit_labels_sel)
         d = expert_rank_diagnostics(art.model, audit_set, n_taus=cfg.iqn_train_quantiles,
                                     device=str(device))
         art.state.il_audit_mc_loss = float(m["audit_mc_loss"])
@@ -1687,7 +1739,10 @@ def cmd_train(args, resume: bool = False) -> int:
             run_dir,
             f"AUDIT {tag} mc={m['audit_mc_loss']:.6f} best={art.health.best_mc:.6f} "
             f"rank={d['audit_rank_loss']:.6f} top1={d['expert_top1_rate']:.3f} "
-            f"margin={d['expert_margin_mean']:+.5f} range={d['score_range_mean']:.5f}")
+            f"margin={d['expert_margin_mean']:+.5f} range={d['score_range_mean']:.5f}"
+            + "".join(f" mc_{k.split('audit_mc_loss_')[1]}={v:.6f}"
+                      for k, v in sorted(m.items()) if k.startswith("audit_mc_loss_"))
+            + (f" trainfix={_train_diag_mc():.6f}" if train_diag_set is not None else ""))
         _sync_monitor()
         if reason:
             _save_rolling()

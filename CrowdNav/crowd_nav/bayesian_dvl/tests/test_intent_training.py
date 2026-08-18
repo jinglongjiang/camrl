@@ -843,6 +843,12 @@ def test_intent_train_cli_end_to_end_collect_il_rl_resume_checkpoint_ablation() 
         r = subprocess.run(base + ["preflight"], cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=300)
         assert r.returncode == 0 and "preflight OK" in r.stdout, r.stderr
 
+        # train/resume refuse to start without a PASSING candidate audit
+        # collected under the CURRENT code/config/scene. Produce a real one --
+        # a stub would disable the very gate this end-to-end test walks past.
+        from crowd_nav.bayesian_dvl.tests.test_intent_cli import _ensure_candidate_audit
+        _ensure_candidate_audit()
+
         r = subprocess.run(base + ["train", "--run-dir", str(run),
                                     "--target-online-episodes", "2", "--keep-resume"] + pilot,
                             cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=900)

@@ -1478,6 +1478,7 @@ def run_il_update(
         model, optimizer, batch_to_tensors(batch, device=device), tau_generator, n_taus=n_taus,
         ranking_margin=ranking_margin, rank_share=rank_share, ranking_batch_size=ranking_batch_size,
         grad_clip_norm=grad_clip_norm, measure_gradient_ratio=measure_gradient_ratio,
+        diagnose=diagnose,
     )
 
 
@@ -1887,18 +1888,35 @@ def _audit_rank_loss(model, audit: Sequence[IntentTransition], batch: IntentBatc
 
 
 def evaluate_il_audit(model, audit: Sequence[IntentTransition], n_taus: int = 16,
-                      ranking_margin: float = 0.1, device: str = "cpu") -> Dict[str, float]:
+                      ranking_margin: float = 0.1, device: str = "cpu",
+                      scenario_of: Optional[Sequence[str]] = None) -> Dict[str, float]:
     """Deterministic: fixed rows, fixed midpoint quantiles, no RNG. Two
-    calls on the same weights MUST return identical numbers."""
+    calls on the same weights MUST return identical numbers.
+
+    ``scenario_of`` (one label per audit row) additionally reports the MC
+    loss PER SCENARIO. The aggregate can hide a scenario going backwards
+    while the other improves, which is exactly the kind of thing the 2x2
+    has to be able to see.
+    """
     was_training = bool(model.training)
     model.eval()
     try:
         batch = batch_to_tensors(audit, device=device)
-        return {
+        out = {
             "audit_mc_loss": _audit_mc_loss(model, batch, n_taus),
             "audit_rank_loss": _audit_rank_loss(model, audit, batch, n_taus, ranking_margin),
             "n": float(len(audit)),
         }
+        if scenario_of is not None:
+            if len(scenario_of) != len(audit):
+                raise IntentTrainError(
+                    f"scenario_of has {len(scenario_of)} labels for {len(audit)} audit rows")
+            for name in sorted(set(str(x) for x in scenario_of)):
+                rows = [t for t, sc in zip(audit, scenario_of) if str(sc) == name]
+                sub = batch_to_tensors(rows, device=device)
+                out[f"audit_mc_loss_{name}"] = _audit_mc_loss(model, sub, n_taus)
+                out[f"audit_n_{name}"] = float(len(rows))
+        return out
     finally:
         model.train(was_training)
 
