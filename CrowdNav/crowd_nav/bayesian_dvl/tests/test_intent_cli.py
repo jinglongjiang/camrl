@@ -84,14 +84,10 @@ def test_c2_config_validation_fails_closed() -> None:
             # Order 2/3: the retired [ranking] gate is replaced by the
             # balancer + sliding-window health gate, which must fail closed
             # on every one of their parameters.
-            ("zero clip window", lambda c: c.set("gradient_health", "health_clip_window", "0")),
-            ("clip fraction out of range", lambda c: c.set("gradient_health", "health_clip_fraction", "1.5")),
             ("negative rank_cap_rho", lambda c: c.set("gradient_balance", "rank_cap_rho", "-1")),
             ("retired rank_share present at all",
              lambda c: c.set("gradient_balance", "rank_share", "2.0")),
             ("zero audit split", lambda c: c.set("audit_split", "audit_episodes_per_scenario", "0")),
-            ("mc regression factor <= 1",
-             lambda c: c.set("gradient_health", "health_mc_regression_factor", "1.0")),
             ("zero health check interval",
              lambda c: c.set("gradient_health", "health_check_interval", "0")),
             ("non-positive warmup rank ceiling",
@@ -647,35 +643,6 @@ def test_c4rf_il_corpus_is_immutable_shared_and_identity_checked() -> None:
             pass
         # A3: ONE shared path, independent of arm
         assert il_corpus_path(d, "full", cfg) == il_corpus_path(d, "mean", cfg)
-
-
-def test_c4rf_ratio_monitor_state_is_fixed_before_the_abort_checkpoint() -> None:
-    # C4RF.4 / audit point 7: the abort path saved the checkpoint BEFORE
-    # refreshing RunState.ratio_monitor from the live monitor, so the
-    # sustained count that triggered the abort was lost and a resumed run
-    # could restart the streak from a stale value.
-    import inspect
-    from crowd_nav.bayesian_dvl import intent_train_cli
-    src = inspect.getsource(intent_train_cli.cmd_train)
-    obs = src.index("def _observe(")
-    body = src[obs:obs + 1800]
-    sync = body.index("_sync_monitor()")
-    save = body.index("_save_rolling()")
-    assert sync < save, (
-        "the live monitor state must be written into RunState BEFORE the abort checkpoint is saved")
-    # A1: the single resume is written atomically (temp file + os.replace),
-    # so a crash mid-save leaves the previous file intact.
-    assert "os.replace" in inspect.getsource(intent_train_cli._atomic_write_bytes)
-
-    # and the monitor itself round-trips the streak
-    m = GradientRatioMonitor(0.05, 50.0, 3)
-    m.observe(1e6); m.observe(1e6)
-    assert m.consecutive_out_of_range == 2
-    restored = GradientRatioMonitor(0.05, 50.0, 3)
-    restored.load_state_dict(json.loads(json.dumps(m.state_dict())))
-    assert restored.consecutive_out_of_range == 2
-    # one more out-of-range observation must now trip it, not restart at 1
-    assert restored.observe(1e6) is not None
 
 
 def test_c4rf_ema_shadow_follows_the_model_device_on_resume() -> None:
@@ -1280,7 +1247,7 @@ def test_order3w_corpus_identity_is_decoupled_from_training_knobs() -> None:
                                 ("optim", "batch_size", "128"),
                                 ("optim", "learning_rate", "5e-5"),
                                 ("ema", "ema_decay", "0.95"),
-                                ("gradient_health", "health_clip_fraction", "0.7")):
+                                ("gradient_health", "health_check_interval", "50")):
         v = variant(section, key, value)
         assert v.content_hash() != base_full, (section, key)
         assert v.corpus_identity_hash() == base_corpus, (

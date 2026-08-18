@@ -51,13 +51,12 @@ from crowd_sim.envs.utils.action import ActionXY
 
 
 # Structured abort types. Callers branch on THESE, never on the message.
-ABORT_MC_REGRESSION = "mc_regression"
-ABORT_RANKING_QUALITY = "ranking_quality"
+# Training stops for arithmetic and I/O failures only. Quality judgements --
+# was the value fit good enough, did ranking converge -- are made AFTER a run
+# by the selector, which can see the whole curve.
 ABORT_NON_FINITE = "non_finite"
-ABORT_CLIPPING = "clipping"
 ABORT_WARMUP_FAILURE = "warmup_failure"
-ABORT_TYPES = (ABORT_MC_REGRESSION, ABORT_RANKING_QUALITY, ABORT_NON_FINITE,
-               ABORT_CLIPPING, ABORT_WARMUP_FAILURE)
+ABORT_TYPES = (ABORT_NON_FINITE, ABORT_WARMUP_FAILURE)
 
 RANK_CAP_RHO = 0.5
 # |g'_rank| at or below this fraction of max(|g_MC|, 1) is treated as zero.
@@ -711,160 +710,42 @@ def _grad_cosine(a, b) -> float:
     return float(dot / denom) if denom > 1e-30 else 0.0
 
 
-class TrainingHealthMonitor:
-    """Order 3R: health is judged on MEASURED EFFECT, not on gradient ratios.
+class AuditRecorder:
+    """Records the fixed-audit metrics. It does not gate anything.
 
-    The ratio gate is gone entirely. The ranking contribution is now bounded
-    above by ``rho`` * |g_MC| by construction, so a gate on that number could
-    only ever fire when the projection degenerates -- it cannot detect the
-    thing that actually went wrong. The previous incarnation of this class
-    learned that the expensive way: it aborted a pilot for exceeding a
-    gradient budget while the fixed audit set showed value regression
-    improving the whole time. And the reverse also holds: at the old fixed
-    2x share the ratio sat exactly where it was told to, while the held-out
-    MC degraded on 3/3 seeds. Only the measured effect catches that.
+    This replaces TrainingHealthMonitor, which aborted training on MC
+    regression, on ranking quality and on a clipping-fraction window, and
+    carried the streak / grace / best-so-far state those verdicts needed --
+    state that then had to be checkpointed and resumed so a verdict stayed
+    reproducible.
 
-    What is checked instead, every ``interval`` updates, on the FIXED audit
-    set (stationary rows, fixed midpoint quantiles, no RNG):
+    Every one of those verdicts is a judgement about whether a run is worth
+    keeping, and that judgement belongs AFTER training, to the selector,
+    which can look at the whole curve instead of the last two samples.
+    Deciding it mid-run cost this project two experiments: a pilot stopped
+    for a gradient budget while the fixed audit set was improving
+    throughout, and a rho branch stopped on a ranking ceiling that had been
+    calibrated under a different gradient budget.
 
-      * audit_mc  > best_mc * mc_regression_factor      -> abort
-      * audit_rank > rank_max, or top1 < top1_min,
-        on ``consecutive_bad`` CONSECUTIVE checks        -> abort
-      * clipping on > clip_fraction of the last
-        ``clip_window`` updates                          -> abort
-      * non-finite anything                              -> abort immediately
-
-    One bad check does not abort: the audit is deterministic but the weights
-    it scores are mid-optimisation. Two in a row is a trend.
-
-    Raw gradient norms and the cosine are still recorded, as diagnostics
-    only -- they no longer gate anything.
+    Non-finite values still stop a run, but as the arithmetic failure they
+    are -- raised from train_step -- not as a policy verdict.
     """
 
-    def __init__(self, interval: int = 100, mc_regression_factor: float = 1.5,
-                 rank_max: float = 0.075, ranking_grace_il_passes: int = 500,
-                 consecutive_bad: int = 2, clip_window: int = 500, clip_fraction: float = 0.80):
-        if interval <= 0 or clip_window <= 0:
-            raise IntentTrainError("interval and clip_window must be positive")
-        if mc_regression_factor <= 1.0:
-            raise IntentTrainError(f"mc_regression_factor must exceed 1, got {mc_regression_factor}")
-        self.interval = int(interval)
-        self.mc_regression_factor = float(mc_regression_factor)
-        self.rank_max = float(rank_max)
-        self.ranking_grace_il_passes = int(ranking_grace_il_passes)
-        self.consecutive_bad = int(consecutive_bad)
-        self.clip_window, self.clip_fraction = int(clip_window), float(clip_fraction)
+    def __init__(self) -> None:
         self.best_mc: Optional[float] = None
-        self.consecutive_rank_bad = 0
         self.n_checks = 0
-        self.clips: List[bool] = []
-        self.diagnostics: List[dict] = []
 
-    _FROZEN = ("interval", "mc_regression_factor", "rank_max", "ranking_grace_il_passes",
-               "consecutive_bad", "clip_window", "clip_fraction")
-
-    def observe_update(self, clipped: bool) -> Optional[str]:
-        self.clips.append(bool(clipped))
-        if len(self.clips) > self.clip_window:
-            del self.clips[:-self.clip_window]
-        if len(self.clips) >= self.clip_window:
-            frac = sum(self.clips) / len(self.clips)
-            if frac > self.clip_fraction:
-                return (f"gradient clipping fired on {frac:.1%} of the last {self.clip_window} updates "
-                        f"(> {self.clip_fraction:.0%})")
-        return None
-
-    def observe_audit(self, audit_mc: float, audit_rank: float, top1: float,
-                      check_ranking: bool = True, il_pass: Optional[int] = None,
-                      disable_ranking_gate: bool = False) -> Optional[Tuple[str, str]]:
-        """``None`` when healthy, else ``(reason_type, message)``.
-
-        The TYPE is what callers branch on. Three different failures used to
-        arrive as three English sentences behind one shared prefix, so the
-        only way to tell "the experiment answered" from "the run broke" was
-        to match prose -- which is exactly what the 2x2 runner had to do, and
-        exactly what a reworded message would silently break.
-        """
-        for name, v in (("audit_mc", audit_mc), ("audit_rank", audit_rank), ("top1", top1)):
-            if not np.isfinite(v):
-                return (ABORT_NON_FINITE, f"non-finite {name} = {v}")
+    def observe_audit(self, audit_mc: float, audit_rank: float, top1: float) -> None:
         self.n_checks += 1
-        if self.best_mc is None or audit_mc < self.best_mc:
+        if np.isfinite(audit_mc) and (self.best_mc is None or audit_mc < self.best_mc):
             self.best_mc = float(audit_mc)
-        if self.best_mc > 0 and audit_mc > self.best_mc * self.mc_regression_factor:
-            return (ABORT_MC_REGRESSION,
-                    f"value regression on the FIXED audit set reached {audit_mc / self.best_mc:.2f}x its own "
-                    f"best ({audit_mc:.6f} vs {self.best_mc:.6f}), limit {self.mc_regression_factor}x")
-        # The ranking-quality gate presupposes a PASSED warm-up: it exists to
-        # catch joint training eroding a ranking structure that was actually
-        # built. With the warm-up skipped (pilot only) there is nothing to
-        # protect, and firing here would just be reporting that fact.
-        if not check_ranking:
-            self.consecutive_rank_bad = 0
-            return None
-        # PHASE-TRANSITION GRACE. When MC joins a freshly warmed-up ranker the
-        # ranking metrics take a transient step backwards and then recover.
-        # Measured on the same code and corpus:
-        #   pilot   pass 0/100/200/300 -> 0.0287 / 0.0848 / 0.0732 / 0.0656
-        #   formal  pass 0/100/200     -> 0.0292 / 0.0881 / 0.0775  -> ABORT
-        # Both are the same transient; only the pilot's pass-200 sample
-        # happened to land 0.0018 inside the ceiling and reset the streak,
-        # while the formal run's landed 0.0025 outside it. A gate whose
-        # verdict turns on 0.004 of a known transient is a false positive,
-        # not a measurement. The pilot's own trajectory shows where it goes:
-        # 0.0656 -> ... -> 0.0193 by pass 2000, far under the ceiling.
-        #
-        # So the RANKING gate is suspended for the first
-        # `ranking_grace_il_passes` IL passes, with the streak starting from
-        # zero afterwards. Everything else -- non-finite values and MC
-        # regression -- is enforced from pass 0.
-        if il_pass is not None and il_pass < self.ranking_grace_il_passes:
-            self.consecutive_rank_bad = 0
-            return None
-        # top-1 is telemetry, not a gate: its threshold shares the leaked
-        # provenance of the warm-up one. rank_loss IS the ranking objective.
-        bad = audit_rank > self.rank_max
-        self.consecutive_rank_bad = self.consecutive_rank_bad + 1 if bad else 0
-        if self.consecutive_rank_bad >= self.consecutive_bad:
-            if disable_ranking_gate:
-                # DIAGNOSTIC ONLY. The 2x2's independent variable IS ranking
-                # pressure, and two of its four cells train with no ranking
-                # gradient at all -- so gating them on ranking quality would
-                # decide the question in advance rather than measure it. The
-                # metric is still computed and recorded; only the verdict is
-                # suspended. Every other gate stays live.
-                return None
-            return (ABORT_RANKING_QUALITY,
-                    f"ranking quality failed {self.consecutive_rank_bad} consecutive audits "
-                    f"(rank={audit_rank:.5f} > {self.rank_max}; top1={top1:.3f} reported only)")
-        return None
-
-    def record_diagnostic(self, **kw) -> None:
-        """Gradient norms / cosine / rank_scale: kept for the report, never gates."""
-        self.diagnostics.append(dict(kw))
-        if len(self.diagnostics) > 500:
-            del self.diagnostics[:-500]
 
     def state_dict(self) -> dict:
-        state = {"best_mc": self.best_mc, "consecutive_rank_bad": self.consecutive_rank_bad,
-                 "n_checks": self.n_checks, "clips": [bool(x) for x in self.clips],
-                 "diagnostics": list(self.diagnostics)}
-        state.update({k: getattr(self, k) for k in self._FROZEN})
-        return state
+        return {"best_mc": self.best_mc, "n_checks": self.n_checks}
 
-    def load_state_dict(self, state: dict) -> None:
-        missing = [k for k in self._FROZEN if k not in state]
-        if missing:
-            raise IntentTrainError(f"health monitor state is missing frozen thresholds {missing}")
-        for k in self._FROZEN:
-            if float(state[k]) != float(getattr(self, k)):
-                raise IntentTrainError(
-                    f"health monitor config drift on {k}: checkpoint {state[k]} != {getattr(self, k)}")
-        self.best_mc = None if state["best_mc"] is None else float(state["best_mc"])
-        self.consecutive_rank_bad = int(state["consecutive_rank_bad"])
-        self.n_checks = int(state["n_checks"])
-        self.clips = [bool(x) for x in state["clips"]]
-        self.diagnostics = list(state["diagnostics"])
+    def load_state_dict(self, d: dict) -> None:
+        self.best_mc = d.get("best_mc")
+        self.n_checks = int(d.get("n_checks", 0))
 
 
 class GradientRatioMonitor:

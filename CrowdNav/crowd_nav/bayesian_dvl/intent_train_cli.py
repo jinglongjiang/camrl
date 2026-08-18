@@ -58,13 +58,13 @@ from crowd_nav.bayesian_dvl.intent_policy import (
     CHECKPOINT_SCHEMA_V7, HUMAN_FEATURE_DIM_V5, load_intent_checkpoint, save_intent_checkpoint,
 )
 from crowd_nav.bayesian_dvl.intent_train import (
-    ABORT_CLIPPING, ABORT_TYPES, ABORT_WARMUP_FAILURE, TEST8_AUDIT_BASE_SEED, TEST8_AUDIT_BASE_SEED_RETIRED,
+    ABORT_TYPES, ABORT_WARMUP_FAILURE, TEST8_AUDIT_BASE_SEED, TEST8_AUDIT_BASE_SEED_RETIRED,
     FORMAL_EVAL_HELDOUT_SEEDS, FORMAL_SIX_SCENARIOS, PAPER_MAIN_BASE_SEED,
     STANDARD_DEV_DIAGNOSTIC_SEEDS, STANDARD_SELECTION_DEV_SEEDS, JUNCTION_SELECTION_DEV_SEEDS,
     PAPER_MAIN_EPISODES_PER_SCENARIO, EMAModel,
     IntentReplay, paper_main_jobs, IL_AUDIT_SET_SIZE, IL_AUDIT_PER_SCENARIO,
     build_il_audit_set,
-    il_audit_identity, evaluate_il_audit, TrainingHealthMonitor, run_ranking_warmup,
+    il_audit_identity, evaluate_il_audit, AuditRecorder, run_ranking_warmup,
     expert_rank_diagnostics, select_checkpoint, build_formal_plan, assert_in_formal_plan,
     FORMAL_ARMS,
     batch_to_tensors, collect_orca_episode, run_ablation_suite, run_formal_six_scenario_evaluation,
@@ -632,7 +632,7 @@ class TrainingArtifacts:
     explore_rng: np.random.Generator
     sample_rng: np.random.Generator
     state: RunState
-    health: Optional[TrainingHealthMonitor] = None
+    health: Optional[AuditRecorder] = None
     reservoir_rng: Optional[np.random.Generator] = None
     il_corpus_ref: Optional[dict] = None
 
@@ -722,12 +722,7 @@ def _build_artifacts(cfg: IntentTrainingConfig, seed: int, device: torch.device,
         explore_rng=np.random.default_rng(seed + 2),
         sample_rng=np.random.default_rng(seed + 3),
         reservoir_rng=np.random.default_rng(seed + 4),
-        health=TrainingHealthMonitor(
-            interval=cfg.health_check_interval, mc_regression_factor=cfg.health_mc_regression_factor,
-            rank_max=cfg.health_rank_max,
-            ranking_grace_il_passes=cfg.ranking_gate_grace_il_passes,
-            consecutive_bad=cfg.health_consecutive_bad, clip_window=cfg.health_clip_window,
-            clip_fraction=cfg.health_clip_fraction),
+        health=AuditRecorder(),
         state=RunState(config_hash=cfg.content_hash(), code_hash=code_sha256(),
                         action_grid_hash=action_grid_hash, scene_registry_hash=scene_hash, seed=seed),
     )
@@ -1321,30 +1316,14 @@ def cmd_train(args, resume: bool = False) -> int:
             art.state.health_state = json.dumps(art.health.state_dict())
 
     def _observe(result) -> None:
-        """Order 3R: gradient statistics are RECORDED, not gated.
+        """Gradient statistics are RECORDED, never gated.
 
-        Under projected, norm-normalised gradients the ranking share is
-        bounded above by rho * |g_MC| by construction, so a gate on that
-        number could only fire when the projection degenerates -- it would
-        be tautological. The previous version learned this the expensive
-        way: it aborted a pilot for exceeding a gradient budget while the
-        fixed audit set showed value regression improving throughout.
-
-        What still gates here is clipping, measured on EVERY update. The
-        substantive checks live in _audit_gate().
+        The clipping-fraction abort lived here. Clipping itself still
+        happens inside train_step; what is gone is stopping a run BECAUSE
+        clipping was frequent, which is a quality judgement for the
+        selector rather than an arithmetic failure.
         """
-        if result is None or art.health is None:
-            return
-        if result.ratio_measured:
-            art.health.record_diagnostic(
-                mc_grad_norm=result.mc_grad_norm, rank_grad_norm=result.rank_grad_norm,
-                rank_scale=result.lambda_used, cosine=result.gradient_cosine,
-                grad_norm_preclip=result.grad_norm_preclip)
-        reason = art.health.observe_update(bool(result.clipped))
         _sync_monitor()
-        if reason:
-            _save_rolling()
-            _abort(ABORT_CLIPPING, reason)
 
     # ---------------- IL phase ----------------
     # C4RF.2: the arm's IL corpus is collected ONCE into an immutable,
@@ -1636,9 +1615,14 @@ def cmd_train(args, resume: bool = False) -> int:
                               ranking_margin=cfg.ranking_margin, device=str(device))
         return float(r["audit_mc_loss"])
 
-    def _audit_gate(tag: str) -> None:
-        """Order 3R: the substantive health check -- measured effect on the
-        FIXED audit set, not a gradient ratio."""
+    def _audit_record(tag: str) -> None:
+        """Evaluate the FIXED held-out audit set and log it. No verdict.
+
+        This was _audit_gate and could abort on MC regression or on ranking
+        quality. Both judgements moved to the selector, which sees the whole
+        curve; a mid-run gate sees the last two samples and has twice
+        stopped a run that was not actually failing.
+        """
         if audit_set is None or art.health is None:
             return
         m = evaluate_il_audit(art.model, audit_set, n_taus=cfg.iqn_train_quantiles,
@@ -1648,11 +1632,7 @@ def cmd_train(args, resume: bool = False) -> int:
                                     device=str(device))
         art.state.il_audit_mc_loss = float(m["audit_mc_loss"])
         art.state.il_audit_rank_loss = float(d["audit_rank_loss"])
-        verdict = art.health.observe_audit(m["audit_mc_loss"], d["audit_rank_loss"],
-                                           d["expert_top1_rate"],
-                                           check_ranking=art.state.warmup_passed,
-                                           il_pass=art.state.il_passes_done,
-                                           )
+        art.health.observe_audit(m["audit_mc_loss"], d["audit_rank_loss"], d["expert_top1_rate"])
         art.state.il_audit_best_mc_loss = float(art.health.best_mc or 0.0)
         append_durable_log(
             run_dir,
@@ -1663,9 +1643,6 @@ def cmd_train(args, resume: bool = False) -> int:
                       for k, v in sorted(m.items()) if k.startswith("audit_mc_loss_"))
             + (f" trainfix={_train_diag_mc():.6f}" if train_diag_set is not None else ""))
         _sync_monitor()
-        if verdict:
-            _save_rolling()
-            _abort(verdict[0], verdict[1], tag)
 
     # ---------------- Order 1W: ranking warm-up ----------------
     # Ranking is trained ALONE first. Measured on a fixed real batch: alone
@@ -1717,7 +1694,7 @@ def cmd_train(args, resume: bool = False) -> int:
 
     if art.state.il_passes_done < total_il_passes:
         result = None
-        _audit_gate("pass=0")
+        _audit_record("pass=0")
         while art.state.il_passes_done < total_il_passes:
             measure = (art.state.global_updates % diag_every == 0)
             result = run_il_update(
@@ -1740,13 +1717,13 @@ def cmd_train(args, resume: bool = False) -> int:
                     + f" lambda={result.lambda_used:.4g}"
                 )
             if art.state.il_passes_done % cfg.health_check_interval == 0:
-                _audit_gate(f"pass={art.state.il_passes_done}")
+                _audit_record(f"pass={art.state.il_passes_done}")
 
         # Order 4 gate: on a STATIONARY target the value fit must not end up
         # materially worse than its own best. lambda=380 ended at 3.0x its
         # best here; anything approaching that means the auxiliary term is
         # displacing value regression again.
-        _audit_gate(f"pass={art.state.il_passes_done} FINAL")
+        _audit_record(f"pass={art.state.il_passes_done} FINAL")
         _sync_monitor()
         _save_rolling()
 
@@ -1828,15 +1805,8 @@ def cmd_train(args, resume: bool = False) -> int:
           f"{art.state.online_episodes_done}/{cfg.online_episodes_total}, updates {art.state.global_updates}")
     h = art.health
     if h is not None:
-        clip_rate = (sum(h.clips) / len(h.clips)) if h.clips else 0.0
-        print(f"health: {h.n_checks} audit checks, best audit_mc "
-              f"{h.best_mc if h.best_mc is None else round(h.best_mc, 6)}, "
-              f"clip rate (last {len(h.clips)}) {clip_rate:.1%}")
-        if h.diagnostics:
-            d = h.diagnostics[-1]
-            print(f"last gradient diagnostic: |g_MC|={d['mc_grad_norm']:.4g} "
-                  f"|g_rank|={d['rank_grad_norm']:.4g} rank_scale={d['rank_scale']:.4g} "
-                  f"cos={d['cosine']:+.3f}")
+        print(f"audit: {h.n_checks} checks, best audit_mc "
+              f"{h.best_mc if h.best_mc is None else round(h.best_mc, 6)}")
     if art.state.warmup_passed:
         print(f"warm-up: passed in {art.state.warmup_steps} steps "
               f"(top1 {art.state.warmup_top1:.3f}, rank {art.state.warmup_rank_loss:.5f})")

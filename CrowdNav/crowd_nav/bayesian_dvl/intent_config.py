@@ -98,12 +98,6 @@ class IntentTrainingConfig:
     warmup_check_interval: int = 50
     warmup_rank_loss_max: float = 0.05
     health_check_interval: int = 100
-    health_mc_regression_factor: float = 1.5
-    health_rank_max: float = 0.075
-    ranking_gate_grace_il_passes: int = 500
-    health_consecutive_bad: int = 2
-    health_clip_window: int = 500
-    health_clip_fraction: float = 0.80
     # provenance
     source_path: str = ""
     source_sha256: str = ""
@@ -251,12 +245,6 @@ def load_intent_training_config(path: Path = DEFAULT_TRAINING_CONFIG) -> IntentT
         warmup_check_interval=gi("ranking_warmup", "warmup_check_interval"),
         warmup_rank_loss_max=gf("ranking_warmup", "warmup_rank_loss_max"),
         health_check_interval=gi("gradient_health", "health_check_interval"),
-        health_mc_regression_factor=gf("gradient_health", "health_mc_regression_factor"),
-        health_rank_max=gf("gradient_health", "health_rank_max"),
-        ranking_gate_grace_il_passes=gi("gradient_health", "ranking_gate_grace_il_passes"),
-        health_consecutive_bad=gi("gradient_health", "health_consecutive_bad"),
-        health_clip_window=gi("gradient_health", "health_clip_window"),
-        health_clip_fraction=gf("gradient_health", "health_clip_fraction"),
         source_path=str(path),
         source_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
     )
@@ -351,20 +339,8 @@ def _validate(cfg: IntentTrainingConfig) -> None:
         raise IntentConfigError("warm-up steps and check interval must be positive")
     if cfg.warmup_rank_loss_max <= 0:
         raise IntentConfigError(f"warmup_rank_loss_max must be positive, got {cfg.warmup_rank_loss_max}")
-    if cfg.health_check_interval <= 0 or cfg.health_clip_window <= 0:
-        raise IntentConfigError("health intervals must be positive")
-    if cfg.health_mc_regression_factor <= 1.0:
-        raise IntentConfigError(
-            f"health_mc_regression_factor must exceed 1, got {cfg.health_mc_regression_factor}")
-    if cfg.ranking_gate_grace_il_passes < 0:
-        raise IntentConfigError(
-            f"ranking_gate_grace_il_passes must be >= 0, got {cfg.ranking_gate_grace_il_passes}")
-    if cfg.health_consecutive_bad <= 0:
-        raise IntentConfigError("health_consecutive_bad must be positive")
-    for name in ("health_rank_max", "health_clip_fraction"):
-        v = getattr(cfg, name)
-        if not (0 < v <= 1):
-            raise IntentConfigError(f"{name} must be in (0,1], got {v}")
+    if cfg.health_check_interval <= 0:
+        raise IntentConfigError(f"health_check_interval must be positive, got {cfg.health_check_interval}")
     if not 0.0 < cfg.gamma <= 1.0:
         raise IntentConfigError(f"gamma must be in (0,1], got {cfg.gamma}")
     if not 0.0 < cfg.ema_decay < 1.0:
