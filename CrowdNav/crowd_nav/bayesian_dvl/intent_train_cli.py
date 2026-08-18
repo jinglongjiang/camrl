@@ -489,11 +489,55 @@ def build_il_corpus(env_config_path: Path, cfg: IntentTrainingConfig, arm: str, 
     return meta
 
 
+MATERIALIZED_CACHE_SCHEMA = "bdvl_materialized_il_v1"
+
+
+def materialized_cache_identity(cfg: IntentTrainingConfig, arm: str, corpus_sha256: str) -> dict:
+    """What a materialized cache is valid FOR.
+
+    Deliberately EXCLUDES the training algorithm, the optimizer and
+    rank_share: materialization replays the belief bank over recorded
+    observations and is finished before any gradient exists, so a change to
+    how the update is assembled cannot alter a single row. Including them
+    would force a 146-minute re-materialization for every branch of the 2x2,
+    which is the whole reason this cache exists.
+    """
+    return {
+        "cache_schema": MATERIALIZED_CACHE_SCHEMA,
+        "corpus_sha256": corpus_sha256,
+        "arm": arm,
+        "feature_schema": FEATURE_SCHEMA_V6,
+        "scene_registry_sha256": scene_registry_sha256(cfg),
+        "action_grid_hash": ActionGridSpec.from_env_config(str(DEFAULT_ENV_CONFIG)).table_hash(),
+        # only the code that PRODUCES rows, not the code that consumes them
+        "materialization_code_sha256": materialization_code_sha256(),
+        "future_horizon": int(cfg.future_horizon),
+        "future_n_samples": int(cfg.future_n_samples),
+    }
+
+
+def materialization_code_sha256() -> str:
+    """Hash of the modules that decide what a materialized row CONTAINS."""
+    h = hashlib.sha256()
+    here = Path(__file__).resolve().parent
+    for name in ("intent_tracker.py", "scene_candidates.py", "intent_policy.py",
+                 "junction_scenario.py", "geometry_features.py", "normalization.py"):
+        h.update((here / name).read_bytes())
+    # materialize_arm_transitions itself lives in intent_train.py, which also
+    # holds the training loop; hash only that ONE function so a trainer edit
+    # does not invalidate rows it cannot affect.
+    import inspect
+    from crowd_nav.bayesian_dvl.intent_train import materialize_arm_transitions as _m
+    h.update(inspect.getsource(_m).encode())
+    return h.hexdigest()
+
+
 def load_il_corpus(
     path: Path,
     cfg: IntentTrainingConfig,
     arm: str,
     progress_callback: Optional[Callable[[int, int, int], None]] = None,
+    cache_path: Optional[Path] = None,
 ) -> tuple:
     """Load + HARD-VALIDATE an IL corpus. Fails closed on any identity
     mismatch rather than training an arm on another arm's demonstrations."""
@@ -525,6 +569,18 @@ def load_il_corpus(
     meta["corpus_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
     meta["path"] = str(path)
     meta["materialized_arm"] = arm
+    identity = materialized_cache_identity(cfg, arm, meta["corpus_sha256"])
+    if cache_path is not None and Path(cache_path).exists():
+        cached = torch.load(str(cache_path), map_location="cpu", weights_only=False)
+        if cached.get("identity") == identity:
+            meta["scenario_of_row"] = cached["scenario_of_row"]
+            meta["episode_of_row"] = cached["episode_of_row"]
+            meta["materialized_cache"] = str(cache_path)
+            print(f"materialized cache HIT ({len(cached['transitions'])} rows) -> {cache_path}")
+            return cached["transitions"], meta
+        drift = sorted(k for k in identity if cached.get("identity", {}).get(k) != identity[k])
+        print(f"materialized cache MISS (differs on {drift}); re-materializing")
+
     grid = ActionGridSpec.from_env_config(str(DEFAULT_ENV_CONFIG))
     action_table = np.asarray(grid.build_action_table(), dtype=np.float64)
     transitions = []
@@ -543,6 +599,14 @@ def load_il_corpus(
     # scenario of each demo row travels with it.
     meta["scenario_of_row"] = scenarios
     meta["episode_of_row"] = episode_ids
+    if cache_path is not None:
+        Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
+        tmp = Path(str(cache_path) + ".tmp")
+        torch.save({"identity": identity, "transitions": transitions,
+                    "scenario_of_row": scenarios, "episode_of_row": episode_ids}, str(tmp))
+        tmp.replace(cache_path)
+        meta["materialized_cache"] = str(cache_path)
+        print(f"materialized cache WRITE ({len(transitions)} rows) -> {cache_path}")
     return transitions, meta
 
 
@@ -1038,6 +1102,77 @@ def cmd_audit_test8_candidates(args) -> int:
     return 0
 
 
+# --------------------------------------------------------------------- #
+# 2x2 diagnostic support: fork the run at the warm-up boundary.
+# --------------------------------------------------------------------- #
+
+FORK_SCHEMA = "bdvl_warmup_fork_v1"
+DIAGNOSTIC_IL_PASSES = (100, 300, 500, 700, 900, 1100, 1500, 2000)
+
+
+def save_warmup_fork(path: Path, art, cfg, arm: str) -> None:
+    """Everything a branch needs to continue from the SAME point: weights,
+    optimizer state, EMA, both RNG streams and the replay identity. The 2x2
+    is only a controlled experiment if every branch starts here bit-for-bit
+    and then differs in exactly one declared way."""
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    torch.save({
+        "fork_schema": FORK_SCHEMA,
+        "model_state_dict": art.model.state_dict(),
+        "optimizer_state_dict": art.optimizer.state_dict(),
+        "ema_state_dict": art.ema.state_dict() if hasattr(art.ema, "state_dict") else art.ema.shadow,
+        "tau_generator_state": art.tau_generator.get_state(),
+        "sample_rng_state": art.sample_rng.bit_generator.state,
+        "warmup_steps": int(art.state.warmup_steps),
+        "warmup_top1": float(art.state.warmup_top1),
+        "warmup_rank_loss": float(art.state.warmup_rank_loss),
+        "il_corpus_ref": art.il_corpus_ref,
+        "arm": arm,
+        "code_sha256": code_sha256(),
+        "config_content_sha256": cfg.content_hash(),
+        "scene_registry_sha256": scene_registry_sha256(cfg),
+    }, str(path))
+    print(f"warm-up fork saved -> {path}")
+
+
+def load_warmup_fork(path: Path, art, cfg, arm: str, reset_optimizer: bool) -> dict:
+    payload = torch.load(str(path), map_location="cpu", weights_only=False)
+    if payload.get("fork_schema") != FORK_SCHEMA:
+        raise IntentCLIError(f"{path} is not a warm-up fork ({payload.get('fork_schema')!r})")
+    for key, want in (("code_sha256", code_sha256()),
+                      ("config_content_sha256", cfg.content_hash()),
+                      ("scene_registry_sha256", scene_registry_sha256(cfg)),
+                      ("arm", arm)):
+        if payload.get(key) != want:
+            raise IntentCLIError(
+                f"fork {path} was taken under a different {key} ({payload.get(key)} != {want}); "
+                "branches of one experiment must share their starting point exactly")
+    art.model.load_state_dict(payload["model_state_dict"])
+    if reset_optimizer:
+        # A FRESH Adam, deliberately. The warm-up runs 400 pure-ranking
+        # steps through the same optimizer as joint IL, so its second
+        # moments are built entirely from ranking-gradient magnitudes and
+        # decay only with beta2's ~693-step half-life. Whether that matters
+        # is exactly what R1/R3 exist to answer -- this switch is the only
+        # difference between R0/R1 and between R2/R3.
+        art.optimizer = torch.optim.Adam(art.model.parameters(), lr=cfg.learning_rate)
+        print("warm-up fork loaded with a RESET optimizer (fresh Adam state)")
+    else:
+        art.optimizer.load_state_dict(payload["optimizer_state_dict"])
+        print("warm-up fork loaded, optimizer state CARRIED from warm-up")
+    if hasattr(art.ema, "load_state_dict"):
+        art.ema.load_state_dict(payload["ema_state_dict"])
+    else:
+        art.ema.shadow = payload["ema_state_dict"]
+    art.tau_generator.set_state(payload["tau_generator_state"])
+    art.sample_rng.bit_generator.state = payload["sample_rng_state"]
+    art.state.warmup_passed = True
+    art.state.warmup_steps = int(payload["warmup_steps"])
+    art.state.warmup_top1 = float(payload["warmup_top1"])
+    art.state.warmup_rank_loss = float(payload["warmup_rank_loss"])
+    return payload
+
+
 def cmd_preflight(args) -> int:
     cfg = load_intent_training_config(args.config)
     grid = ActionGridSpec.from_env_config(str(args.env_config))
@@ -1238,6 +1373,16 @@ def cmd_train(args, resume: bool = False) -> int:
 
     arm = art.state.training_arm
     diag_every = max(1, cfg.gradient_diagnostic_interval)
+    # A branch of the 2x2 may override the frozen share; a FORMAL run may
+    # not. R2/R3 need rank_share=0 (MC-only), which is a diagnostic setting.
+    effective_rank_share = cfg.rank_share
+    if args.rank_share is not None:
+        if not art.state.is_pilot and args.fork_from is None:
+            raise IntentCLIError(
+                "--rank-share is a DIAGNOSTIC override; a formal run must use the frozen "
+                f"{cfg.rank_share}")
+        effective_rank_share = float(args.rank_share)
+        print(f"rank_share OVERRIDE for this branch: {effective_rank_share} (frozen is {cfg.rank_share})")
 
     def _sync_monitor() -> None:
         if art.health is not None:
@@ -1356,7 +1501,9 @@ def cmd_train(args, resume: bool = False) -> int:
         )
 
     demo_transitions, art.il_corpus_ref = load_il_corpus(
-        corpus_file, cfg, arm, progress_callback=_report_il_materialize)
+        corpus_file, cfg, arm, progress_callback=_report_il_materialize,
+        cache_path=Path(args.materialized_cache) if args.materialized_cache
+        else corpus_file.parent / f"materialized_{arm}_{cfg.corpus_identity_hash()[:12]}.pth")
     append_durable_log(
         run_dir,
         f"IL-MATERIALIZE COMPLETE arm={arm} episodes={art.il_corpus_ref['n_episodes']} "
@@ -1544,6 +1691,12 @@ def cmd_train(args, resume: bool = False) -> int:
     # MC supervises only the executed action, so it constrains nothing about
     # the other 79 -- the ranking structure has to exist BEFORE value
     # regression starts moving the scores.
+    if args.fork_from is not None:
+        if art.state.il_passes_done:
+            raise IntentCLIError("--fork-from only starts a branch; it cannot be combined with a resume")
+        load_warmup_fork(Path(args.fork_from), art, cfg, arm, bool(args.reset_optimizer))
+        telemetry.log(f"FORK loaded from {args.fork_from} "
+                      f"reset_optimizer={bool(args.reset_optimizer)} rank_share={cfg.rank_share if args.rank_share is None else args.rank_share}")
     _wu_max = args.warmup_steps if args.warmup_steps is not None else cfg.warmup_max_steps
     if _wu_max == 0 and not art.state.is_pilot:
         raise IntentCLIError('--warmup-steps 0 skips the warm-up gate; PILOT ONLY')
@@ -1584,17 +1737,21 @@ def cmd_train(args, resume: bool = False) -> int:
                 f"Joint training must not start on an unlearned ranking term.")
         telemetry.log(f"WARMUP PASSED steps={wu['steps']} top1={art.state.warmup_top1:.3f} "
                       f"rank={art.state.warmup_rank_loss:.5f}")
+        if args.save_warmup_fork is not None:
+            save_warmup_fork(Path(args.save_warmup_fork), art, cfg, arm)
 
     if art.state.il_passes_done < total_il_passes:
         result = None
         _audit_gate("pass=0")
         while art.state.il_passes_done < total_il_passes:
             measure = (art.state.global_updates % diag_every == 0)
+            diagnose = (art.state.il_passes_done % args.diagnostic_interval == 0)
             result = run_il_update(
                 art.model, art.optimizer, art.buffer, cfg.batch_size, art.sample_rng, art.tau_generator,
                 n_taus=cfg.iqn_train_quantiles, ranking_margin=cfg.ranking_margin,
-                rank_share=cfg.rank_share, ranking_batch_size=cfg.ranking_batch_size,
-                device=str(device), grad_clip_norm=cfg.grad_clip_norm, measure_gradient_ratio=measure)
+                rank_share=effective_rank_share, ranking_batch_size=cfg.ranking_batch_size,
+                device=str(device), grad_clip_norm=cfg.grad_clip_norm,
+                measure_gradient_ratio=measure, diagnose=diagnose)
             art.ema.update(art.model)
             art.state.il_passes_done += 1
             art.state.global_updates += 1
@@ -1608,6 +1765,15 @@ def cmd_train(args, resume: bool = False) -> int:
                     + (f" ratio={result.gradient_ratio:.3f}" if result.ratio_measured else "")
                     + f" lambda={result.lambda_used:.4g}"
                 )
+            if diagnose:
+                telemetry.record_diagnostics(art.state.il_passes_done, result)
+            if (args.diagnostic_checkpoint_dir is not None
+                    and art.state.il_passes_done in DIAGNOSTIC_IL_PASSES):
+                d = Path(args.diagnostic_checkpoint_dir)
+                d.mkdir(parents=True, exist_ok=True)
+                save_intent_checkpoint(
+                    art.model, str(d / f"diag_ilpass{art.state.il_passes_done:05d}.pth"),
+                    action_grid_hash=action_grid_hash, scene_registry_sha256=scene_hash)
             if art.state.il_passes_done % cfg.health_check_interval == 0:
                 _audit_gate(f"pass={art.state.il_passes_done}")
 
@@ -1880,6 +2046,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     for name in ("train", "resume"):
         t = sub.add_parser(name)
+        t.add_argument("--save-warmup-fork", type=Path, default=None,
+                       help="write a fork checkpoint when warm-up passes (2x2 branch point)")
+        t.add_argument("--fork-from", type=Path, default=None,
+                       help="start joint IL from a warm-up fork instead of running warm-up")
+        t.add_argument("--reset-optimizer", action="store_true",
+                       help="with --fork-from: start joint IL with a FRESH Adam (R1/R3)")
+        t.add_argument("--rank-share", type=float, default=None,
+                       help="DIAGNOSTIC override of the frozen rank_share (0 = MC-only, R2/R3)")
+        t.add_argument("--diagnostic-interval", type=int, default=50,
+                       help="record gradient/optimizer diagnostics every N IL passes")
+        t.add_argument("--diagnostic-checkpoint-dir", type=Path, default=None,
+                       help="save small checkpoints at the frozen diagnostic IL passes")
+        t.add_argument("--materialized-cache", type=Path, default=None,
+                       help="reuse an already-materialized IL row set; identity covers the raw corpus, "
+                            "arm, feature schema, scene, action grid and materialization code -- NOT the "
+                            "training algorithm, optimizer or rank_share")
         t.add_argument("--candidate-audit", type=Path, default=Path("runs/candidate_audit.json"),
                        help="PASS artifact from audit-candidates, matching this code/config/scene")
         t.add_argument("--run-dir", type=Path, required=True)
