@@ -2087,7 +2087,7 @@ def combine_gradients(mc_grads, rank_grads, rho: float = RANK_CAP_RHO,
     numerically zero. That is a floor as well as a ceiling: a hinge that is
     nearly satisfied, contributing a tiny gradient, was scaled back UP to a
     fixed multiple of the value gradient, so the ranking term never yielded
-    as it converged. Measured at rank_share=2.0 on three diagnostic seeds
+    as it converged. Measured at the retired share of 2.0, on three seeds
     (12-branch 2x2, IL 2000 each):
 
         share=2.0, Adam kept    final/best MC = 1.500 / 1.285 / 1.162

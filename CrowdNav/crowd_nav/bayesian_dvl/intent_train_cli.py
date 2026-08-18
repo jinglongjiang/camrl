@@ -1807,7 +1807,8 @@ def cmd_train(args, resume: bool = False) -> int:
             raise IntentCLIError("--fork-from only starts a branch; it cannot be combined with a resume")
         load_warmup_fork(Path(args.fork_from), art, cfg, arm, bool(args.reset_optimizer))
         telemetry.log(f"FORK loaded from {args.fork_from} "
-                      f"reset_optimizer={bool(args.reset_optimizer)} rank_share={cfg.rank_share if args.rank_share is None else args.rank_share}")
+                      f"reset_optimizer={bool(args.reset_optimizer)} "
+                      f"rank_cap_rho={cfg.rank_cap_rho if args.rank_cap_rho is None else args.rank_cap_rho}")
     _wu_max = args.warmup_steps if args.warmup_steps is not None else cfg.warmup_max_steps
     if _wu_max == 0 and not art.state.is_pilot:
         raise IntentCLIError('--warmup-steps 0 skips the warm-up gate; PILOT ONLY')
