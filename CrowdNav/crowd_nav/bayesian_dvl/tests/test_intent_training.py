@@ -1764,8 +1764,11 @@ def test_warmup_gate_is_the_ranking_objective_not_top1() -> None:
     # a rank loss over the ceiling still aborts on two consecutive checks
     m2 = TrainingHealthMonitor()
     assert m2.observe_audit(0.10, 0.9, 1.0) is None
-    reason = m2.observe_audit(0.10, 0.9, 1.0)
-    assert reason is not None and "rank=" in reason and "reported only" in reason
+    verdict = m2.observe_audit(0.10, 0.9, 1.0)
+    assert verdict is not None
+    kind, reason = verdict
+    assert kind == "ranking_quality", "callers branch on the TYPE, not on the sentence"
+    assert "rank=" in reason and "reported only" in reason
     # MC regression is untouched by any of this
     m3 = TrainingHealthMonitor()
     assert m3.observe_audit(0.10, 0.01, 1.0) is None
@@ -1809,8 +1812,8 @@ def test_ranking_gate_has_a_phase_transition_grace() -> None:
     # AFTER the grace the original rule is unchanged: two consecutive aborts
     m2 = TrainingHealthMonitor(ranking_grace_il_passes=500)
     assert m2.observe_audit(0.20, 0.09, 0.92, il_pass=500) is None
-    reason = m2.observe_audit(0.20, 0.09, 0.92, il_pass=600)
-    assert reason is not None and "rank=" in reason
+    verdict = m2.observe_audit(0.20, 0.09, 0.92, il_pass=600)
+    assert verdict is not None and verdict[0] == "ranking_quality" and "rank=" in verdict[1]
 
     # the streak starts from zero at the boundary: violations inside the
     # grace must not carry over and trip the very first post-grace check

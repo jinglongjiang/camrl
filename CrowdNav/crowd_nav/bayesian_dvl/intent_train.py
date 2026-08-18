@@ -50,6 +50,15 @@ from crowd_sim.envs.policy.orca import ORCA
 from crowd_sim.envs.utils.action import ActionXY
 
 
+# Structured abort types. Callers branch on THESE, never on the message.
+ABORT_MC_REGRESSION = "mc_regression"
+ABORT_RANKING_QUALITY = "ranking_quality"
+ABORT_NON_FINITE = "non_finite"
+ABORT_CLIPPING = "clipping"
+ABORT_WARMUP_FAILURE = "warmup_failure"
+ABORT_TYPES = (ABORT_MC_REGRESSION, ABORT_RANKING_QUALITY, ABORT_NON_FINITE,
+               ABORT_CLIPPING, ABORT_WARMUP_FAILURE)
+
 RANK_GRADIENT_SHARE = 0.25
 # |g'_rank| at or below this fraction of max(|g_MC|, 1) is treated as zero.
 RANK_GRADIENT_ZERO_TOL = 1e-8
@@ -831,15 +840,25 @@ class TrainingHealthMonitor:
         return None
 
     def observe_audit(self, audit_mc: float, audit_rank: float, top1: float,
-                      check_ranking: bool = True, il_pass: Optional[int] = None) -> Optional[str]:
+                      check_ranking: bool = True, il_pass: Optional[int] = None,
+                      disable_ranking_gate: bool = False) -> Optional[Tuple[str, str]]:
+        """``None`` when healthy, else ``(reason_type, message)``.
+
+        The TYPE is what callers branch on. Three different failures used to
+        arrive as three English sentences behind one shared prefix, so the
+        only way to tell "the experiment answered" from "the run broke" was
+        to match prose -- which is exactly what the 2x2 runner had to do, and
+        exactly what a reworded message would silently break.
+        """
         for name, v in (("audit_mc", audit_mc), ("audit_rank", audit_rank), ("top1", top1)):
             if not np.isfinite(v):
-                return f"non-finite {name} = {v}"
+                return (ABORT_NON_FINITE, f"non-finite {name} = {v}")
         self.n_checks += 1
         if self.best_mc is None or audit_mc < self.best_mc:
             self.best_mc = float(audit_mc)
         if self.best_mc > 0 and audit_mc > self.best_mc * self.mc_regression_factor:
-            return (f"value regression on the FIXED audit set reached {audit_mc / self.best_mc:.2f}x its own "
+            return (ABORT_MC_REGRESSION,
+                    f"value regression on the FIXED audit set reached {audit_mc / self.best_mc:.2f}x its own "
                     f"best ({audit_mc:.6f} vs {self.best_mc:.6f}), limit {self.mc_regression_factor}x")
         # The ranking-quality gate presupposes a PASSED warm-up: it exists to
         # catch joint training eroding a ranking structure that was actually
@@ -872,7 +891,16 @@ class TrainingHealthMonitor:
         bad = audit_rank > self.rank_max
         self.consecutive_rank_bad = self.consecutive_rank_bad + 1 if bad else 0
         if self.consecutive_rank_bad >= self.consecutive_bad:
-            return (f"ranking quality failed {self.consecutive_rank_bad} consecutive audits "
+            if disable_ranking_gate:
+                # DIAGNOSTIC ONLY. The 2x2's independent variable IS ranking
+                # pressure, and two of its four cells train with no ranking
+                # gradient at all -- so gating them on ranking quality would
+                # decide the question in advance rather than measure it. The
+                # metric is still computed and recorded; only the verdict is
+                # suspended. Every other gate stays live.
+                return None
+            return (ABORT_RANKING_QUALITY,
+                    f"ranking quality failed {self.consecutive_rank_bad} consecutive audits "
                     f"(rank={audit_rank:.5f} > {self.rank_max}; top1={top1:.3f} reported only)")
         return None
 

@@ -58,7 +58,7 @@ from crowd_nav.bayesian_dvl.intent_policy import (
     CHECKPOINT_SCHEMA_V7, HUMAN_FEATURE_DIM_V5, load_intent_checkpoint, save_intent_checkpoint,
 )
 from crowd_nav.bayesian_dvl.intent_train import (
-    DIAGNOSTIC_OPTIMIZER_SEEDS, TEST8_AUDIT_BASE_SEED, TEST8_AUDIT_BASE_SEED_RETIRED,
+    ABORT_CLIPPING, ABORT_TYPES, ABORT_WARMUP_FAILURE, DIAGNOSTIC_OPTIMIZER_SEEDS, TEST8_AUDIT_BASE_SEED, TEST8_AUDIT_BASE_SEED_RETIRED,
     FORMAL_EVAL_HELDOUT_SEEDS, FORMAL_SIX_SCENARIOS, PAPER_MAIN_BASE_SEED,
     STANDARD_DEV_DIAGNOSTIC_SEEDS, STANDARD_SELECTION_DEV_SEEDS, JUNCTION_SELECTION_DEV_SEEDS,
     PAPER_MAIN_EPISODES_PER_SCENARIO, EMAModel,
@@ -1329,6 +1329,31 @@ def cmd_train(args, resume: bool = False) -> int:
     action_grid_hash = grid.table_hash()
     scene_hash = scene_registry_sha256(cfg)
 
+    # DIAGNOSTIC ranking-gate exemption. Five conditions, ALL required: the
+    # 2x2's independent variable is ranking pressure, and two of its four
+    # cells carry no ranking gradient at all, so gating them on ranking
+    # quality answers the question instead of measuring it. Everywhere else
+    # the gate must stay, which is why the exemption is this narrow.
+    ranking_gate_disabled = bool(getattr(args, "diagnostic_disable_ranking_gate", False))
+    if ranking_gate_disabled:
+        why = []
+        _seed = args.seed if args.seed is not None else cfg.training_seeds[0]
+        if _seed not in set(DIAGNOSTIC_OPTIMIZER_SEEDS):
+            why.append(f"--seed {_seed} is not a diagnostic optimizer seed "
+                       f"{list(DIAGNOSTIC_OPTIMIZER_SEEDS)}")
+        if args.fork_from is None:
+            why.append("--fork-from is required (the exemption only applies to a 2x2 branch)")
+        if args.formal_plan is not None:
+            why.append("--formal-plan present (a formal run may never disable a gate)")
+        if resume:
+            why.append("resume is not a diagnostic branch start")
+        if why:
+            raise IntentCLIError(
+                "--diagnostic-disable-ranking-gate refused: " + "; ".join(why))
+        print("DIAGNOSTIC: ranking-quality ABORT suspended for this branch. The ranking metrics are "
+              "still computed and recorded; MC regression, non-finite values and the clipping gate "
+              "all remain live.")
+
     # Gap found by review: candidate_audit.py and its tests existed but the
     # production path never called them, so a failing audit did not stop
     # training. It does now.
@@ -1447,7 +1472,7 @@ def cmd_train(args, resume: bool = False) -> int:
         _sync_monitor()
         if reason:
             _save_rolling()
-            raise IntentCLIError(f"ABORT (health gate): {reason}")
+            _abort(ABORT_CLIPPING, reason)
 
     # ---------------- IL phase ----------------
     # C4RF.2: the arm's IL corpus is collected ONCE into an immutable,
@@ -1557,6 +1582,27 @@ def cmd_train(args, resume: bool = False) -> int:
     # temporally adjacent and highly correlated, so a row-level split would
     # leak almost as badly.
     # ------------------------------------------------------------------
+    def _abort(reason_type: str, message: str, tag: str = "") -> None:
+        """Emit a STRUCTURED abort and raise.
+
+        The type goes to stdout as ``ABORT_TYPE=<type>`` and to
+        ``abort_reason.json`` in the run directory. Downstream tooling reads
+        the type; the sentence is for humans and must not decide anything.
+        """
+        if reason_type not in ABORT_TYPES:
+            raise IntentCLIError(f"unknown abort type {reason_type!r}, expected one of {list(ABORT_TYPES)}")
+        payload = {"abort_type": reason_type, "message": message, "tag": tag,
+                   "il_passes_done": int(art.state.il_passes_done),
+                   "arm": arm, "seed": int(seed)}
+        try:
+            run_dir.mkdir(parents=True, exist_ok=True)
+            (run_dir / "abort_reason.json").write_text(json.dumps(payload, indent=2))
+        except OSError:
+            pass
+        print(f"ABORT_TYPE={reason_type}")
+        append_durable_log(run_dir, f"ABORT_TYPE={reason_type} {message}")
+        raise IntentCLIError(f"ABORT ({reason_type}): {message}")
+
     def _labels_for(selected, pool, labels):
         """Labels for the SELECTED rows, matched by identity against the pool
         they were drawn from (the selector returns row objects, not indices)."""
@@ -1730,10 +1776,11 @@ def cmd_train(args, resume: bool = False) -> int:
                                     device=str(device))
         art.state.il_audit_mc_loss = float(m["audit_mc_loss"])
         art.state.il_audit_rank_loss = float(d["audit_rank_loss"])
-        reason = art.health.observe_audit(m["audit_mc_loss"], d["audit_rank_loss"],
-                                          d["expert_top1_rate"],
-                                          check_ranking=art.state.warmup_passed,
-                                          il_pass=art.state.il_passes_done)
+        verdict = art.health.observe_audit(m["audit_mc_loss"], d["audit_rank_loss"],
+                                           d["expert_top1_rate"],
+                                           check_ranking=art.state.warmup_passed,
+                                           il_pass=art.state.il_passes_done,
+                                           disable_ranking_gate=ranking_gate_disabled)
         art.state.il_audit_best_mc_loss = float(art.health.best_mc or 0.0)
         append_durable_log(
             run_dir,
@@ -1744,9 +1791,9 @@ def cmd_train(args, resume: bool = False) -> int:
                       for k, v in sorted(m.items()) if k.startswith("audit_mc_loss_"))
             + (f" trainfix={_train_diag_mc():.6f}" if train_diag_set is not None else ""))
         _sync_monitor()
-        if reason:
+        if verdict:
             _save_rolling()
-            raise IntentCLIError(f"ABORT (audit gate): {reason}")
+            _abort(verdict[0], verdict[1], tag)
 
     # ---------------- Order 1W: ranking warm-up ----------------
     # Ranking is trained ALONE first. Measured on a fixed real batch: alone
@@ -1794,8 +1841,8 @@ def cmd_train(args, resume: bool = False) -> int:
         _sync_monitor()
         _save_rolling()
         if not wu["passed"]:
-            raise IntentCLIError(
-                f"ABORT (ranking warm-up): did not reach rank<={cfg.warmup_rank_loss_max} "
+            _abort(ABORT_WARMUP_FAILURE,
+                f"did not reach rank<={cfg.warmup_rank_loss_max} "
                 f"and margin>0 within {wu_max} steps "
                 f"(final top1={art.state.warmup_top1:.3f} rank={art.state.warmup_rank_loss:.5f}). "
                 f"Joint training must not start on an unlearned ranking term.")
@@ -2116,6 +2163,10 @@ def build_parser() -> argparse.ArgumentParser:
                        help="start joint IL from a warm-up fork instead of running warm-up")
         t.add_argument("--reset-optimizer", action="store_true",
                        help="with --fork-from: start joint IL with a FRESH Adam (R1/R3)")
+        t.add_argument("--diagnostic-disable-ranking-gate", action="store_true",
+                       help="2x2 ONLY: suspend the ranking-QUALITY abort. Requires a diagnostic "
+                            "optimizer seed AND --fork-from, and is refused with --formal-plan or on "
+                            "resume. Ranking metrics are still recorded; every other gate stays live.")
         t.add_argument("--rank-share", type=float, default=None,
                        help="DIAGNOSTIC override of the frozen rank_share (0 = MC-only, R2/R3)")
         t.add_argument("--diagnostic-interval", type=int, default=50,
