@@ -58,7 +58,7 @@ from crowd_nav.bayesian_dvl.intent_policy import (
     CHECKPOINT_SCHEMA_V7, HUMAN_FEATURE_DIM_V5, load_intent_checkpoint, save_intent_checkpoint,
 )
 from crowd_nav.bayesian_dvl.intent_train import (
-    TEST8_AUDIT_BASE_SEED, TEST8_AUDIT_BASE_SEED_RETIRED,
+    DIAGNOSTIC_OPTIMIZER_SEEDS, TEST8_AUDIT_BASE_SEED, TEST8_AUDIT_BASE_SEED_RETIRED,
     FORMAL_EVAL_HELDOUT_SEEDS, FORMAL_SIX_SCENARIOS, PAPER_MAIN_BASE_SEED,
     STANDARD_DEV_DIAGNOSTIC_SEEDS, STANDARD_SELECTION_DEV_SEEDS, JUNCTION_SELECTION_DEV_SEEDS,
     PAPER_MAIN_EPISODES_PER_SCENARIO, EMAModel,
@@ -795,6 +795,14 @@ def online_episode_at(cfg: IntentTrainingConfig, index: int) -> tuple:
     return "junction_crowd", crowd[j]
 
 
+def assert_not_diagnostic_seed(seed: int, what: str) -> None:
+    """Selection and paper evaluation must never read a 2x2 diagnostic run."""
+    if seed in set(DIAGNOSTIC_OPTIMIZER_SEEDS):
+        raise IntentCLIError(
+            f"{what} named diagnostic optimizer seed {seed}; the 2x2 runs decide how the update is "
+            "assembled and are not eligible for selection or any paper number")
+
+
 def _assert_not_formal_seed(seed: int) -> None:
     """Section 6: train/resume must never touch a formal, held-out,
     selection or paper seed -- nor a Test8 episode identity."""
@@ -857,6 +865,7 @@ def seed_inventory(cfg: IntentTrainingConfig) -> Dict[str, object]:
         # moment it was read, and this one must stay unread until the end.
         "junction_paper_test": JUNCTION_CROWD_PAPER_TEST_SEEDS,
         "training_seeds": cfg.training_seeds,
+        "diagnostic_optimizer_seeds": DIAGNOSTIC_OPTIMIZER_SEEDS,
         "validation_seeds": cfg.validation_seeds,
     }
     # Test8 identities are DERIVED from a base seed, so they cannot be an

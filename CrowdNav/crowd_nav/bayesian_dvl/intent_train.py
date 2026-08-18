@@ -1562,6 +1562,14 @@ FORMAL_SIX_SCENARIOS: Dict[str, Tuple[str, float, int]] = {
 # collection, or checkpoint selection, only for this one-time formal report.
 FORMAL_EVAL_HELDOUT_SEEDS: Tuple[int, ...] = tuple(range(97001, 97101))  # 100
 
+# OPTIMIZER seeds for the 2x2 causal diagnostic. Deliberately a separate
+# ROLE from the formal optimizer seeds (98201-98205): the 2x2 exists to
+# decide how the update is assembled, so its runs must never be able to
+# become a formal result, seed a selection, or touch a paper number. The
+# launcher refuses them in a formal plan and preflight proves them disjoint
+# from every other block.
+DIAGNOSTIC_OPTIMIZER_SEEDS: Tuple[int, ...] = (98211, 98212, 98213)
+
 # Order 1: DEVELOPMENT-ONLY standard-scenario diagnostic seeds.
 #
 # The `standard` (circle-crossing) scenario was the one real blind spot of
@@ -2296,6 +2304,11 @@ def build_formal_plan(seeds: Sequence[int], code_hash: str, config_hash: str,
         raise IntentTrainError("formal plan needs at least one seed")
     if len(set(seeds)) != len(seeds):
         raise IntentTrainError(f"formal plan seeds must be unique, got {seeds}")
+    diagnostic = sorted(set(seeds) & set(DIAGNOSTIC_OPTIMIZER_SEEDS))
+    if diagnostic:
+        raise IntentTrainError(
+            f"formal plan names DIAGNOSTIC optimizer seed(s) {diagnostic}; those runs exist to decide "
+            "how the update is assembled and must never become a formal result")
     return {
         "plan_schema": "bdvl_intent_formal_plan_v1",
         "arms": list(FORMAL_ARMS),

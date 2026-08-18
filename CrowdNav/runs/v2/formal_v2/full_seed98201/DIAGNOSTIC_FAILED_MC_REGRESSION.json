@@ -1,0 +1,48 @@
+{
+  "status": "DIAGNOSTIC_FAILED_MC_REGRESSION",
+  "run": "runs/v2/formal_v2/full_seed98201",
+  "arm": "full",
+  "optimizer_seed": 98201,
+  "aborted_at_il_pass": 1100,
+  "abort_rule": "fixed held-out audit MC exceeded 1.5x its own best",
+  "audit_mc": {
+    "best": 0.115128, "best_at_il_pass": 500,
+    "final": 0.180239, "final_over_best": 1.566
+  },
+  "what_this_run_is_and_is_not": {
+    "is": "a DIAGNOSTIC record of a real training failure, kept for the 2x2 causal experiment",
+    "is_not": "a result, a resumable run, or a checkpoint any arm may be selected from",
+    "forbidden": ["resume", "starting mean/CV from it", "relaxing the 1.5x gate to let it continue",
+                  "re-attributing the failure to the candidate model"]
+  },
+  "evidence_that_this_is_a_generalisation_gap_not_a_learning_failure": {
+    "note": "training minibatch MC is FLAT while the fixed held-out audit degrades 57%",
+    "train_minibatch_mc": {"pass_400_500": 0.1170, "pass_700_800": 0.1148, "pass_1000_1100": 0.1133},
+    "holdout_audit_mc":   {"pass_500": 0.1151, "pass_800": 0.1407, "pass_1100": 0.1802},
+    "rank_loss": {"pass_200": 0.0832, "pass_1100": 0.0290},
+    "margin": {"pass_200": 0.01677, "pass_1100": 0.09016},
+    "score_range": {"pass_200": 0.18984, "pass_1100": 0.82040},
+    "grad_norm": {"pass_400_500": 0.369, "pass_1000_1100": 0.539}
+  },
+  "measured_at_the_abort_checkpoint": {
+    "n_batches": 8,
+    "rank_loss": "0.023-0.047 (hinge largely satisfied)",
+    "raw_rank_grad_norm_over_mc": 1.877,
+    "raw_cosine_median": -0.035,
+    "caveat": "8 batches at ONE checkpoint; suggestive only, superseded by the 3-seed 2x2"
+  },
+  "provenance": {
+    "code_hash": "346c7892bfae72b1f6c2be089689aca73f335f2640be2584461cf65667c7d70d",
+    "config_hash": "8b60c70d23a5c3ec6701978c644d4212e8fdc5d49a8ecbeeb59a83ca2e31a46f",
+    "config_source_sha256": "fbf8b1dd17f90a1a984dba039d5170934cfa8deb214aa259b21f4f6ff77ea2e9",
+    "corpus_sha256": "cc870493e10866a4b5c5c8380e031a47f55b65a066035482751783798a2d286d",
+    "corpus_identity_hash": "0ebebd0d1029050df698b2b177448f2c78c66b142bb73bec3d23cdf9ac8df847",
+    "scene_registry_sha256": "d64facd35dbf64dbcd0262216c809dc3cf8cc5b533798d44b184e9eff2627c4c",
+    "action_grid_hash": "711a5fd167e04383787df16ec25a400dfbaddc7cdf8dc78852c00e19ec11cdcf",
+    "feature_schema": "bdvl_z_state_goal_intent_v6_candidate_set",
+    "training_contract_schema": "bdvl_intent_training_contract_ranking_gate_grace_v4",
+    "il_audit": "512 fixed rows, 256 standard + 256 junction, episode-level held out of replay/warm-up/gradients"
+  },
+  "candidate_model_status": "NOT implicated. The V2 candidate fix stands: coverage, speed residual, single-candidate rate and permutation invariance all pass, and none of those quantities change during training.",
+  "superseded_by": "3-seed 2x2 (R0/R1/R2/R3) on diagnostic optimizer seeds 98211-98213"
+}
