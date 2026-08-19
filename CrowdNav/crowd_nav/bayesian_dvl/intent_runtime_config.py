@@ -179,53 +179,24 @@ CANDIDATE_FEATURE_DIM = 5
 HUMAN_SCALAR_DIM_V6 = 14
 HUMAN_FEATURE_DIM_V6 = (HUMAN_SCALAR_DIM_V6 + MAX_CANDIDATE_GOALS * CANDIDATE_FEATURE_DIM
                         + MAX_CANDIDATE_GOALS)   # = 62
-
-
-# C0.5 (plan section 5, 2026-08-11): the GOAL-INTENT chain's own training
-# contract, on the same "data/loss semantics" axis as the V1 constant
-# above but for the V5+ network. Bumped to V2 because the objective
-# CHANGED in a way no shape check can detect: V5-era checkpoints were fit
-# with the expert ranking loss applied to EVERY replay sample including
-# ONLINE ones (so epsilon-random actions were trained to outrank the other
-# 79 -- a real objective-function bug), and with a "MAP one-hot + weighted
-# mean future" hybrid `mean` ablation arm. Weights fit under those
-# semantics are not comparable to, and must never be silently loaded by,
-# code implementing the corrected contract:
-#   demo sample:   L = L_MC + lambda_rank * L_rank(expert equivalence set)
-#   online sample: L = L_MC only
-#   mean arm:      no per-goal posterior vector, posterior-weighted mean
-#                  future only, spread == 0
-TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC = "bdvl_intent_training_contract_demo_rank_online_mc_v2"
-
-# Order 4: V3 keeps the SAME role split (demo rows carry ranking
-# supervision, online rows are MC-only) but changes HOW the update is
-# formed. There is no lambda: the two per-term gradients are computed
-# separately, any component of the ranking gradient opposing the MC
-# gradient is projected out, and the remainder is scaled to a calibrated
-# share of |g_MC|. IL additionally begins with a ranking warm-up whose
-# success is a hard gate.
+# The training contract: the data/loss SEMANTICS the weights were fit under,
+# a separate axis from feature_schema because tensor shapes cannot tell two
+# objectives apart. V5 is the current and only one:
 #
-# This is an OBJECTIVE change, so it gets its own contract even though the
-# network shape is unchanged (feature schema V5 and checkpoint schema V6
-# both still hold -- they describe tensor shapes, not what was optimised).
-# A V2 checkpoint must be refused for resume: its optimizer state, EMA and
-# replay were all produced under lambda=380, which measurably drove the
-# weighted ranking gradient to 80-350x the MC gradient. Continuing from it
-# under V3 would produce a run that is neither, and could not be described
-# in a paper.
-TRAINING_CONTRACT_V3_ADAPTIVE_GRADIENT_BALANCE = (
-    "bdvl_intent_training_contract_adaptive_gradient_balance_v3")
-
-# V4 -- PHASE-TRANSITION GRACE. Same objective, same data, same rank_share;
-# what changed is WHEN the ranking gate is allowed to abort. When MC joins a
-# freshly warmed-up ranker the ranking metrics step backwards once and
-# recover; the gate's verdict was turning on 0.004 of that known transient
-# (pilot pass-200 landed inside the ceiling, the formal run's landed
-# outside, and the pilot then recovered to 0.0193 by pass 2000). Runs under
-# V3 were monitored on a schedule that could abort a healthy run, so their
-# weights are not comparable to V4 ones.
-TRAINING_CONTRACT_V4_RANKING_GATE_GRACE = (
-    "bdvl_intent_training_contract_ranking_gate_grace_v4")
+#   * demo rows get MC + ranking, online rows get MC only;
+#   * gradients are combined by projecting away the conflicting component
+#     and CAPPING the remainder at rank_cap_rho * |g_MC| -- an upper bound,
+#     never a fixed share;
+#   * training aborts only on arithmetic failure. MC regression, ranking
+#     quality and clipping frequency are RECORDED and judged afterwards by
+#     the checkpoint selector, which can see the whole curve.
+#
+# V2/V3/V4 are deleted rather than kept as named refusals: anything that is
+# not V5 fails the equality check in load_intent_checkpoint, which is what
+# "no compat loading" has always meant, and a per-version branch only
+# invited a compat path back in.
+TRAINING_CONTRACT_V5_CAPPED_RANK_AUDIT_ONLY = (
+    "bdvl_intent_training_contract_capped_rank_audit_only_v5")
 
 
 FROZEN_VALUES: Dict[str, object] = {

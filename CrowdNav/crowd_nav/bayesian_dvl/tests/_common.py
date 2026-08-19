@@ -19,8 +19,7 @@ import torch.nn as nn
 from crowd_nav.bayesian_dvl.intent_runtime_config import (
     ACTION_FEATURE_DIM, ActionGridSpec, FEATURE_SCHEMA_V6, FROZEN_VALUES,
     NORMALIZATION_CONSTANTS, PROGRESS_REWARD_NORMALIZED_K,
-    TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC, TRAINING_CONTRACT_V3_ADAPTIVE_GRADIENT_BALANCE,
-    TRAINING_CONTRACT_V4_RANKING_GATE_GRACE,
+    TRAINING_CONTRACT_V5_CAPPED_RANK_AUDIT_ONLY,
     derive_return_bounds,
 )
 from crowd_nav.bayesian_dvl.contracts import (
@@ -60,7 +59,7 @@ from crowd_nav.bayesian_dvl.junction_scenario import (
 )
 from crowd_nav.bayesian_dvl.intent_train import (
     RawEpisode, RawStep,
-    FORMAL_EVAL_HELDOUT_SEEDS, FORMAL_SIX_SCENARIOS, EMAModel, GradientRatioMonitor, IntentReplay, IntentTrainError,
+    FORMAL_EVAL_HELDOUT_SEEDS, FORMAL_SIX_SCENARIOS, EMAModel, IntentReplay, IntentTrainError,
     IntentBatch, _make_standard_env, batch_to_tensors, build_formal_scenario_env, collect_online_episode,
     run_il_update,
     collect_orca_episode, collect_raw_orca_episode, compute_mc_returns, materialize_arm_transitions,
@@ -411,7 +410,6 @@ __all__ = [
     'FORMAL_SIX_SCENARIOS',
     'FROZEN_VALUES',
     'GoalIntentTracker',
-    'GradientRatioMonitor',
     'HUMAN_FEATURE_DIM',
     'HUMAN_FEATURE_DIM_V6', 'junction_crowd_role_of_seed', 'HUMAN_FEATURE_DIM_V6', 'HUMAN_SCALAR_DIM_V6',
     'CANDIDATE_FEATURE_DIM', 'MAX_CANDIDATE_GOALS', 'FEATURE_SCHEMA_V6',
@@ -450,9 +448,7 @@ __all__ = [
     'SceneCandidatesError',
     'SetEncoder',
     'StatisticsError',
-    'TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC',
-    'TRAINING_CONTRACT_V3_ADAPTIVE_GRADIENT_BALANCE',
-    'TRAINING_CONTRACT_V4_RANKING_GATE_GRACE',
+    'TRAINING_CONTRACT_V5_CAPPED_RANK_AUDIT_ONLY',
     'WAYPOINT_RADIUS',
     '_FakeConfig',
     '_FakeConfigSection',

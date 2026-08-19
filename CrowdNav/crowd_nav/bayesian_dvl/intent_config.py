@@ -97,7 +97,7 @@ class IntentTrainingConfig:
     warmup_max_steps: int = 750
     warmup_check_interval: int = 50
     warmup_rank_loss_max: float = 0.05
-    health_check_interval: int = 100
+    audit_interval: int = 100
     # provenance
     source_path: str = ""
     source_sha256: str = ""
@@ -244,7 +244,7 @@ def load_intent_training_config(path: Path = DEFAULT_TRAINING_CONFIG) -> IntentT
         warmup_max_steps=gi("ranking_warmup", "warmup_max_steps"),
         warmup_check_interval=gi("ranking_warmup", "warmup_check_interval"),
         warmup_rank_loss_max=gf("ranking_warmup", "warmup_rank_loss_max"),
-        health_check_interval=gi("gradient_health", "health_check_interval"),
+        audit_interval=gi("audit", "audit_interval"),
         source_path=str(path),
         source_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
     )
@@ -255,15 +255,15 @@ def load_intent_training_config(path: Path = DEFAULT_TRAINING_CONFIG) -> IntentT
 def _validate(cfg: IntentTrainingConfig) -> None:
     # schema must match the CODE, not just be internally consistent
     from crowd_nav.bayesian_dvl.intent_runtime_config import (
-        FEATURE_SCHEMA_V6, TRAINING_CONTRACT_V4_RANKING_GATE_GRACE,
+        FEATURE_SCHEMA_V6, TRAINING_CONTRACT_V5_CAPPED_RANK_AUDIT_ONLY,
     )
     from crowd_nav.bayesian_dvl.intent_policy import CHECKPOINT_SCHEMA_V7
     if cfg.feature_schema != FEATURE_SCHEMA_V6:
         raise IntentConfigError(f"config feature_schema {cfg.feature_schema!r} != code's {FEATURE_SCHEMA_V6!r}")
-    if cfg.training_contract_schema != TRAINING_CONTRACT_V4_RANKING_GATE_GRACE:
+    if cfg.training_contract_schema != TRAINING_CONTRACT_V5_CAPPED_RANK_AUDIT_ONLY:
         raise IntentConfigError(
             f"config training_contract_schema {cfg.training_contract_schema!r} != "
-            f"code's {TRAINING_CONTRACT_V4_RANKING_GATE_GRACE!r}")
+            f"code's {TRAINING_CONTRACT_V5_CAPPED_RANK_AUDIT_ONLY!r}")
     if cfg.checkpoint_schema != CHECKPOINT_SCHEMA_V7:
         raise IntentConfigError(f"config checkpoint_schema {cfg.checkpoint_schema!r} != code's {CHECKPOINT_SCHEMA_V7!r}")
 
@@ -339,8 +339,8 @@ def _validate(cfg: IntentTrainingConfig) -> None:
         raise IntentConfigError("warm-up steps and check interval must be positive")
     if cfg.warmup_rank_loss_max <= 0:
         raise IntentConfigError(f"warmup_rank_loss_max must be positive, got {cfg.warmup_rank_loss_max}")
-    if cfg.health_check_interval <= 0:
-        raise IntentConfigError(f"health_check_interval must be positive, got {cfg.health_check_interval}")
+    if cfg.audit_interval <= 0:
+        raise IntentConfigError(f"audit_interval must be positive, got {cfg.audit_interval}")
     if not 0.0 < cfg.gamma <= 1.0:
         raise IntentConfigError(f"gamma must be in (0,1], got {cfg.gamma}")
     if not 0.0 < cfg.ema_decay < 1.0:

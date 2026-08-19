@@ -748,51 +748,7 @@ class AuditRecorder:
         self.n_checks = int(d.get("n_checks", 0))
 
 
-class GradientRatioMonitor:
-    """C4R.3: the frozen config's sustained-window ratio gate, made real.
-
-    A SINGLE out-of-range batch is normal (the MC gradient can be near
-    convergence), so an out-of-range ratio is a diagnostic EVENT and only
-    a sustained run of them aborts -- the same convention the older chain
-    already used. Kept as a separate object so its counter can be
-    checkpointed with the rest of the run state."""
-
-    def __init__(self, ratio_min: float, ratio_max: float, sustained_updates: int):
-        if not (0 < ratio_min < ratio_max):
-            raise IntentTrainError(f"require 0 < ratio_min < ratio_max, got {ratio_min}/{ratio_max}")
-        if sustained_updates <= 0:
-            raise IntentTrainError(f"sustained_updates must be positive, got {sustained_updates}")
-        self.ratio_min, self.ratio_max = float(ratio_min), float(ratio_max)
-        self.sustained_updates = int(sustained_updates)
-        self.consecutive_out_of_range = 0
-        self.n_measured = 0
-        self.n_out_of_range = 0
-
-    def observe(self, ratio: float) -> Optional[str]:
-        """Returns an abort REASON once the window is exhausted, else None."""
-        self.n_measured += 1
-        if self.ratio_min <= ratio <= self.ratio_max:
-            self.consecutive_out_of_range = 0
-            return None
-        self.n_out_of_range += 1
-        self.consecutive_out_of_range += 1
-        if self.consecutive_out_of_range >= self.sustained_updates:
-            return (f"weighted-rank/MC gradient ratio stayed outside "
-                    f"[{self.ratio_min}, {self.ratio_max}] for {self.consecutive_out_of_range} "
-                    f"consecutive measured updates (last ratio {ratio:.4g})")
-        return None
-
-    def state_dict(self) -> dict:
-        return {"consecutive_out_of_range": self.consecutive_out_of_range,
-                "n_measured": self.n_measured, "n_out_of_range": self.n_out_of_range}
-
-    def load_state_dict(self, state: dict) -> None:
-        self.consecutive_out_of_range = int(state["consecutive_out_of_range"])
-        self.n_measured = int(state["n_measured"])
-        self.n_out_of_range = int(state["n_out_of_range"])
-
-
-@dataclass
+@dataclass(frozen=True)
 class AblationEpisodeResult:
     mode: str
     episode_seed: int

@@ -47,8 +47,7 @@ from crowd_nav.bayesian_dvl import normalization as norm
 from crowd_nav.bayesian_dvl.intent_runtime_config import (
     CANDIDATE_FEATURE_DIM, FEATURE_SCHEMA_V6, HUMAN_FEATURE_DIM_V6,
     HUMAN_SCALAR_DIM_V6, MAX_CANDIDATE_GOALS, NORMALIZATION_CONSTANTS, FROZEN_VALUES,
-    TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC, TRAINING_CONTRACT_V3_ADAPTIVE_GRADIENT_BALANCE,
-    TRAINING_CONTRACT_V4_RANKING_GATE_GRACE,
+    TRAINING_CONTRACT_V5_CAPPED_RANK_AUDIT_ONLY,
 )
 from crowd_nav.bayesian_dvl.contracts import HumanObservation, RobotObservation
 from crowd_nav.bayesian_dvl.geometry_features import _robot_feature_vector, compute_action_features_array
@@ -349,7 +348,7 @@ def score_candidates_v5(
 
 # C0.5 (plan section 5): bumped V5 -> V6 because the TRAINING SEMANTICS
 # changed in a way no shape check can detect (see
-# config.TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC). A V5 checkpoint loads
+# the retired v2 contract). A V5 checkpoint loads
 # with identical tensor shapes but was fit under the buggy
 # online-samples-get-ranking objective, so it MUST fail closed here rather
 # than be silently accepted.
@@ -370,7 +369,7 @@ def save_intent_checkpoint(
     payload = {
         "checkpoint_schema": CHECKPOINT_SCHEMA_V7,
         "feature_schema": FEATURE_SCHEMA_V6,
-        "training_contract_schema": TRAINING_CONTRACT_V4_RANKING_GATE_GRACE,
+        "training_contract_schema": TRAINING_CONTRACT_V5_CAPPED_RANK_AUDIT_ONLY,
         "model_state_dict": model.state_dict(),
         "action_grid_hash": action_grid_hash,
         "scene_registry_sha256": scene_registry_sha256,
@@ -402,23 +401,12 @@ def load_intent_checkpoint(
         raise IntentPolicyError(f"checkpoint schema {checkpoint['checkpoint_schema']!r} != {CHECKPOINT_SCHEMA_V7!r}, fail closed, no compat loading")
     if checkpoint["feature_schema"] != FEATURE_SCHEMA_V6:
         raise IntentPolicyError(f"feature schema {checkpoint['feature_schema']!r} != {FEATURE_SCHEMA_V6!r}, fail closed")
-    if checkpoint["training_contract_schema"] == TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC:
-        raise IntentPolicyError(
-            f"checkpoint {path} was trained under the RETIRED {TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC!r} "
-            f"contract (fixed lambda_rank=380). Its optimizer state, EMA and replay were produced under a "
-            f"measurably unbalanced objective -- weighted ranking gradient 80-350x the MC gradient. Refusing: "
-            f"retrain under {TRAINING_CONTRACT_V3_ADAPTIVE_GRADIENT_BALANCE!r}, do not resume.")
-    if checkpoint["training_contract_schema"] == TRAINING_CONTRACT_V3_ADAPTIVE_GRADIENT_BALANCE:
-        raise IntentPolicyError(
-            f"checkpoint {path} was trained under {TRAINING_CONTRACT_V3_ADAPTIVE_GRADIENT_BALANCE!r}, "
-            f"whose ranking gate could abort a healthy run during the warm-up->joint phase "
-            f"transition. Refusing: retrain under {TRAINING_CONTRACT_V4_RANKING_GATE_GRACE!r}.")
-    if checkpoint["training_contract_schema"] != TRAINING_CONTRACT_V4_RANKING_GATE_GRACE:
+    if checkpoint["training_contract_schema"] != TRAINING_CONTRACT_V5_CAPPED_RANK_AUDIT_ONLY:
         raise IntentPolicyError(
             f"training contract {checkpoint['training_contract_schema']!r} != "
-            f"{TRAINING_CONTRACT_V4_RANKING_GATE_GRACE!r}, fail closed -- the loss semantics these weights were "
-            f"fit under differ from what this code implements, and no shape check can detect that"
-        )
+            f"{TRAINING_CONTRACT_V5_CAPPED_RANK_AUDIT_ONLY!r}, fail closed -- the loss semantics these "
+            f"weights were fit under differ from what this code implements, and no shape check can "
+            f"detect that")
     if expected_action_grid_hash is not None and checkpoint["action_grid_hash"] != expected_action_grid_hash:
         raise IntentPolicyError("checkpoint action_grid_hash does not match the loaded action table")
     if expected_scene_registry_sha256 is not None and checkpoint["scene_registry_sha256"] != expected_scene_registry_sha256:

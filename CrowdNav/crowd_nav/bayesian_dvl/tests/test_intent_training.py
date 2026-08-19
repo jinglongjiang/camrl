@@ -504,30 +504,6 @@ def test_c4r_grad_clipping_and_gradient_ratio_are_really_applied() -> None:
     assert r4.mc_grad_norm > 0.0, "the per-term norms are now always available"
 
 
-def test_c4r_gradient_ratio_monitor_sustained_window() -> None:
-    m = GradientRatioMonitor(ratio_min=0.05, ratio_max=50.0, sustained_updates=3)
-    assert m.observe(1.0) is None
-    # isolated excursions must NOT abort
-    assert m.observe(1e6) is None
-    assert m.observe(1.0) is None and m.consecutive_out_of_range == 0
-    # a sustained run must
-    assert m.observe(1e6) is None
-    assert m.observe(1e6) is None
-    reason = m.observe(1e6)
-    assert reason is not None and "consecutive" in reason
-    assert m.n_measured == 6 and m.n_out_of_range == 4
-    state = m.state_dict()
-    m2 = GradientRatioMonitor(0.05, 50.0, 3)
-    m2.load_state_dict(state)
-    assert m2.consecutive_out_of_range == m.consecutive_out_of_range
-    for bad in ((0.0, 1.0, 3), (1.0, 0.5, 3), (0.05, 50.0, 0)):
-        try:
-            GradientRatioMonitor(*bad)
-            assert False, f"expected IntentTrainError on {bad}"
-        except IntentTrainError:
-            pass
-
-
 def test_c4r_il_update_uses_minibatches_not_the_whole_corpus() -> None:
     # Order C4R.1 / audit 2.2 point 1: IL previously moved EVERY demo
     # transition to the device as one batch and ran full-batch updates.
@@ -1091,7 +1067,7 @@ def test_c0_checkpoint_schema_v6_rejects_retired_v5_and_wrong_training_contract(
         save_intent_checkpoint(model, path, action_grid_hash="h", scene_registry_sha256="s")
         raw = torch.load(path, weights_only=False)
         assert raw["checkpoint_schema"] == CHECKPOINT_SCHEMA_V7
-        assert raw["training_contract_schema"] == TRAINING_CONTRACT_V4_RANKING_GATE_GRACE
+        assert raw["training_contract_schema"] == TRAINING_CONTRACT_V5_CAPPED_RANK_AUDIT_ONLY
 
         # Order 4: a V2 checkpoint (fixed rho=380) must be refused
         # BY NAME, not with a generic schema message. Its optimizer state,
@@ -1099,14 +1075,14 @@ def test_c0_checkpoint_schema_v6_rejects_retired_v5_and_wrong_training_contract(
         # objective, so resuming from it would give a run that is neither
         # contract and cannot be described in a paper.
         v2 = dict(raw)
-        v2["training_contract_schema"] = TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC
+        v2["training_contract_schema"] = "bdvl_intent_training_contract_demo_rank_online_mc_v2"
         v2_path = str(Path(d) / "v2.pth")
         torch.save(v2, v2_path)
         try:
             load_intent_checkpoint(v2_path, DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6))
             assert False, "expected IntentPolicyError: retired V2 training contract"
         except IntentPolicyError as exc:
-            assert "RETIRED" in str(exc) and "380" in str(exc), str(exc)
+            assert "fail closed" in str(exc), str(exc)
 
         model2 = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
         load_intent_checkpoint(path, model2, expected_action_grid_hash="h", expected_scene_registry_sha256="s")

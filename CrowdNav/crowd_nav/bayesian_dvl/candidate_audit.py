@@ -40,10 +40,20 @@ import numpy as np
 import torch
 
 from crowd_nav.bayesian_dvl.intent_runtime_config import (
-    CANDIDATE_FEATURE_DIM, FROZEN_VALUES, HUMAN_SCALAR_DIM_V6, MAX_CANDIDATE_GOALS, TRACKER_DEFAULTS,
+    CANDIDATE_FEATURE_DIM, FEATURE_SCHEMA_V6, FROZEN_VALUES, HUMAN_SCALAR_DIM_V6,
+    MAX_CANDIDATE_GOALS, TRACKER_DEFAULTS,
 )
 from crowd_nav.bayesian_dvl.intent_tracker import IntentBeliefBank
-from crowd_nav.bayesian_dvl.scene_candidates import make_candidate_fn
+from crowd_nav.bayesian_dvl.scene_candidates import make_candidate_fn, scene_registry_sha256
+
+
+DEFAULT_TRAINING_CONFIG = Path(__file__).resolve().parents[1] / "configs" / "train_intent_bdvl.config"
+DEFAULT_ENV_CONFIG = Path(__file__).resolve().parents[1] / "configs" / "env_bayesian_dvl.config"
+
+
+class IntentCLIError(ValueError):
+    """Audit-side CLI error. Deliberately NOT imported from the training CLI:
+    the audit is an offline preflight and must not depend on training."""
 
 
 class CandidateAuditError(ValueError):
@@ -398,7 +408,7 @@ def run_candidate_audit(cfg, env_config: Path, out_path: Path, n_episodes: int =
     print(f"  permutation invariance   max delta {delta:.2e}", flush=True)
 
     payload = run_pretraining_audit(results, delta)     # raises on any failure
-    payload["identity"] = _cli_env().audit_identity(cfg)
+    payload["identity"] = audit_identity(cfg)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(payload, indent=2))
     return payload
@@ -406,7 +416,6 @@ def run_candidate_audit(cfg, env_config: Path, out_path: Path, n_episodes: int =
 
 
 def cmd_audit_candidates(args) -> int:
-    _cli_env()
     cfg = load_intent_training_config(args.config)
     out = Path(args.out)
     print("=== pre-training candidate audit ===", flush=True)
@@ -487,7 +496,7 @@ def run_test8_candidate_audit(cfg, env_config: Path, out_path: Path, base_seed: 
     payload["suite"] = "test8"
     payload["base_seed"] = int(base_seed)
     payload["episodes_per_scenario"] = int(episodes)
-    payload["identity"] = _cli_env().audit_identity(cfg)
+    payload["identity"] = audit_identity(cfg)
     payload["episodes"] = seed_table
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(payload, indent=2))
@@ -495,7 +504,6 @@ def run_test8_candidate_audit(cfg, env_config: Path, out_path: Path, base_seed: 
 
 
 def cmd_audit_test8_candidates(args) -> int:
-    _cli_env()
     cfg = load_intent_training_config(args.config)
     if args.base_seed == PAPER_MAIN_BASE_SEED:
         raise IntentCLIError(
@@ -528,27 +536,39 @@ from crowd_nav.bayesian_dvl.evaluation_protocol import (  # noqa: E402
 )
 
 
-def _cli_env():                                   # _LAZY_CLI_IMPORTS
-    """Bind the training CLI's shared helpers into this module, lazily.
+def audit_identity(cfg) -> dict:
+    """What a candidate audit is valid FOR.
 
-    intent_train_cli imports this module, so a top-level import here would
-    close the cycle. The CLI bodies moved out of it still use its helpers
-    (resolve_device, the run-directory conventions, the hashes), so they are
-    bound on first CLI use rather than duplicated.
+    Computed HERE, from the scene rules, the scenario version, the feature
+    schema and the code that produces a materialized row. Deliberately not
+    the main-chain code hash: the audit asks whether the public candidate
+    goals describe the pedestrians they are attached to, which nothing in
+    the trainer decides. Keying it on the trainer forced a four-minute
+    re-measurement of an unchanged property after every unrelated edit.
     """
-    from crowd_nav.bayesian_dvl import intent_train_cli as t
-    g = globals()
-    for name in dir(t):
-        if not name.startswith("__") and name not in g:
-            g[name] = getattr(t, name)
-    return t
+    import hashlib
+    import inspect
+    from crowd_nav.bayesian_dvl.junction_scenario import SCENARIO_REGISTRY_ID
+    from crowd_nav.bayesian_dvl.intent_train import materialize_arm_transitions
+
+    h = hashlib.sha256()
+    here = Path(__file__).resolve().parent
+    for name in ("intent_tracker.py", "scene_candidates.py", "intent_policy.py",
+                 "junction_scenario.py", "geometry_features.py", "normalization.py"):
+        h.update((here / name).read_bytes())
+    h.update(inspect.getsource(materialize_arm_transitions).encode())
+    return {
+        "scene_registry_sha256": scene_registry_sha256(cfg),
+        "scenario_registry_id": SCENARIO_REGISTRY_ID,
+        "feature_schema": FEATURE_SCHEMA_V6,
+        "materialization_code_sha256": h.hexdigest(),
+    }
 
 
 def build_parser() -> argparse.ArgumentParser:
-    t = _cli_env()
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("--config", type=Path, default=t.DEFAULT_TRAINING_CONFIG)
-    p.add_argument("--env-config", type=Path, default=t.DEFAULT_ENV_CONFIG)
+    p.add_argument("--config", type=Path, default=DEFAULT_TRAINING_CONFIG)
+    p.add_argument("--env-config", type=Path, default=DEFAULT_ENV_CONFIG)
     p.add_argument("--device", type=str, default="cpu")
     sub = p.add_subparsers(dest="cmd", required=True)
     ac = sub.add_parser("audit-candidates")
@@ -562,7 +582,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
-    t = _cli_env()
     args = build_parser().parse_args(argv)
     try:
         if args.cmd == "audit-test8-candidates":

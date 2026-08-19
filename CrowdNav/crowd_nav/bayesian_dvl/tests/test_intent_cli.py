@@ -89,7 +89,7 @@ def test_c2_config_validation_fails_closed() -> None:
              lambda c: c.set("gradient_balance", "rank_share", "2.0")),
             ("zero audit split", lambda c: c.set("audit_split", "audit_episodes_per_scenario", "0")),
             ("zero health check interval",
-             lambda c: c.set("gradient_health", "health_check_interval", "0")),
+             lambda c: c.set("audit", "audit_interval", "0")),
             ("non-positive warmup rank ceiling",
              lambda c: c.set("ranking_warmup", "warmup_rank_loss_max", "0")),
             ("zero diagnostic interval", lambda c: c.set("ranking", "gradient_diagnostic_interval", "0")),
@@ -1245,7 +1245,7 @@ def test_order3w_corpus_identity_is_decoupled_from_training_knobs() -> None:
                                 ("optim", "batch_size", "128"),
                                 ("optim", "learning_rate", "5e-5"),
                                 ("ema", "ema_decay", "0.95"),
-                                ("gradient_health", "health_check_interval", "50")):
+                                ("audit", "audit_interval", "50")):
         v = variant(section, key, value)
         assert v.content_hash() != base_full, (section, key)
         assert v.corpus_identity_hash() == base_corpus, (

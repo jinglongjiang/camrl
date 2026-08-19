@@ -29,6 +29,9 @@ from typing import Callable, List, Optional, Sequence, Tuple
 
 import numpy as np
 
+import hashlib
+import json
+
 from crowd_nav.bayesian_dvl.intent_tracker import CandidateGoal
 
 
@@ -299,3 +302,67 @@ def junction_scene(junction: Tuple[float, float], exits: Sequence[Tuple[str, Tup
     dests = tuple(PublicDestination(name, pos) for name, pos in exits)
     return PublicScene(destinations=dests, junction=junction, forward_only=True,
                        approach_corridor=approach_corridor, crossing_band=crossing_band)
+
+
+# --------------------------------------------------------------------- #
+# Scene provenance. Lives beside the scenes it hashes so the offline
+# candidate audit can compute its own identity without importing the
+# training CLI -- the audit runs BEFORE training and must not depend on it.
+# --------------------------------------------------------------------- #
+
+def scene_registry_sha256(cfg: IntentTrainingConfig) -> str:
+    """Hash the ACTUAL public geometry every scenario's candidate provider
+    will produce, plus the tracker parameters that turn it into a
+    posterior. Real bug this fixes (plan 2.2 point 13): the previous
+    version hashed a hand-written label like
+    ``"junction_scene:waypoint+2_exits"``, which stays byte-identical if
+    the waypoint, the exit coordinates, or the tracker's sigma change --
+    exactly the drift a provenance hash exists to catch."""
+    # junction_scenario imports THIS module, so these are imported on call.
+    from crowd_nav.bayesian_dvl.junction_scenario import (
+        SCENARIO_REGISTRY_ID, public_junction_crowd_scene,
+    )
+    from crowd_nav.bayesian_dvl.intent_runtime_config import FEATURE_SCHEMA_V6, TRACKER_DEFAULTS
+
+    payload = {
+        "scenario_registry_id": SCENARIO_REGISTRY_ID,
+        "standard_circle": [list(d.position) for d in circle_scene(radius=4.0, n_sectors=8).destinations],
+        "junction_crowd_train": [
+            [d.name, list(d.position)] for d in public_junction_crowd_scene(is_heldout=False).destinations],
+        "junction_crowd_train_junction": list(public_junction_crowd_scene(is_heldout=False).junction),
+        "junction_crowd_heldout": [
+            [d.name, list(d.position)] for d in public_junction_crowd_scene(is_heldout=True).destinations],
+        "junction_crowd_heldout_junction": list(public_junction_crowd_scene(is_heldout=True).junction),
+        "formal_square_10": [list(d.position) for d in square_scene(width=10.0, n_rows=4).destinations],
+        "formal_square_14": [list(d.position) for d in square_scene(width=14.0, n_rows=4).destinations],
+        "tracker": {
+            "sigma": cfg.tracker_sigma, "persistence": cfg.tracker_persistence,
+            "waypoint_radius": cfg.tracker_waypoint_radius, "missing_timeout_steps": cfg.missing_timeout_steps,
+            "max_candidate_goals": cfg.max_candidate_goals,
+            "future_horizon": cfg.future_horizon, "future_n_samples": cfg.future_n_samples,
+        },
+        # The candidate RULES, not just the destination coordinates. The
+        # corridor decides which of the two public rules a pedestrian gets,
+        # the band decides what a crosser's candidates are, and the speed
+        # model decides what the likelihood compares observed motion
+        # against. All three change the posterior, so a run that differs in
+        # any of them is a different experiment and must not share a hash.
+        "junction_crowd_rules": {
+            "approach_corridor_train": list(public_junction_crowd_scene(is_heldout=False).approach_corridor),
+            "approach_corridor_heldout": list(public_junction_crowd_scene(is_heldout=True).approach_corridor),
+            "crossing_band_train": list(public_junction_crowd_scene(is_heldout=False).crossing_band),
+            "crossing_band_heldout": list(public_junction_crowd_scene(is_heldout=True).crossing_band),
+            # backgrounds are rejection-sampled OUT of the corridor; the
+            # corridor bounds above ARE that exclusion rule's parameters
+            "background_excluded_from_corridor": True,
+        },
+        "speed_model": {
+            k: TRACKER_DEFAULTS[k]
+            for k in ("speed_prior", "estimate_speed", "speed_ema_alpha", "speed_min", "speed_max")
+        },
+        "feature_schema": FEATURE_SCHEMA_V6,
+    }
+    blob = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(blob).hexdigest()
+
+
