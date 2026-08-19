@@ -1241,7 +1241,7 @@ def test_order3w_corpus_identity_is_decoupled_from_training_knobs() -> None:
             return load_intent_training_config(out)
 
     # training knobs: full config hash MOVES, corpus identity does NOT
-    for section, key, value in (("gradient_balance", "rank_cap_rho", "1.0"),
+    for section, key, value in (("gradient_balance", "rank_cap_rho", "0.5"),
                                 ("optim", "batch_size", "128"),
                                 ("optim", "learning_rate", "5e-5"),
                                 ("ema", "ema_decay", "0.95"),
@@ -1257,7 +1257,11 @@ def test_order3w_corpus_identity_is_decoupled_from_training_knobs() -> None:
         v = variant(section, key, value)
         assert v.corpus_identity_hash() != base_corpus, (section, key)
 
-    # rank_cap_rho is the frozen UPPER BOUND on the ranking contribution
-    assert cfg.rank_cap_rho == 0.5, (
-        "rank_share=2.0 is retired: it normalised the ranking gradient to a FIXED multiple of "
-        "|g_MC|, degrading held-out MC on 3/3 diagnostic seeds")
+    # Order 10: the production budget is FROZEN. rho and il_passes are no
+    # longer calibrated, and IL runs its full fixed budget with no selection.
+    assert cfg.rank_cap_rho == 1.0, (
+        "rank_cap_rho is frozen at 1.0 by the 3-seed fixed-budget calibration; "
+        "rank_share=2.0 and rho=0.5 are both retired")
+    assert cfg.il_passes == 2400, (
+        "il_passes is frozen at 2400 -- the first pass at which all 3 diagnostic "
+        "seeds simultaneously satisfy the pre-registered constraints")

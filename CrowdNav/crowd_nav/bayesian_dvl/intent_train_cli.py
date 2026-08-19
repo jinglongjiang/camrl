@@ -65,7 +65,7 @@ from crowd_nav.bayesian_dvl.intent_train import (
     IntentReplay, paper_main_jobs, IL_AUDIT_SET_SIZE, IL_AUDIT_PER_SCENARIO,
     build_il_audit_set,
     il_audit_identity, evaluate_il_audit, AuditRecorder, run_ranking_warmup,
-    expert_rank_diagnostics, select_checkpoint, build_formal_plan, assert_in_formal_plan,
+    expert_rank_diagnostics, build_formal_plan, assert_in_formal_plan,
     FORMAL_ARMS,
     batch_to_tensors, collect_orca_episode, run_ablation_suite, run_formal_six_scenario_evaluation,
     collect_raw_orca_episode, materialize_arm_transitions,
@@ -1491,10 +1491,9 @@ def cmd_train(args, resume: bool = False) -> int:
             if art.state.il_passes_done % cfg.audit_interval == 0:
                 _audit_record(f"pass={art.state.il_passes_done}")
 
-        # Order 4 gate: on a STATIONARY target the value fit must not end up
-        # materially worse than its own best. lambda=380 ended at 3.0x its
-        # best here; anything approaching that means the auxiliary term is
-        # displacing value regression again.
+        # Telemetry only. IL runs its FIXED budget and the weights standing at
+        # the final pass go straight to online RL below -- this record does not
+        # select a checkpoint, end the phase early, or extend it.
         _audit_record(f"pass={art.state.il_passes_done} FINAL")
         _sync_monitor()
         _save_rolling()
