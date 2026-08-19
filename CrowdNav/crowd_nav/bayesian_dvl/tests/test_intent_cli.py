@@ -226,7 +226,7 @@ def test_c2_vectorized_ranking_matches_the_per_sample_loop() -> None:
     trans = collect_orca_episode(env_config_path, "standard", 700001).transitions[:6]
     b = batch_to_tensors(trans)
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     n_taus, margin = 16, 0.1
     n_act = b.all_action_feats.shape[1]
     ft = (torch.arange(n_taus, dtype=torch.float32) + 0.5) / n_taus
@@ -266,7 +266,7 @@ def _ensure_candidate_audit():
         if payload.get("passed") and payload.get("identity") == audit_identity(load_intent_training_config()):
             return
     r = subprocess.run(
-        [_sys.executable, "-m", "crowd_nav.bayesian_dvl.intent_train_cli",
+        [_sys.executable, "-m", "crowd_nav.bayesian_dvl.candidate_audit",
          "audit-candidates", "--out", str(_AUDIT_ARTIFACT), "--episodes", "8"],
         cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=900)
     assert r.returncode == 0, f"the candidate audit itself failed:\n{r.stdout}\n{r.stderr}"
@@ -358,7 +358,7 @@ def test_c2_final_ema_artifact_holds_ema_weights_not_raw() -> None:
         assert not all(torch.equal(fin["model_state_dict"][k].float(), raw["model_state_dict"][k].float())
                        for k in fin["model_state_dict"]), "final_ema must differ from the raw weights"
         # it must load through the ordinary loader with no special casing
-        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
         load_intent_checkpoint(str(run / "final_ema.pth"), model)
 
 
@@ -391,7 +391,7 @@ def test_c4_cpu_cuda_top1_action_agreement() -> None:
     action_table = np.asarray(
         ActionGridSpec.from_env_config(str(env_config_path)).build_action_table(), dtype=np.float64)
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
 
     scene = public_junction_crowd_scene(is_heldout=False)
     bank = IntentBeliefBank(make_candidate_fn(scene), dt=FROZEN_VALUES["dt"], speed=1.0)
@@ -430,7 +430,7 @@ def test_c4_training_step_is_device_independent_in_its_random_stream() -> None:
     losses = {}
     for dev in (["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]):
         torch.manual_seed(3)
-        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5).to(dev)
+        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6).to(dev)
         opt = torch.optim.Adam(model.parameters(), lr=1e-4)
         batch = batch_to_tensors(trans, device=dev)
         gen = torch.Generator().manual_seed(5)
@@ -651,12 +651,12 @@ def test_c4rf_ema_shadow_follows_the_model_device_on_resume() -> None:
     # never reproduced it, and the earlier CUDA coverage was `train`, not
     # `resume`.
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     ema = EMAModel(model, decay=0.99)
     saved = {k: v.detach().cpu().clone() for k, v in ema.state_dict().items()}  # as torch.load returns
 
     for dev in (["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]):
-        m = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5).to(dev)
+        m = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6).to(dev)
         e = EMAModel(m, decay=0.99)
         e.load_state_dict(saved)          # CPU tensors into a possibly-CUDA shadow
         for v in e.shadow.values():
@@ -775,7 +775,7 @@ def test_c5_online_rows_persist_without_dead_action_features() -> None:
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     demo = collect_orca_episode(env_config_path, "standard", 700001).transitions
     online = collect_online_episode(env_config_path, model, action_table, "standard", 700002,
                                      epsilon=1.0, explore_rng=np.random.default_rng(3)).transitions

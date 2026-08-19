@@ -30,7 +30,7 @@ import torch
 from crowd_nav.bayesian_dvl.intent_runtime_config import ActionGridSpec, FROZEN_VALUES, TRACKER_DEFAULTS
 from crowd_nav.bayesian_dvl.contracts import HumanObservation, RobotObservation
 from crowd_nav.bayesian_dvl.intent_policy import (
-    HUMAN_FEATURE_DIM_V5, build_intent_human_feature_batch, load_intent_checkpoint, remaining_time_fraction,
+    HUMAN_FEATURE_DIM_V6, build_intent_human_feature_batch, load_intent_checkpoint, remaining_time_fraction,
     score_candidates_v5,
 )
 from crowd_nav.bayesian_dvl.intent_tracker import IntentBeliefBank
@@ -115,7 +115,7 @@ class IntentBDVLPolicy:
         self.action_table = np.asarray(
             ActionGridSpec.from_env_config(str(env_config_path)).build_action_table(), dtype=np.float64)
 
-        self.model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+        self.model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
         if not checkpoint_path:
             raise IntentPolicyAdapterError(
                 "[intent_bdvl] checkpoint_path is required -- refusing to deploy random weights")

@@ -33,7 +33,7 @@ from crowd_nav.bayesian_dvl.ranking import (
     build_action_equivalence_class, derive_action_equivalence_tolerance, nearest_action_index,
 )
 from crowd_nav.bayesian_dvl.intent_policy import (
-    HUMAN_FEATURE_DIM_V5, IntentPolicyError, build_intent_human_feature_batch, remaining_time_fraction,
+    HUMAN_FEATURE_DIM_V6, IntentPolicyError, build_intent_human_feature_batch, remaining_time_fraction,
     score_candidates_v5,
 )
 from crowd_nav.bayesian_dvl.intent_tracker import IntentBeliefBank
@@ -481,7 +481,7 @@ class TrainStepResult:
     ratio_measured: bool = False
     # Order 2: the lambda this step ACTUALLY used (decided before the step
     # from past gradients), and the angle between the two objectives.
-    lambda_used: float = 0.0
+    rank_scale: float = 0.0
     gradient_cosine: float = 0.0
     # Populated by ``run_online_training_step``. Keeping these on the
     # existing result preserves the public ``result.loss`` contract while
@@ -674,7 +674,7 @@ def train_step(
         n_demo=int(batch.demo_mask.sum()), n_online=int((~batch.demo_mask).sum()),
         mc_grad_norm=mc_grad_norm, rank_grad_norm=rank_grad_norm,
         weighted_rank_grad_norm=weighted, gradient_ratio=ratio, ratio_measured=measure_gradient_ratio,
-        lambda_used=float(info["rank_scale"]), gradient_cosine=cosine,
+        rank_scale=float(info["rank_scale"]), gradient_cosine=cosine,
     )
 
 

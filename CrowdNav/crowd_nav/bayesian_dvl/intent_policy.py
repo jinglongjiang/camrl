@@ -45,7 +45,7 @@ import torch
 
 from crowd_nav.bayesian_dvl import normalization as norm
 from crowd_nav.bayesian_dvl.intent_runtime_config import (
-    CANDIDATE_FEATURE_DIM, FEATURE_SCHEMA_V5, FEATURE_SCHEMA_V6, HUMAN_FEATURE_DIM_V6,
+    CANDIDATE_FEATURE_DIM, FEATURE_SCHEMA_V6, HUMAN_FEATURE_DIM_V6,
     HUMAN_SCALAR_DIM_V6, MAX_CANDIDATE_GOALS, NORMALIZATION_CONSTANTS, FROZEN_VALUES,
     TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC, TRAINING_CONTRACT_V3_ADAPTIVE_GRADIENT_BALANCE,
     TRAINING_CONTRACT_V4_RANKING_GATE_GRACE,
@@ -58,7 +58,6 @@ from crowd_nav.bayesian_dvl.model import DistributionalValueModel
 # MAX_CANDIDATE_GOALS / CANDIDATE_FEATURE_DIM / HUMAN_SCALAR_DIM_V6 /
 # HUMAN_FEATURE_DIM_V6 live in intent_runtime_config so the packed layout has
 # ONE definition shared by the feature builder and the encoder that unpacks it.
-HUMAN_FEATURE_DIM_V5 = HUMAN_FEATURE_DIM_V6   # name kept: every call site passes it to the model
 MAX_HUMANS = 20
 
 
@@ -221,7 +220,7 @@ def build_intent_human_feature_batch(
     horizon: int = 8,
     n_samples: int = 60,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Padded [MAX_HUMANS, HUMAN_FEATURE_DIM_V5] feature array + mask for
+    """Padded [MAX_HUMANS, HUMAN_FEATURE_DIM_V6] feature array + mask for
     ONE decision. ``mode`` in {full, mean, cv, uniform} -- this is the ONE
     place the ablation enters the network features, so all four arms share
     identical env trajectories/seeds and differ ONLY in what belief
@@ -355,8 +354,6 @@ def score_candidates_v5(
 # online-samples-get-ranking objective, so it MUST fail closed here rather
 # than be silently accepted.
 CHECKPOINT_SCHEMA_V7 = "bdvl_intent_checkpoint_v7_candidate_set"
-CHECKPOINT_SCHEMA_V6_RETIRED = "bdvl_intent_checkpoint_v6"
-CHECKPOINT_SCHEMA_V5_RETIRED = "bdvl_intent_checkpoint_v5"
 
 
 def save_intent_checkpoint(
@@ -398,12 +395,9 @@ def load_intent_checkpoint(
     for required in required_fields:
         if required not in checkpoint:
             raise IntentPolicyError(f"intent checkpoint {path} missing required field {required!r}")
-    if checkpoint["checkpoint_schema"] == CHECKPOINT_SCHEMA_V5_RETIRED:
-        raise IntentPolicyError(
-            f"checkpoint {path} uses the RETIRED {CHECKPOINT_SCHEMA_V5_RETIRED!r} schema: those weights were fit "
-            f"with the expert ranking loss wrongly applied to online (epsilon-random) samples and with a hybrid "
-            f"MAP+mean ablation arm. Fail closed -- retrain under {CHECKPOINT_SCHEMA_V7!r}, no compat loading."
-        )
+    # Retired schemas are refused by the equality check below. There is no
+    # per-version branch any more: anything that is not the current schema
+    # fails closed, which is what "no compat loading" has always meant.
     if checkpoint["checkpoint_schema"] != CHECKPOINT_SCHEMA_V7:
         raise IntentPolicyError(f"checkpoint schema {checkpoint['checkpoint_schema']!r} != {CHECKPOINT_SCHEMA_V7!r}, fail closed, no compat loading")
     if checkpoint["feature_schema"] != FEATURE_SCHEMA_V6:

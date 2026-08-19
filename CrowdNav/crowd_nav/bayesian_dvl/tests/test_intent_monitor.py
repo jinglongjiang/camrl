@@ -119,7 +119,7 @@ def test_online_training_result_keeps_navigation_outcome_and_episode_metrics() -
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(19)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     buffer = IntentReplay(demo_capacity=20, online_capacity=200)
     result = run_online_training_step(
@@ -140,7 +140,7 @@ def test_development_validation_uses_legal_disjoint_seeds_and_does_not_mutate_mo
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(23)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     model.train()
     before = {k: v.clone() for k, v in model.state_dict().items()}
     rows = run_development_validation(

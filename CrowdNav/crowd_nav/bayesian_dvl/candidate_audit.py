@@ -28,12 +28,16 @@ among them.
 
 from __future__ import annotations
 
+import argparse
+import sys
+
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
 import numpy as np
+import torch
 
 from crowd_nav.bayesian_dvl.intent_runtime_config import (
     CANDIDATE_FEATURE_DIM, FROZEN_VALUES, HUMAN_SCALAR_DIM_V6, MAX_CANDIDATE_GOALS, TRACKER_DEFAULTS,
@@ -343,3 +347,233 @@ def run_pretraining_audit(results: Sequence[AuditResult], permutation_delta: flo
         raise CandidateAuditError(
             "pre-training candidate audit FAILED; training refused:\n  - " + "\n  - ".join(failures))
     return payload
+
+
+# --------------------------------------------------------------------- #
+# CLI. Order 5: the audit is a ONE-TIME offline preflight over a corpus, not
+# a training subcommand -- it asks whether the public candidate goals
+# describe the pedestrians they are attached to, which is decided by the
+# scene rules and the feature schema before any gradient exists.
+# --------------------------------------------------------------------- #
+
+def run_candidate_audit(cfg, env_config: Path, out_path: Path, n_episodes: int = 40,
+                        max_steps: int = 40) -> dict:
+    from crowd_nav.bayesian_dvl.candidate_audit import (
+        audit_permutation_invariance, audit_scenario, run_pretraining_audit,
+    )
+    from crowd_nav.bayesian_dvl.junction_scenario import (
+        AMBIGUOUS_TRACK_INDEX, JunctionCrowdEpisodeConfig, build_junction_crowd_episode,
+        junction_crowd_role_of_seed, maybe_reveal_crowd_exit, public_junction_crowd_scene,
+    )
+    from crowd_nav.bayesian_dvl.model import DistributionalValueModel
+
+    def episodes(seeds, is_heldout):
+        for seed in seeds:
+            env, _robot, true_exit = build_junction_crowd_episode(
+                env_config, JunctionCrowdEpisodeConfig(
+                    episode_seed=seed, role=junction_crowd_role_of_seed(seed)))
+            state = {"wp": False}
+
+            def advance(env=env, true_exit=true_exit, state=state, hd=is_heldout):
+                state["wp"] = maybe_reveal_crowd_exit(
+                    env.humans[AMBIGUOUS_TRACK_INDEX], true_exit, state["wp"], is_heldout=hd)
+            yield env, advance
+
+    results = []
+    for is_heldout, block, name in (
+        (False, JUNCTION_CROWD_TRAIN_SEEDS, "junction_crowd_train"),
+        (True, JUNCTION_CROWD_HELDOUT_SEEDS, "junction_crowd_heldout"),
+    ):
+        seeds = list(block)[:n_episodes]
+        r = audit_scenario(episodes(seeds, is_heldout), public_junction_crowd_scene(is_heldout=is_heldout),
+                           scenario=name, ambiguous_index=AMBIGUOUS_TRACK_INDEX, max_steps=max_steps)
+        results.append(r)
+        print(f"  {name:24} coverage {r.mean_coverage_error_m:.3f}/{r.worst_coverage_error_m:.3f} m | "
+              f"speed residual {r.mean_speed_residual:.3f} | single {r.single_candidate_rate:.2%} | "
+              f"flat {r.persistently_flat_rate:.1%} | {'PASS' if r.passed else 'FAIL'}", flush=True)
+
+    torch.manual_seed(0)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    delta = audit_permutation_invariance(model)
+    print(f"  permutation invariance   max delta {delta:.2e}", flush=True)
+
+    payload = run_pretraining_audit(results, delta)     # raises on any failure
+    payload["identity"] = _cli_env().audit_identity(cfg)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(payload, indent=2))
+    return payload
+
+
+
+def cmd_audit_candidates(args) -> int:
+    _cli_env()
+    cfg = load_intent_training_config(args.config)
+    out = Path(args.out)
+    print("=== pre-training candidate audit ===", flush=True)
+    try:
+        run_candidate_audit(cfg, args.env_config, out, n_episodes=args.episodes)
+    except Exception as exc:      # CandidateAuditError, and anything the scene raises
+        print(f"AUDIT FAILED -- training must not start:\n{exc}", flush=True)
+        return 2
+    print(f"audit PASSED -> {out}", flush=True)
+    return 0
+
+
+def _human_v_pref(env_config: Path) -> float:
+    """The pedestrian speed the circle noise bound is derived from -- read
+    from the env config, not assumed."""
+    import configparser
+    c = configparser.RawConfigParser(inline_comment_prefixes=(";", "#"), strict=False)
+    if not c.read(str(env_config)):
+        raise IntentCLIError(f"env config not found: {env_config}")
+    return float(c.get("humans", "v_pref"))
+
+
+def run_test8_candidate_audit(cfg, env_config: Path, out_path: Path, base_seed: int,
+                              episodes: int, max_steps: int = 40) -> dict:
+    """Model-INDEPENDENT candidate audit over the six Test8 scenarios.
+
+    Uses the SAME scenario builder and the SAME candidate provider the formal
+    evaluator uses -- build_formal_scenario_env plus circle_scene/square_scene
+    -- rather than a second copy of the geometry. A private copy is how the
+    formal evaluator once ran circle_scene() for square scenarios.
+    """
+    from crowd_nav.bayesian_dvl.candidate_audit import audit_scenario, run_pretraining_audit
+    from crowd_nav.bayesian_dvl.intent_train import (
+        FORMAL_SIX_SCENARIOS, build_formal_scenario_env, paper_main_episode_seed,
+    )
+    from crowd_nav.bayesian_dvl.intent_evaluate import initial_state_hash
+    from crowd_nav.bayesian_dvl.scene_candidates import circle_scene, square_scene
+
+    from crowd_nav.bayesian_dvl.candidate_audit import analytic_oracle_bound
+
+    results, seed_table = [], []
+    for scenario in FORMAL_SIX_SCENARIOS:
+        shape, size, _humans = FORMAL_SIX_SCENARIOS[scenario]
+        scene = (circle_scene(radius=size, n_sectors=8) if shape == "circle"
+                 else square_scene(width=size, n_rows=4))
+        bound = analytic_oracle_bound(shape, size, v_pref=_human_v_pref(env_config))
+        seeds = [paper_main_episode_seed(scenario, i, base_seed) for i in range(episodes)]
+
+        def episodes_iter(scenario=scenario, seeds=seeds):
+            for sd in seeds:
+                env, robot, _shape, _size = build_formal_scenario_env(env_config, scenario)
+                env.case_counter["test"] = sd % (2 ** 32 - 1)
+                env.reset()
+                seed_table.append({"scenario": scenario, "episode_seed": int(sd),
+                                   "initial_state_hash": initial_state_hash(robot, env.humans)})
+                yield env, None          # no hidden state to reveal in circle/square
+
+        r = audit_scenario(episodes_iter(), scene, scenario=scenario, ambiguous_index=None,
+                           max_steps=max_steps, coverage_mode="representability",
+                           oracle_bound_m=bound)
+        results.append(r)
+        print(f"  {scenario:16} regret max {r.worst_assignment_regret_m:.2e} m ({r.n_regret_offenders} "
+              f"offenders) | oracle {r.mean_oracle_error_m:.3f}/{r.worst_oracle_error_m:.3f} m "
+              f"(bound {bound:.3f}) | assigned {r.mean_coverage_error_m:.3f} m | "
+              f"speed residual {r.mean_speed_residual:.3f} | single {r.single_candidate_rate:.2%} | "
+              f"flat {r.persistently_flat_rate:.1%} | {'PASS' if r.passed else 'FAIL'}", flush=True)
+        if not r.passed:
+            raise IntentCLIError(
+                f"Test8 candidate audit FAILED on {scenario}: " + "; ".join(r.failures))
+
+    from crowd_nav.bayesian_dvl.candidate_audit import audit_permutation_invariance
+    from crowd_nav.bayesian_dvl.model import DistributionalValueModel
+    torch.manual_seed(0)
+    delta = audit_permutation_invariance(DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6))
+    print(f"  permutation invariance   max delta {delta:.2e}", flush=True)
+
+    payload = run_pretraining_audit(results, delta)      # raises on any failure
+    payload["suite"] = "test8"
+    payload["base_seed"] = int(base_seed)
+    payload["episodes_per_scenario"] = int(episodes)
+    payload["identity"] = _cli_env().audit_identity(cfg)
+    payload["episodes"] = seed_table
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(payload, indent=2))
+    return payload
+
+
+def cmd_audit_test8_candidates(args) -> int:
+    _cli_env()
+    cfg = load_intent_training_config(args.config)
+    if args.base_seed == PAPER_MAIN_BASE_SEED:
+        raise IntentCLIError(
+            f"--base-seed {args.base_seed} is the FORMAL Test8 base; the candidate audit must not touch "
+            f"formal episode identities. Use {TEST8_AUDIT_BASE_SEED}.")
+    if args.base_seed == TEST8_AUDIT_BASE_SEED_RETIRED:
+        raise IntentCLIError(
+            f"--base-seed {args.base_seed} is RETIRED. Its run is kept as INVALID_GATE_DIAGNOSTIC -- it was "
+            f"gated with the junction's absolute metre budget on a continuous goal space. Use "
+            f"{TEST8_AUDIT_BASE_SEED}.")
+    print(f"=== Test8 candidate audit (base seed {args.base_seed}, "
+          f"{args.episodes} episodes x 6 scenarios) ===", flush=True)
+    try:
+        run_test8_candidate_audit(cfg, args.env_config, Path(args.out), args.base_seed, args.episodes)
+    except Exception as exc:
+        print(f"AUDIT FAILED -- no IL collection, no training:\n{exc}", flush=True)
+        return 2
+    print(f"audit PASSED -> {args.out}", flush=True)
+    return 0
+from crowd_nav.bayesian_dvl.junction_scenario import (  # noqa: E402
+    JUNCTION_CROWD_HELDOUT_SEEDS, JUNCTION_CROWD_TRAIN_SEEDS,
+)
+from crowd_nav.bayesian_dvl.model import DistributionalValueModel  # noqa: E402
+from crowd_nav.bayesian_dvl.intent_policy import HUMAN_FEATURE_DIM_V6  # noqa: E402
+from crowd_nav.bayesian_dvl.intent_config import (  # noqa: E402
+    IntentConfigError, load_intent_training_config,
+)
+from crowd_nav.bayesian_dvl.evaluation_protocol import (  # noqa: E402
+    PAPER_MAIN_BASE_SEED, TEST8_AUDIT_BASE_SEED, TEST8_AUDIT_BASE_SEED_RETIRED,
+)
+
+
+def _cli_env():                                   # _LAZY_CLI_IMPORTS
+    """Bind the training CLI's shared helpers into this module, lazily.
+
+    intent_train_cli imports this module, so a top-level import here would
+    close the cycle. The CLI bodies moved out of it still use its helpers
+    (resolve_device, the run-directory conventions, the hashes), so they are
+    bound on first CLI use rather than duplicated.
+    """
+    from crowd_nav.bayesian_dvl import intent_train_cli as t
+    g = globals()
+    for name in dir(t):
+        if not name.startswith("__") and name not in g:
+            g[name] = getattr(t, name)
+    return t
+
+
+def build_parser() -> argparse.ArgumentParser:
+    t = _cli_env()
+    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    p.add_argument("--config", type=Path, default=t.DEFAULT_TRAINING_CONFIG)
+    p.add_argument("--env-config", type=Path, default=t.DEFAULT_ENV_CONFIG)
+    p.add_argument("--device", type=str, default="cpu")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    ac = sub.add_parser("audit-candidates")
+    ac.add_argument("--out", type=Path, default=Path("runs/candidate_audit.json"))
+    ac.add_argument("--episodes", type=int, default=40)
+    a8 = sub.add_parser("audit-test8-candidates")
+    a8.add_argument("--base-seed", type=int, default=TEST8_AUDIT_BASE_SEED)
+    a8.add_argument("--episodes", type=int, default=100)
+    a8.add_argument("--out", type=Path, default=Path("runs/v2/test8_candidate_audit.json"))
+    return p
+
+
+def main(argv=None) -> int:
+    t = _cli_env()
+    args = build_parser().parse_args(argv)
+    try:
+        if args.cmd == "audit-test8-candidates":
+            return cmd_audit_test8_candidates(args)
+        return cmd_audit_candidates(args)
+    except Exception as exc:
+        if type(exc).__name__ not in ("IntentCLIError", "IntentConfigError", "CandidateAuditError"):
+            raise
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

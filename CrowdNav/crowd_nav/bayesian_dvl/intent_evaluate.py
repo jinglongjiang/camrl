@@ -23,6 +23,8 @@ This module:
 
 from __future__ import annotations
 
+import argparse
+
 import csv
 import hashlib
 import json
@@ -353,3 +355,158 @@ def summarize_csv(csv_path: Path) -> Dict[str, Dict[str, float]]:
             "mean_smoothness": sum(float(r["smoothness"]) for r in rs) / n,
         }
     return out
+
+
+# --------------------------------------------------------------------- #
+# CLI. Order 7: validate / eval-* / ablate answer "how good is this
+# checkpoint", a different job from producing one. Keeping them in the
+# training entry point forced it to know every evaluation seed block.
+# --------------------------------------------------------------------- #
+
+def cmd_eval(args, which: str) -> int:
+    _cli_env()
+    cfg = load_intent_training_config(args.config)
+    device = resolve_device(args.device)
+    grid = ActionGridSpec.from_env_config(str(args.env_config))
+    action_table = np.asarray(grid.build_action_table(), dtype=np.float64)
+    scene_hash = scene_registry_sha256(cfg)
+    model = _load_eval_model(Path(args.checkpoint), cfg, device, grid.table_hash(), scene_hash)
+    out_dir = Path(args.out_dir) if args.out_dir else Path(args.checkpoint).parent / "results"
+    prov = _provenance(cfg, args, scene_hash, grid.table_hash())
+    common = dict(n_samples=cfg.future_n_samples, horizon=cfg.future_horizon, device=str(device),
+                  provenance=prov, resume=not args.no_resume)
+
+    if which == "validate":
+        seeds = list(cfg.validation_seeds)[: args.episodes] if args.episodes else list(cfg.validation_seeds)
+        jobs = [("standard", s, False) for s in seeds]
+        csv_path = run_persistent_evaluation(args.env_config, model, action_table, out_dir, "paper_main",
+                                              jobs, method="intent_bdvl_validation", **common)
+        _print_summary("validation (training health only -- never checkpoint selection)", csv_path)
+        return 0
+
+    if which == "eval-paper":
+        # C4RF.5: the paper-main table must be episode-for-episode pairable
+        # with the Mamba-VL / SARL / LSTM numbers, which come from test8.py.
+        # That means test8's OWN identities -- base seed 42, 500 episodes
+        # per scenario, seed = (42 + case_id*1_000_003 + ep) % (2**31-1) --
+        # not a private held-out block of ours.
+        n_ep = args.episodes or PAPER_MAIN_EPISODES_PER_SCENARIO
+        jobs = paper_main_jobs(episodes_per_scenario=n_ep, base_seed=args.base_seed)
+        prov.update({"protocol": "test8_paper_main", "base_seed": args.base_seed,
+                     "episodes_per_scenario": n_ep,
+                     "episode_seed_formula": "(base_seed + case_id*1_000_003 + ep) % (2**31-1)"})
+        csv_path = run_persistent_evaluation(args.env_config, model, action_table, out_dir, "paper_main",
+                                              jobs, **common)
+        _print_summary(f"paper-main: test8 protocol (base_seed={args.base_seed}, {n_ep} eps/scenario)", csv_path)
+        return 0
+
+    if which == "eval-stress":
+        seeds = (list(JUNCTION_CROWD_HELDOUT_SEEDS)[: args.episodes] if args.episodes
+                 else list(JUNCTION_CROWD_HELDOUT_SEEDS))
+        jobs = [("junction_crowd", s, True) for s in seeds]
+        csv_path = run_persistent_evaluation(args.env_config, model, action_table, out_dir, "heldout_junction",
+                                              jobs, **common)
+        _print_summary("held-out junction-crowd stress (shifted speeds + wider fork)", csv_path)
+        return 0
+
+    if which == "eval-dev-standard":
+        # Order 1: large-sample GREEDY diagnosis of the `standard` scenario.
+        # DEVELOPMENT ONLY -- this exists to characterise an existing run,
+        # never to select the paper's weights.
+        seeds = (list(STANDARD_DEV_DIAGNOSTIC_SEEDS)[: args.episodes] if args.episodes
+                 else list(STANDARD_DEV_DIAGNOSTIC_SEEDS))
+        jobs = [("standard", s, False) for s in seeds]
+        csv_path = run_persistent_evaluation(args.env_config, model, action_table, out_dir, "dev_standard",
+                                              jobs, **common)
+        _print_summary("development standard-scenario diagnostic (greedy, DEV-ONLY seeds)", csv_path)
+        return 0
+
+    raise IntentCLIError(f"unknown eval kind {which!r}")
+
+
+def cmd_ablate(args) -> int:
+    _cli_env()
+    cfg = load_intent_training_config(args.config)
+    device = resolve_device(args.device)
+    grid = ActionGridSpec.from_env_config(str(args.env_config))
+    action_table = np.asarray(grid.build_action_table(), dtype=np.float64)
+    scene_hash = scene_registry_sha256(cfg)
+    model = _load_eval_model(Path(args.checkpoint), cfg, device, grid.table_hash(), scene_hash)
+    out_dir = Path(args.out_dir) if args.out_dir else Path(args.checkpoint).parent / "results"
+    seeds = (list(JUNCTION_CROWD_HELDOUT_SEEDS)[: args.episodes] if args.episodes
+             else list(JUNCTION_CROWD_HELDOUT_SEEDS))
+    jobs = [("junction_crowd", s, True) for s in seeds]
+    arms = (args.arm,) if args.arm else ("full", "mean", "cv", "uniform")
+    print("NOTE: this is a FEATURE INTERVENTION on ONE checkpoint -- a mechanism diagnosis.")
+    print("      The paper's main ablation requires SEPARATELY TRAINING full/mean/cv under an")
+    print("      identical budget (plan section 3.2); 'uniform' is a supplementary control only.")
+    for arm in arms:
+        csv_path = run_persistent_evaluation(
+            args.env_config, model, action_table, out_dir, "ablation", jobs, belief_mode=arm,
+            n_samples=cfg.future_n_samples, horizon=cfg.future_horizon, device=str(device),
+            provenance=_provenance(cfg, args, scene_hash, grid.table_hash()), resume=not args.no_resume)
+        _print_summary(f"ablation arm: {arm}", csv_path)
+    return 0
+from crowd_nav.bayesian_dvl.intent_config import (  # noqa: E402
+    IntentConfigError, load_intent_training_config,
+)
+from crowd_nav.bayesian_dvl.intent_policy import HUMAN_FEATURE_DIM_V6  # noqa: E402
+from crowd_nav.bayesian_dvl.evaluation_protocol import PAPER_MAIN_BASE_SEED  # noqa: E402
+
+
+def _cli_env():                                   # _LAZY_CLI_IMPORTS
+    """Bind the training CLI's shared helpers into this module, lazily.
+
+    intent_train_cli imports this module, so a top-level import here would
+    close the cycle. The CLI bodies moved out of it still use its helpers
+    (resolve_device, the run-directory conventions, the hashes), so they are
+    bound on first CLI use rather than duplicated.
+    """
+    from crowd_nav.bayesian_dvl import intent_train_cli as t
+    g = globals()
+    for name in dir(t):
+        if not name.startswith("__") and name not in g:
+            g[name] = getattr(t, name)
+    return t
+
+
+def build_parser() -> argparse.ArgumentParser:
+    t = _cli_env()
+    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    p.add_argument("--config", type=Path, default=t.DEFAULT_TRAINING_CONFIG)
+    p.add_argument("--env-config", type=Path, default=t.DEFAULT_ENV_CONFIG)
+    p.add_argument("--device", type=str, default="cpu")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    for name in ("validate", "eval-paper", "eval-stress", "eval-dev-standard"):
+        e = sub.add_parser(name)
+        e.add_argument("--checkpoint", type=Path, required=True)
+        e.add_argument("--episodes", type=int, default=None)
+        e.add_argument("--out-dir", type=Path, default=None)
+        e.add_argument("--no-resume", action="store_true")
+        e.add_argument("--base-seed", type=int, default=PAPER_MAIN_BASE_SEED,
+                       help="eval-paper only: the frozen Test8 base seed")
+    a = sub.add_parser("ablate")
+    a.add_argument("--checkpoint", type=Path, required=True)
+    a.add_argument("--arm", type=str, default=None, choices=["full", "mean", "cv", "uniform"])
+    a.add_argument("--episodes", type=int, default=None)
+    a.add_argument("--out-dir", type=Path, default=None)
+    a.add_argument("--no-resume", action="store_true")
+    return p
+
+
+def main(argv=None) -> int:
+    t = _cli_env()
+    args = build_parser().parse_args(argv)
+    try:
+        if args.cmd == "ablate":
+            return cmd_ablate(args)
+        return cmd_eval(args, args.cmd)
+    except Exception as exc:
+        if type(exc).__name__ not in ("IntentCLIError", "IntentConfigError", "CandidateAuditError"):
+            raise
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

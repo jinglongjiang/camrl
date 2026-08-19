@@ -116,7 +116,6 @@ ACTION_FEATURE_DIM = 5
 # never a hidden human.gx/gy). Checkpoint-incompatible with v1-v4 (a
 # different human-feature dimensionality) and must fail closed like
 # those did; this is a genuinely different network, trained from scratch.
-FEATURE_SCHEMA_V5 = "bdvl_z_state_goal_intent_v5"
 
 # V6 (junction-crowd post-mortem): v5 handed the network a bare ``p0..p8``
 # probability vector whose slots were POSITIONAL. Candidates are produced by

@@ -215,7 +215,7 @@ def test_intent_train_real_gradient_flow_through_every_parameter() -> None:
     assert len(transitions) > 20
 
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     opt = torch.optim.Adam(model.parameters(), lr=1e-3)
     before = {k: v.clone() for k, v in model.state_dict().items()}
     il_batch = batch_to_tensors(transitions)
@@ -251,7 +251,7 @@ def test_intent_train_rank_loss_teaches_executed_action_to_outrank_others() -> N
     assert len(transitions) > 10
 
     torch.manual_seed(1)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     opt = torch.optim.Adam(model.parameters(), lr=1e-3)
     il_batch = batch_to_tensors(transitions)
     gen = torch.Generator().manual_seed(1)
@@ -285,13 +285,13 @@ def test_intent_train_resume_is_bit_identical_to_continuous() -> None:
     il_batch = batch_to_tensors(transitions)
 
     torch.manual_seed(7)
-    model_a = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model_a = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     opt_a = torch.optim.Adam(model_a.parameters(), lr=1e-3)
     gen_a = torch.Generator().manual_seed(123)
     losses_a = [intent_train_step(model_a, opt_a, il_batch, gen_a).loss for _ in range(20)]
 
     torch.manual_seed(7)
-    model_b = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model_b = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     opt_b = torch.optim.Adam(model_b.parameters(), lr=1e-3)
     gen_b = torch.Generator().manual_seed(123)
     for _ in range(10):
@@ -301,7 +301,7 @@ def test_intent_train_resume_is_bit_identical_to_continuous() -> None:
         path = str(Path(d) / "ckpt.pth")
         save_intent_checkpoint(model_b, path, action_grid_hash="h", scene_registry_sha256="s",
                                 optimizer=opt_b, extra={"generator_state": gen_b.get_state()})
-        model_c = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)  # extra random draws here, on purpose
+        model_c = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)  # extra random draws here, on purpose
         opt_c = torch.optim.Adam(model_c.parameters(), lr=1e-3)
         raw = torch.load(path, weights_only=False)
         load_intent_checkpoint(path, model_c, optimizer=opt_c, expected_action_grid_hash="h", expected_scene_registry_sha256="s")
@@ -350,7 +350,7 @@ def test_online_replay_buffer_ring_overflow_and_sampling() -> None:
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     ep1 = collect_online_episode(env_config_path, model, action_table, "standard", 700001, epsilon=1.0,
                                   explore_rng=np.random.default_rng(1))
     ep2 = collect_online_episode(env_config_path, model, action_table, "standard", 700002, epsilon=1.0,
@@ -371,7 +371,7 @@ def test_online_replay_buffer_state_roundtrip() -> None:
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     ep = collect_online_episode(env_config_path, model, action_table, "standard", 700001, epsilon=1.0,
                                  explore_rng=np.random.default_rng(1))
     demo = collect_orca_episode(env_config_path, "standard", 700002).transitions
@@ -403,7 +403,7 @@ def test_c4r_mixed_replay_keeps_demo_supervision_alive_during_online() -> None:
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     demo = collect_orca_episode(env_config_path, "standard", 700001).transitions
     online = collect_online_episode(env_config_path, model, action_table, "standard", 700002, epsilon=1.0,
                                      explore_rng=np.random.default_rng(3)).transitions
@@ -451,7 +451,7 @@ def test_c4r_grad_clipping_and_gradient_ratio_are_really_applied() -> None:
     trans = collect_orca_episode(env_config_path, "standard", 700001).transitions[:16]
     batch = batch_to_tensors(trans)
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     opt = torch.optim.Adam(model.parameters(), lr=0.0)
 
     # (a) with a tiny clip the post-clip gradient norm must equal the clip
@@ -541,7 +541,7 @@ def test_c4r_il_update_uses_minibatches_not_the_whole_corpus() -> None:
     buf = IntentReplay(demo_capacity=100000, online_capacity=100)
     buf.add_demo(demo, np.random.default_rng(0))
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     opt = torch.optim.Adam(model.parameters(), lr=1e-4)
     for bs in (8, 32):
         r = run_il_update(model, opt, buf, bs, np.random.default_rng(1), torch.Generator().manual_seed(0),
@@ -559,7 +559,7 @@ def test_collect_online_episode_epsilon_zero_is_deterministic_given_model() -> N
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     ep_a = collect_online_episode(env_config_path, model, action_table, "standard", 700001, epsilon=0.0,
                                    explore_rng=np.random.default_rng(111))
     ep_b = collect_online_episode(env_config_path, model, action_table, "standard", 700001, epsilon=0.0,
@@ -587,7 +587,7 @@ def test_online_training_step_real_gradient_and_resume_bit_identical() -> None:
 
     def make_state(seed):
         torch.manual_seed(seed)
-        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
         opt = torch.optim.Adam(model.parameters(), lr=1e-3)
         buf = IntentReplay(demo_capacity=200, online_capacity=200)
         explore_rng = np.random.default_rng(1000 + seed)
@@ -625,7 +625,7 @@ def test_online_training_step_real_gradient_and_resume_bit_identical() -> None:
                 "replay_buffer_state": buf_b.state_dict(),
             },
         )
-        model_c = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)  # extra random draws, on purpose
+        model_c = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)  # extra random draws, on purpose
         opt_c = torch.optim.Adam(model_c.parameters(), lr=1e-3)
         raw = torch.load(path, weights_only=False)
         load_intent_checkpoint(path, model_c, optimizer=opt_c, expected_action_grid_hash="h", expected_scene_registry_sha256="s")
@@ -654,7 +654,7 @@ def test_intent_ablation_suite_shares_identical_seeds_across_modes() -> None:
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     seeds = list(JUNCTION_TRAIN_SEEDS[:3])
     results = run_ablation_suite(env_config_path, model, action_table, "junction", seeds, n_samples=20)
     assert set(results.keys()) == {"full", "mean", "cv", "uniform"}
@@ -692,7 +692,7 @@ def test_ablation_cv_mode_outcome_is_independent_of_planner_seed() -> None:
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     episode_seed = JUNCTION_TRAIN_SEEDS[7]
     result_a = run_ablation_episode(env_config_path, model, action_table, "junction", episode_seed, "cv",
                                      planner_seed=5_000_000 + episode_seed, n_samples=20)
@@ -704,7 +704,7 @@ def test_ablation_cv_mode_outcome_is_independent_of_planner_seed() -> None:
 
 def test_ema_model_fail_closed() -> None:
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     try:
         EMAModel(model, decay=1.5)
         assert False, "expected IntentTrainError on decay outside (0,1)"
@@ -724,7 +724,7 @@ def test_ema_model_tracks_a_smoothed_average_not_the_raw_weights() -> None:
     # differs from (and is a real weighted average trailing) the raw
     # model's weights once the raw model has moved.
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     ema = EMAModel(model, decay=0.9)
     initial_param = next(iter(model.state_dict().values())).clone()
 
@@ -744,7 +744,7 @@ def test_ema_model_tracks_a_smoothed_average_not_the_raw_weights() -> None:
     assert not torch.equal(ema_param, initial_param), "EMA shadow must have moved from its init too"
 
     # copy_to loads the smoothed weights into a fresh model exactly
-    eval_model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    eval_model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     ema.copy_to(eval_model)
     for k, v in eval_model.state_dict().items():
         assert torch.equal(v, ema.shadow[k])
@@ -752,7 +752,7 @@ def test_ema_model_tracks_a_smoothed_average_not_the_raw_weights() -> None:
 
 def test_ema_model_state_roundtrip_and_key_mismatch_fail_closed() -> None:
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     ema_a = EMAModel(model, decay=0.9)
     with torch.no_grad():
         for v in model.parameters():
@@ -801,7 +801,7 @@ def test_run_formal_scenario_episode_baseline_circle_matches_human_count() -> No
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     env, robot, shape, size = build_formal_scenario_env(env_config_path, "baseline_circle")
     assert shape == "circle"
     assert size == FORMAL_SIX_SCENARIOS["baseline_circle"][1]
@@ -815,7 +815,7 @@ def test_run_formal_six_scenario_evaluation_covers_every_scenario_and_summarizes
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     seeds = FORMAL_EVAL_HELDOUT_SEEDS[:2]
     results = run_formal_six_scenario_evaluation(env_config_path, model, action_table, episode_seeds=seeds, n_samples=15)
     assert set(results.keys()) == set(FORMAL_SIX_SCENARIOS.keys())
@@ -836,7 +836,7 @@ def test_intent_train_cli_end_to_end_collect_il_rl_resume_checkpoint_ablation() 
     # the FORMAL end-to-end smoke test: collect -> IL -> RL -> checkpoint
     # -> resume -> RL continues -> four-arm ablation -> six-scenario eval,
     # through the real CLI. Rewritten for the Order C2 SUBCOMMAND
-    # interface (preflight/train/resume/eval-paper/ablate); the previous
+    # interface (preflight/train/resume, plus the evaluation CLI); the previous
     # flat-flag form no longer exists.
     import subprocess
     import sys as _sys
@@ -914,7 +914,10 @@ def test_intent_train_cli_end_to_end_collect_il_rl_resume_checkpoint_ablation() 
         assert "resumed:" in r.stdout and "online 2/" in r.stdout
 
         ck = str(run / "final_ema.pth")
-        r = subprocess.run(base + ["ablate", "--checkpoint", ck, "--episodes", "1",
+        # Order 7: evaluation lives in its own CLI now -- the training entry
+        # point no longer carries validate/eval-*/ablate.
+        eval_base = [_sys.executable, "-m", "crowd_nav.bayesian_dvl.intent_evaluate"]
+        r = subprocess.run(eval_base + ["ablate", "--checkpoint", ck, "--episodes", "1",
                                     "--out-dir", str(results)],
                             cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=900)
         assert r.returncode == 0, f"stdout={r.stdout}\nstderr={r.stderr}"
@@ -922,7 +925,7 @@ def test_intent_train_cli_end_to_end_collect_il_rl_resume_checkpoint_ablation() 
             assert f"ablation arm: {arm}" in r.stdout
             assert (results / "ablation" / f"arm_{arm}" / "episodes.csv").exists()
 
-        r = subprocess.run(base + ["eval-paper", "--checkpoint", ck, "--episodes", "1",
+        r = subprocess.run(eval_base + ["eval-paper", "--checkpoint", ck, "--episodes", "1",
                                     "--out-dir", str(results)],
                             cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=900)
         assert r.returncode == 0, f"stdout={r.stdout}\nstderr={r.stderr}"
@@ -987,7 +990,7 @@ def test_c0_online_collection_never_labels_its_own_action_as_expert() -> None:
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     ep = collect_online_episode(env_config_path, model, action_table, "standard", 700001, epsilon=1.0,
                                  explore_rng=np.random.default_rng(1))
     assert len(ep.transitions) > 0
@@ -1005,7 +1008,7 @@ def test_c0_online_only_batch_has_exactly_zero_rank_loss() -> None:
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     ep = collect_online_episode(env_config_path, model, action_table, "standard", 700001, epsilon=0.5,
                                  explore_rng=np.random.default_rng(3))
     batch = batch_to_tensors(ep.transitions)
@@ -1026,7 +1029,7 @@ def test_c0_mixed_batch_rank_loss_averages_over_demo_mask_only() -> None:
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     demo_ts = collect_orca_episode(env_config_path, "standard", 700001).transitions[:4]
     online_ts = collect_online_episode(env_config_path, model, action_table, "standard", 700002, epsilon=1.0,
                                         explore_rng=np.random.default_rng(5)).transitions[:6]
@@ -1082,7 +1085,7 @@ def test_c0_checkpoint_schema_v6_rejects_retired_v5_and_wrong_training_contract(
     # plan C0.5: V5 weights were fit under the buggy objective; loading
     # them must FAIL CLOSED, since no shape check can tell them apart.
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     with tempfile.TemporaryDirectory() as d:
         path = str(Path(d) / "ckpt.pth")
         save_intent_checkpoint(model, path, action_grid_hash="h", scene_registry_sha256="s")
@@ -1100,24 +1103,25 @@ def test_c0_checkpoint_schema_v6_rejects_retired_v5_and_wrong_training_contract(
         v2_path = str(Path(d) / "v2.pth")
         torch.save(v2, v2_path)
         try:
-            load_intent_checkpoint(v2_path, DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5))
+            load_intent_checkpoint(v2_path, DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6))
             assert False, "expected IntentPolicyError: retired V2 training contract"
         except IntentPolicyError as exc:
             assert "RETIRED" in str(exc) and "380" in str(exc), str(exc)
 
-        model2 = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+        model2 = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
         load_intent_checkpoint(path, model2, expected_action_grid_hash="h", expected_scene_registry_sha256="s")
 
-        # a genuine retired-V5 payload must be rejected by name
+        # Order 6: retired schemas are refused by the equality check, not by a
+        # per-version branch -- anything that is not the current schema fails.
         v5 = dict(raw)
-        v5["checkpoint_schema"] = CHECKPOINT_SCHEMA_V5_RETIRED
+        v5["checkpoint_schema"] = 'bdvl_intent_checkpoint_v5'
         v5_path = str(Path(d) / "v5.pth")
         torch.save(v5, v5_path)
         try:
             load_intent_checkpoint(v5_path, model2)
             assert False, "expected IntentPolicyError: retired V5 checkpoint schema"
         except IntentPolicyError as exc:
-            assert "RETIRED" in str(exc)
+            assert "fail closed" in str(exc)
 
         # right schema, wrong training contract -> still rejected
         bad = dict(raw)
@@ -1149,7 +1153,7 @@ def test_c0_mixed_loss_matches_hand_computation() -> None:
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
 
     demo_ts = collect_orca_episode(env_config_path, "standard", 700001).transitions[:3]
     online_ts = collect_online_episode(env_config_path, model, action_table, "standard", 700002, epsilon=1.0,
@@ -1409,7 +1413,7 @@ def test_order1r_online_clearance_is_swept_dmin_and_telemetry_only() -> None:
     without the dmin instrumentation.
     """
     from crowd_nav.bayesian_dvl.intent_train import collect_online_episode, IntentTrainError
-    from crowd_nav.bayesian_dvl.intent_policy import HUMAN_FEATURE_DIM_V5
+    from crowd_nav.bayesian_dvl.intent_policy import HUMAN_FEATURE_DIM_V6
 
     env_config = _env_config_path()
     action_table = np.asarray(
@@ -1417,7 +1421,7 @@ def test_order1r_online_clearance_is_swept_dmin_and_telemetry_only() -> None:
 
     def fresh_model():
         torch.manual_seed(0)
-        m = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+        m = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
         m.eval()
         return m
 
@@ -1714,7 +1718,7 @@ def test_audit_metrics_are_chunked_without_changing_the_numbers() -> None:
             rows += r.transitions
     audit = build_il_audit_set(rows, lambda t: tag[id(t)], n_per_scenario=64)
     torch.manual_seed(3)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     batch = batch_to_tensors(audit, device="cpu")
     ONE = 10 ** 9   # effectively unchunked
 

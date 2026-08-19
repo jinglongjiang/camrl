@@ -14,7 +14,7 @@ import pytest
 import torch
 
 from crowd_nav.bayesian_dvl.intent_policy import (
-    HUMAN_FEATURE_DIM_V5, HumanObservation, RobotObservation, build_intent_human_feature_batch,
+    HUMAN_FEATURE_DIM_V6, HumanObservation, RobotObservation, build_intent_human_feature_batch,
 )
 from crowd_nav.bayesian_dvl.intent_runtime_config import (
     CANDIDATE_FEATURE_DIM, FROZEN_VALUES, HUMAN_SCALAR_DIM_V6, MAX_CANDIDATE_GOALS, TRACKER_DEFAULTS,
@@ -210,10 +210,10 @@ def test_candidate_encoding_is_permutation_invariant():
     identifying a candidate. Shuffling the candidate order must now be
     invisible to the network."""
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     model.eval()
     n_c = 5
-    row = np.zeros(HUMAN_FEATURE_DIM_V5, dtype=np.float32)
+    row = np.zeros(HUMAN_FEATURE_DIM_V6, dtype=np.float32)
     row[:HUMAN_SCALAR_DIM_V6] = np.linspace(-0.5, 0.5, HUMAN_SCALAR_DIM_V6)
     cands, mask = _packed(row)
     rng = np.random.default_rng(7)
@@ -247,9 +247,9 @@ def test_candidate_geometry_actually_reaches_the_network():
     candidates entirely, so check the opposite: moving a candidate's endpoint
     must change the output."""
     torch.manual_seed(1)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     model.eval()
-    row = np.zeros(HUMAN_FEATURE_DIM_V5, dtype=np.float32)
+    row = np.zeros(HUMAN_FEATURE_DIM_V6, dtype=np.float32)
     cands, mask = _packed(row)
     cands[:2] = [(0.5, 0.1, 0.2, 0.1, 0.2), (0.5, -0.1, 0.3, -0.1, 0.3)]
     mask[:2] = 1.0
@@ -296,7 +296,7 @@ def test_candidate_count_reaches_the_network():
     count scalar those arms could not see how many public destinations
     existed -- a public fact they had in v5."""
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     model.eval()
     robot, action = torch.zeros(1, 7), torch.zeros(1, 5)
     tau = torch.linspace(0.05, 0.95, 8)[None]
@@ -304,7 +304,7 @@ def test_candidate_count_reaches_the_network():
 
     def row_for(n_cand):
         # exactly the mean/cv arm's shape: zeroed candidate block, valid mask
-        row = np.zeros(HUMAN_FEATURE_DIM_V5, dtype=np.float32)
+        row = np.zeros(HUMAN_FEATURE_DIM_V6, dtype=np.float32)
         row[HUMAN_SCALAR_DIM_V6 - 1] = n_cand / MAX_CANDIDATE_GOALS
         _c, mask = _packed(row)
         mask[:n_cand] = 1.0
@@ -318,7 +318,7 @@ def test_candidate_count_reaches_the_network():
     # and the count must be the ONLY thing carrying it: blank the scalar and
     # the two become identical again, which is the bug this guards.
     def row_without_count(n_cand):
-        row = np.zeros(HUMAN_FEATURE_DIM_V5, dtype=np.float32)
+        row = np.zeros(HUMAN_FEATURE_DIM_V6, dtype=np.float32)
         _c, mask = _packed(row)
         mask[:n_cand] = 1.0
         return torch.as_tensor(row[None, None, :])

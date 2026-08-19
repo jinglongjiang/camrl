@@ -55,7 +55,7 @@ from crowd_nav.bayesian_dvl.intent_config import (
     DEFAULT_TRAINING_CONFIG, IntentConfigError, IntentTrainingConfig, load_intent_training_config,
 )
 from crowd_nav.bayesian_dvl.intent_policy import (
-    CHECKPOINT_SCHEMA_V7, HUMAN_FEATURE_DIM_V5, load_intent_checkpoint, save_intent_checkpoint,
+    CHECKPOINT_SCHEMA_V7, HUMAN_FEATURE_DIM_V6, load_intent_checkpoint, save_intent_checkpoint,
 )
 from crowd_nav.bayesian_dvl.intent_train import (
     ABORT_TYPES, ABORT_WARMUP_FAILURE, TEST8_AUDIT_BASE_SEED, TEST8_AUDIT_BASE_SEED_RETIRED,
@@ -653,7 +653,7 @@ def _save_milestone(path: Path, art: TrainingArtifacts, cfg: IntentTrainingConfi
     """C4RF.3: a periodic SMALL artifact -- model + EMA + run identity, no
     replay. Enough to evaluate or restart-from-weights at that point in
     training; a full bit-exact resume uses the rolling A/B slots."""
-    ema_model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    ema_model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     art.ema.copy_to(ema_model)
 
     def _write(tmp: Path):
@@ -677,7 +677,7 @@ def _save_final_ema(path: Path, art: TrainingArtifacts, cfg: IntentTrainingConfi
     """Plan 2.2 point 14: the deployment/paper artifact must have the EMA
     as its ``model_state_dict``, so an ordinary loader gets the EMA
     weights -- not the raw weights with the EMA hidden in ``extra``."""
-    ema_model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    ema_model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     art.ema.copy_to(ema_model)
 
     def _write(tmp: Path):
@@ -698,7 +698,7 @@ def _save_final_ema(path: Path, art: TrainingArtifacts, cfg: IntentTrainingConfi
 def _build_artifacts(cfg: IntentTrainingConfig, seed: int, device: torch.device,
                      action_grid_hash: str, scene_hash: str) -> TrainingArtifacts:
     torch.manual_seed(seed)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5).to(device)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.learning_rate)
     return TrainingArtifacts(
         model=model, optimizer=optimizer, ema=EMAModel(model, decay=cfg.ema_decay),
@@ -904,63 +904,22 @@ CANDIDATE_AUDIT_FILENAME = "candidate_audit.json"
 
 
 def audit_identity(cfg) -> dict:
-    """What an audit result is only valid FOR. A PASS collected under
-    different code, config or scene rules says nothing about this run."""
+    """What a candidate audit is valid FOR.
+
+    Deliberately NOT the whole main-chain code hash. The audit asks whether
+    the public candidate goals describe the pedestrians they are attached
+    to; that is decided by the scene rules, the scenario version and the
+    feature schema, and by nothing in the trainer. Keying it on code_sha256
+    meant re-measuring an unchanged property -- four minutes -- after every
+    unrelated edit, and it is the reason the audit had to be regenerated
+    five times during this refactor.
+    """
     return {
-        "code_sha256": code_sha256(),
-        "config_content_sha256": cfg.content_hash(),
         "scene_registry_sha256": scene_registry_sha256(cfg),
         "scenario_registry_id": SCENARIO_REGISTRY_ID,
         "feature_schema": FEATURE_SCHEMA_V6,
+        "materialization_code_sha256": materialization_code_sha256(),
     }
-
-
-def run_candidate_audit(cfg, env_config: Path, out_path: Path, n_episodes: int = 40,
-                        max_steps: int = 40) -> dict:
-    from crowd_nav.bayesian_dvl.candidate_audit import (
-        audit_permutation_invariance, audit_scenario, run_pretraining_audit,
-    )
-    from crowd_nav.bayesian_dvl.junction_scenario import (
-        AMBIGUOUS_TRACK_INDEX, JunctionCrowdEpisodeConfig, build_junction_crowd_episode,
-        junction_crowd_role_of_seed, maybe_reveal_crowd_exit, public_junction_crowd_scene,
-    )
-    from crowd_nav.bayesian_dvl.model import DistributionalValueModel
-
-    def episodes(seeds, is_heldout):
-        for seed in seeds:
-            env, _robot, true_exit = build_junction_crowd_episode(
-                env_config, JunctionCrowdEpisodeConfig(
-                    episode_seed=seed, role=junction_crowd_role_of_seed(seed)))
-            state = {"wp": False}
-
-            def advance(env=env, true_exit=true_exit, state=state, hd=is_heldout):
-                state["wp"] = maybe_reveal_crowd_exit(
-                    env.humans[AMBIGUOUS_TRACK_INDEX], true_exit, state["wp"], is_heldout=hd)
-            yield env, advance
-
-    results = []
-    for is_heldout, block, name in (
-        (False, JUNCTION_CROWD_TRAIN_SEEDS, "junction_crowd_train"),
-        (True, JUNCTION_CROWD_HELDOUT_SEEDS, "junction_crowd_heldout"),
-    ):
-        seeds = list(block)[:n_episodes]
-        r = audit_scenario(episodes(seeds, is_heldout), public_junction_crowd_scene(is_heldout=is_heldout),
-                           scenario=name, ambiguous_index=AMBIGUOUS_TRACK_INDEX, max_steps=max_steps)
-        results.append(r)
-        print(f"  {name:24} coverage {r.mean_coverage_error_m:.3f}/{r.worst_coverage_error_m:.3f} m | "
-              f"speed residual {r.mean_speed_residual:.3f} | single {r.single_candidate_rate:.2%} | "
-              f"flat {r.persistently_flat_rate:.1%} | {'PASS' if r.passed else 'FAIL'}", flush=True)
-
-    torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
-    delta = audit_permutation_invariance(model)
-    print(f"  permutation invariance   max delta {delta:.2e}", flush=True)
-
-    payload = run_pretraining_audit(results, delta)     # raises on any failure
-    payload["identity"] = audit_identity(cfg)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(payload, indent=2))
-    return payload
 
 
 def require_candidate_audit(cfg, audit_path: Path) -> dict:
@@ -969,7 +928,7 @@ def require_candidate_audit(cfg, audit_path: Path) -> dict:
     if not audit_path.exists():
         raise IntentCLIError(
             f"no candidate audit at {audit_path}. Run:\n"
-            f"  python -m crowd_nav.bayesian_dvl.intent_train_cli audit-candidates --out {audit_path}\n"
+            f"  python -m crowd_nav.bayesian_dvl.candidate_audit audit-candidates --out {audit_path}\n"
             "Training is refused without one: the last run reached a 10,500-episode paper test with a "
             "candidate model that did not describe 80% of its pedestrians.")
     payload = json.loads(audit_path.read_text())
@@ -983,115 +942,6 @@ def require_candidate_audit(cfg, audit_path: Path) -> dict:
             f"candidate audit at {audit_path} was collected under different {drift}; it does not certify "
             "this configuration. Re-run audit-candidates.")
     return payload
-
-
-def cmd_audit_candidates(args) -> int:
-    cfg = load_intent_training_config(args.config)
-    out = Path(args.out)
-    print("=== pre-training candidate audit ===", flush=True)
-    try:
-        run_candidate_audit(cfg, args.env_config, out, n_episodes=args.episodes)
-    except Exception as exc:      # CandidateAuditError, and anything the scene raises
-        print(f"AUDIT FAILED -- training must not start:\n{exc}", flush=True)
-        return 2
-    print(f"audit PASSED -> {out}", flush=True)
-    return 0
-
-def _human_v_pref(env_config: Path) -> float:
-    """The pedestrian speed the circle noise bound is derived from -- read
-    from the env config, not assumed."""
-    import configparser
-    c = configparser.RawConfigParser(inline_comment_prefixes=(";", "#"), strict=False)
-    if not c.read(str(env_config)):
-        raise IntentCLIError(f"env config not found: {env_config}")
-    return float(c.get("humans", "v_pref"))
-
-
-def run_test8_candidate_audit(cfg, env_config: Path, out_path: Path, base_seed: int,
-                              episodes: int, max_steps: int = 40) -> dict:
-    """Model-INDEPENDENT candidate audit over the six Test8 scenarios.
-
-    Uses the SAME scenario builder and the SAME candidate provider the formal
-    evaluator uses -- build_formal_scenario_env plus circle_scene/square_scene
-    -- rather than a second copy of the geometry. A private copy is how the
-    formal evaluator once ran circle_scene() for square scenarios.
-    """
-    from crowd_nav.bayesian_dvl.candidate_audit import audit_scenario, run_pretraining_audit
-    from crowd_nav.bayesian_dvl.intent_train import (
-        FORMAL_SIX_SCENARIOS, build_formal_scenario_env, paper_main_episode_seed,
-    )
-    from crowd_nav.bayesian_dvl.intent_evaluate import initial_state_hash
-    from crowd_nav.bayesian_dvl.scene_candidates import circle_scene, square_scene
-
-    from crowd_nav.bayesian_dvl.candidate_audit import analytic_oracle_bound
-
-    results, seed_table = [], []
-    for scenario in FORMAL_SIX_SCENARIOS:
-        shape, size, _humans = FORMAL_SIX_SCENARIOS[scenario]
-        scene = (circle_scene(radius=size, n_sectors=8) if shape == "circle"
-                 else square_scene(width=size, n_rows=4))
-        bound = analytic_oracle_bound(shape, size, v_pref=_human_v_pref(env_config))
-        seeds = [paper_main_episode_seed(scenario, i, base_seed) for i in range(episodes)]
-
-        def episodes_iter(scenario=scenario, seeds=seeds):
-            for sd in seeds:
-                env, robot, _shape, _size = build_formal_scenario_env(env_config, scenario)
-                env.case_counter["test"] = sd % (2 ** 32 - 1)
-                env.reset()
-                seed_table.append({"scenario": scenario, "episode_seed": int(sd),
-                                   "initial_state_hash": initial_state_hash(robot, env.humans)})
-                yield env, None          # no hidden state to reveal in circle/square
-
-        r = audit_scenario(episodes_iter(), scene, scenario=scenario, ambiguous_index=None,
-                           max_steps=max_steps, coverage_mode="representability",
-                           oracle_bound_m=bound)
-        results.append(r)
-        print(f"  {scenario:16} regret max {r.worst_assignment_regret_m:.2e} m ({r.n_regret_offenders} "
-              f"offenders) | oracle {r.mean_oracle_error_m:.3f}/{r.worst_oracle_error_m:.3f} m "
-              f"(bound {bound:.3f}) | assigned {r.mean_coverage_error_m:.3f} m | "
-              f"speed residual {r.mean_speed_residual:.3f} | single {r.single_candidate_rate:.2%} | "
-              f"flat {r.persistently_flat_rate:.1%} | {'PASS' if r.passed else 'FAIL'}", flush=True)
-        if not r.passed:
-            raise IntentCLIError(
-                f"Test8 candidate audit FAILED on {scenario}: " + "; ".join(r.failures))
-
-    from crowd_nav.bayesian_dvl.candidate_audit import audit_permutation_invariance
-    from crowd_nav.bayesian_dvl.model import DistributionalValueModel
-    torch.manual_seed(0)
-    delta = audit_permutation_invariance(DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5))
-    print(f"  permutation invariance   max delta {delta:.2e}", flush=True)
-
-    payload = run_pretraining_audit(results, delta)      # raises on any failure
-    payload["suite"] = "test8"
-    payload["base_seed"] = int(base_seed)
-    payload["episodes_per_scenario"] = int(episodes)
-    payload["identity"] = audit_identity(cfg)
-    payload["episodes"] = seed_table
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(payload, indent=2))
-    return payload
-
-
-def cmd_audit_test8_candidates(args) -> int:
-    cfg = load_intent_training_config(args.config)
-    if args.base_seed == PAPER_MAIN_BASE_SEED:
-        raise IntentCLIError(
-            f"--base-seed {args.base_seed} is the FORMAL Test8 base; the candidate audit must not touch "
-            f"formal episode identities. Use {TEST8_AUDIT_BASE_SEED}.")
-    if args.base_seed == TEST8_AUDIT_BASE_SEED_RETIRED:
-        raise IntentCLIError(
-            f"--base-seed {args.base_seed} is RETIRED. Its run is kept as INVALID_GATE_DIAGNOSTIC -- it was "
-            f"gated with the junction's absolute metre budget on a continuous goal space. Use "
-            f"{TEST8_AUDIT_BASE_SEED}.")
-    print(f"=== Test8 candidate audit (base seed {args.base_seed}, "
-          f"{args.episodes} episodes x 6 scenarios) ===", flush=True)
-    try:
-        run_test8_candidate_audit(cfg, args.env_config, Path(args.out), args.base_seed, args.episodes)
-    except Exception as exc:
-        print(f"AUDIT FAILED -- no IL collection, no training:\n{exc}", flush=True)
-        return 2
-    print(f"audit PASSED -> {args.out}", flush=True)
-    return 0
 
 
 def cmd_preflight(args) -> int:
@@ -1141,7 +991,7 @@ def cmd_preflight(args) -> int:
         print(f"  memory          : {free / 1e9:.1f} GB free / {total / 1e9:.1f} GB total")
     if args.device != "cpu":
         dev = resolve_device(args.device)
-        probe = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5).to(dev)
+        probe = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6).to(dev)
         p = next(probe.parameters())
         print(f"device probe      : parameters really on {p.device}")
         if p.device.type != dev.type:
@@ -1572,7 +1422,7 @@ def cmd_train(args, resume: bool = False) -> int:
     def _run_development_if_due(done: int) -> None:
         if not _development_due(done) or telemetry.has_validation(done):
             return
-        evaluation_model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5).to(device)
+        evaluation_model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6).to(device)
         art.ema.copy_to(evaluation_model)
         dev_rows = run_development_validation(
             args.env_config,
@@ -1699,7 +1549,7 @@ def cmd_train(args, resume: bool = False) -> int:
                     f"mc={result.mc_loss:.4f} rank={result.rank_loss:.4f} "
                     f"|g|={result.grad_norm_preclip:.2f}{' CLIPPED' if result.clipped else ''}"
                     + (f" ratio={result.gradient_ratio:.3f}" if result.ratio_measured else "")
-                    + f" lambda={result.lambda_used:.4g}"
+                    + f" lambda={result.rank_scale:.4g}"
                 )
             if art.state.il_passes_done % cfg.health_check_interval == 0:
                 _audit_record(f"pass={art.state.il_passes_done}")
@@ -1772,7 +1622,7 @@ def cmd_train(args, resume: bool = False) -> int:
     # A4: verify the deployment artifact loads and matches the live EMA
     # BEFORE reclaiming the GB-scale resume. If this check fails the resume
     # is kept, because it is the only way to recover the run.
-    verify = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    verify = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     load_intent_checkpoint(str(final_path), verify,
                             expected_action_grid_hash=action_grid_hash,
                             expected_scene_registry_sha256=scene_hash)
@@ -1802,7 +1652,7 @@ def cmd_train(args, resume: bool = False) -> int:
 
 def _load_eval_model(checkpoint: Path, cfg: IntentTrainingConfig, device: torch.device,
                      action_grid_hash: str, scene_hash: str) -> DistributionalValueModel:
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     load_intent_checkpoint(str(checkpoint), model, expected_action_grid_hash=action_grid_hash,
                             expected_scene_registry_sha256=scene_hash)
     return model.to(device)
@@ -1844,109 +1694,12 @@ def _print_summary(title: str, csv_path: Path) -> None:
     print(f"  rows: {csv_path}")
 
 
-def cmd_eval(args, which: str) -> int:
-    cfg = load_intent_training_config(args.config)
-    device = resolve_device(args.device)
-    grid = ActionGridSpec.from_env_config(str(args.env_config))
-    action_table = np.asarray(grid.build_action_table(), dtype=np.float64)
-    scene_hash = scene_registry_sha256(cfg)
-    model = _load_eval_model(Path(args.checkpoint), cfg, device, grid.table_hash(), scene_hash)
-    out_dir = Path(args.out_dir) if args.out_dir else Path(args.checkpoint).parent / "results"
-    prov = _provenance(cfg, args, scene_hash, grid.table_hash())
-    common = dict(n_samples=cfg.future_n_samples, horizon=cfg.future_horizon, device=str(device),
-                  provenance=prov, resume=not args.no_resume)
-
-    if which == "validate":
-        seeds = list(cfg.validation_seeds)[: args.episodes] if args.episodes else list(cfg.validation_seeds)
-        jobs = [("standard", s, False) for s in seeds]
-        csv_path = run_persistent_evaluation(args.env_config, model, action_table, out_dir, "paper_main",
-                                              jobs, method="intent_bdvl_validation", **common)
-        _print_summary("validation (training health only -- never checkpoint selection)", csv_path)
-        return 0
-
-    if which == "eval-paper":
-        # C4RF.5: the paper-main table must be episode-for-episode pairable
-        # with the Mamba-VL / SARL / LSTM numbers, which come from test8.py.
-        # That means test8's OWN identities -- base seed 42, 500 episodes
-        # per scenario, seed = (42 + case_id*1_000_003 + ep) % (2**31-1) --
-        # not a private held-out block of ours.
-        n_ep = args.episodes or PAPER_MAIN_EPISODES_PER_SCENARIO
-        jobs = paper_main_jobs(episodes_per_scenario=n_ep, base_seed=args.base_seed)
-        prov.update({"protocol": "test8_paper_main", "base_seed": args.base_seed,
-                     "episodes_per_scenario": n_ep,
-                     "episode_seed_formula": "(base_seed + case_id*1_000_003 + ep) % (2**31-1)"})
-        csv_path = run_persistent_evaluation(args.env_config, model, action_table, out_dir, "paper_main",
-                                              jobs, **common)
-        _print_summary(f"paper-main: test8 protocol (base_seed={args.base_seed}, {n_ep} eps/scenario)", csv_path)
-        return 0
-
-    if which == "eval-stress":
-        seeds = (list(JUNCTION_CROWD_HELDOUT_SEEDS)[: args.episodes] if args.episodes
-                 else list(JUNCTION_CROWD_HELDOUT_SEEDS))
-        jobs = [("junction_crowd", s, True) for s in seeds]
-        csv_path = run_persistent_evaluation(args.env_config, model, action_table, out_dir, "heldout_junction",
-                                              jobs, **common)
-        _print_summary("held-out junction-crowd stress (shifted speeds + wider fork)", csv_path)
-        return 0
-
-    if which == "eval-dev-standard":
-        # Order 1: large-sample GREEDY diagnosis of the `standard` scenario.
-        # DEVELOPMENT ONLY -- this exists to characterise an existing run,
-        # never to select the paper's weights.
-        seeds = (list(STANDARD_DEV_DIAGNOSTIC_SEEDS)[: args.episodes] if args.episodes
-                 else list(STANDARD_DEV_DIAGNOSTIC_SEEDS))
-        jobs = [("standard", s, False) for s in seeds]
-        csv_path = run_persistent_evaluation(args.env_config, model, action_table, out_dir, "dev_standard",
-                                              jobs, **common)
-        _print_summary("development standard-scenario diagnostic (greedy, DEV-ONLY seeds)", csv_path)
-        return 0
-
-    raise IntentCLIError(f"unknown eval kind {which!r}")
-
-
-def cmd_ablate(args) -> int:
-    cfg = load_intent_training_config(args.config)
-    device = resolve_device(args.device)
-    grid = ActionGridSpec.from_env_config(str(args.env_config))
-    action_table = np.asarray(grid.build_action_table(), dtype=np.float64)
-    scene_hash = scene_registry_sha256(cfg)
-    model = _load_eval_model(Path(args.checkpoint), cfg, device, grid.table_hash(), scene_hash)
-    out_dir = Path(args.out_dir) if args.out_dir else Path(args.checkpoint).parent / "results"
-    seeds = (list(JUNCTION_CROWD_HELDOUT_SEEDS)[: args.episodes] if args.episodes
-             else list(JUNCTION_CROWD_HELDOUT_SEEDS))
-    jobs = [("junction_crowd", s, True) for s in seeds]
-    arms = (args.arm,) if args.arm else ("full", "mean", "cv", "uniform")
-    print("NOTE: this is a FEATURE INTERVENTION on ONE checkpoint -- a mechanism diagnosis.")
-    print("      The paper's main ablation requires SEPARATELY TRAINING full/mean/cv under an")
-    print("      identical budget (plan section 3.2); 'uniform' is a supplementary control only.")
-    for arm in arms:
-        csv_path = run_persistent_evaluation(
-            args.env_config, model, action_table, out_dir, "ablation", jobs, belief_mode=arm,
-            n_samples=cfg.future_n_samples, horizon=cfg.future_horizon, device=str(device),
-            provenance=_provenance(cfg, args, scene_hash, grid.table_hash()), resume=not args.no_resume)
-        _print_summary(f"ablation arm: {arm}", csv_path)
-    return 0
-
-
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="BDVL goal-intent (V6) formal training and evaluation.")
     p.add_argument("--config", type=Path, default=DEFAULT_TRAINING_CONFIG)
     p.add_argument("--env-config", type=Path, default=DEFAULT_ENV_CONFIG)
     p.add_argument("--device", type=str, default="cpu", help="'cpu' or 'cuda[:N]'; cuda fails closed if unavailable")
     sub = p.add_subparsers(dest="cmd", required=True)
-
-    ac = sub.add_parser("audit-candidates",
-                        help="run the pre-training candidate audit and write its artifact")
-    ac.add_argument("--out", type=Path, default=Path("runs/candidate_audit.json"))
-    ac.add_argument("--episodes", type=int, default=40)
-    ac.set_defaults(func=cmd_audit_candidates)
-
-    a8 = sub.add_parser("audit-test8-candidates",
-                        help="model-independent candidate audit over the six Test8 scenarios")
-    a8.add_argument("--base-seed", type=int, default=TEST8_AUDIT_BASE_SEED)
-    a8.add_argument("--episodes", type=int, default=100)
-    a8.add_argument("--out", type=Path, default=Path("runs/v2/test8_candidate_audit.json"))
-    a8.set_defaults(func=cmd_audit_test8_candidates)
 
     pf = sub.add_parser("preflight")
     pf.add_argument("--run-dir", type=Path, default=None)
@@ -1996,41 +1749,18 @@ def build_parser() -> argparse.ArgumentParser:
                        help="C4R.6: train an INDEPENDENT ablation arm from scratch. "
                             "'uniform' is a supplementary inference-time control only and is not trained.")
 
-    for name in ("validate", "eval-paper", "eval-stress", "eval-dev-standard"):
-        e = sub.add_parser(name)
-        e.add_argument("--checkpoint", type=Path, required=True)
-        e.add_argument("--episodes", type=int, default=None)
-        e.add_argument("--out-dir", type=Path, default=None)
-        e.add_argument("--no-resume", action="store_true")
-        e.add_argument("--base-seed", type=int, default=PAPER_MAIN_BASE_SEED,
-                       help="eval-paper only: test8.py's base seed (default 42)")
-
-    a = sub.add_parser("ablate")
-    a.add_argument("--checkpoint", type=Path, required=True)
-    a.add_argument("--arm", type=str, default=None, choices=["full", "mean", "cv", "uniform"])
-    a.add_argument("--episodes", type=int, default=None)
-    a.add_argument("--out-dir", type=Path, default=None)
-    a.add_argument("--no-resume", action="store_true")
     return p
 
 
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        if args.cmd == "audit-test8-candidates":
-            return cmd_audit_test8_candidates(args)
-        if args.cmd == "audit-candidates":
-            return cmd_audit_candidates(args)
         if args.cmd == "preflight":
             return cmd_preflight(args)
         if args.cmd == "train":
             return cmd_train(args, resume=False)
         if args.cmd == "resume":
             return cmd_train(args, resume=True)
-        if args.cmd in ("validate", "eval-paper", "eval-stress", "eval-dev-standard"):
-            return cmd_eval(args, args.cmd)
-        if args.cmd == "ablate":
-            return cmd_ablate(args)
     except (IntentCLIError, IntentConfigError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2

@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 import torch.nn as nn
 from crowd_nav.bayesian_dvl.intent_runtime_config import (
-    ACTION_FEATURE_DIM, ActionGridSpec, FEATURE_SCHEMA_V5, FROZEN_VALUES,
+    ACTION_FEATURE_DIM, ActionGridSpec, FEATURE_SCHEMA_V6, FROZEN_VALUES,
     NORMALIZATION_CONSTANTS, PROGRESS_REWARD_NORMALIZED_K,
     TRAINING_CONTRACT_V2_DEMO_RANK_ONLINE_MC, TRAINING_CONTRACT_V3_ADAPTIVE_GRADIENT_BALANCE,
     TRAINING_CONTRACT_V4_RANKING_GATE_GRACE,
@@ -43,7 +43,7 @@ from crowd_nav.bayesian_dvl.intent_runtime_config import (
     MAX_CANDIDATE_GOALS,
 )
 from crowd_nav.bayesian_dvl.intent_policy import (
-    CHECKPOINT_SCHEMA_V5_RETIRED, CHECKPOINT_SCHEMA_V7, HUMAN_FEATURE_DIM_V5, IntentPolicyError, build_intent_human_feature_batch,
+    CHECKPOINT_SCHEMA_V7, HUMAN_FEATURE_DIM_V6, IntentPolicyError, build_intent_human_feature_batch,
     load_intent_checkpoint, remaining_time_fraction as intent_remaining_time_fraction,
     save_intent_checkpoint, score_candidates_v5,
 )
@@ -389,7 +389,7 @@ __all__ = [
     'ActionEncoder',
     'ActionGridSpec',
     'CALIBRATION_TAUS',
-    'CHECKPOINT_SCHEMA_V5_RETIRED',
+
     'CHECKPOINT_SCHEMA_V7',
     'CROWD_HELDOUT_BACKGROUND_SPEED_RANGE',
     'CROWD_HELDOUT_EXIT_LEFT',
@@ -406,14 +406,14 @@ __all__ = [
     'EXIT_RIGHT',
     'EpisodeRecord',
     'EvaluatorError',
-    'FEATURE_SCHEMA_V5',
+    'FEATURE_SCHEMA_V6',
     'FORMAL_EVAL_HELDOUT_SEEDS',
     'FORMAL_SIX_SCENARIOS',
     'FROZEN_VALUES',
     'GoalIntentTracker',
     'GradientRatioMonitor',
     'HUMAN_FEATURE_DIM',
-    'HUMAN_FEATURE_DIM_V5', 'junction_crowd_role_of_seed', 'HUMAN_FEATURE_DIM_V6', 'HUMAN_SCALAR_DIM_V6',
+    'HUMAN_FEATURE_DIM_V6', 'junction_crowd_role_of_seed', 'HUMAN_FEATURE_DIM_V6', 'HUMAN_SCALAR_DIM_V6',
     'CANDIDATE_FEATURE_DIM', 'MAX_CANDIDATE_GOALS', 'FEATURE_SCHEMA_V6',
     'HumanObservation',
     'IQNValueNetwork',

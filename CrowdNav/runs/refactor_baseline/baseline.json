@@ -1,0 +1,15 @@
+{
+  "checkpoint_roundtrip_hash": "fd7ae00771a661cef61059b722a78d444850d9b33661e0da845bc9ce076da3ee",
+  "combined_grad_hash": "2418a8d548260b2f659fd1ca62de46192c891a8f3b2bdc85fc89689a8239ca2d",
+  "combined_grad_norm": 9.428897857666016,
+  "forward_hash": "6cf8d79baffc3496a6595ce623c2d03dd0053b214b0f6ab02a89f5ee634faf21",
+  "forward_mean": -1.153671383857727,
+  "init_param_hash": "fa3e91b1983f0bdd9f7574da532ccfcf0337f6b2715ae25e3cbce352f78919ae",
+  "mc_grad_norm": 9.427121562638442,
+  "mc_loss": 8.127869606018066,
+  "n_transitions": 82,
+  "param_hash_after_one_step": "23b387bb03a49ec3034999a72e3b904f7d775ddb2770383c7a69353bb7783851",
+  "rank_grad_norm": 0.03491479687628786,
+  "rank_loss": 0.10068628191947937,
+  "rank_scale": 0.9999999999713589
+}

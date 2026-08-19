@@ -21,7 +21,7 @@ from crowd_nav.bayesian_dvl.junction_scenario import JUNCTION_CROWD_HELDOUT_SEED
 
 def _tiny_checkpoint(d: Path) -> Path:
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     p = d / "final_ema.pth"
     save_intent_checkpoint(model, str(p), action_grid_hash="h", scene_registry_sha256="s",
                             extra={"artifact_role": "final_ema"})
@@ -113,7 +113,7 @@ def test_c3_intent_policy_rejects_retired_v5_checkpoint() -> None:
         d = Path(d)
         ck = _tiny_checkpoint(d)
         raw = torch.load(str(ck), map_location="cpu", weights_only=False)
-        raw["checkpoint_schema"] = CHECKPOINT_SCHEMA_V5_RETIRED
+        raw["checkpoint_schema"] = 'bdvl_intent_checkpoint_v5'
         v5 = d / "v5.pth"
         torch.save(raw, str(v5))
         try:
@@ -205,7 +205,7 @@ def test_c3_evaluator_persists_every_episode_with_the_full_metric_set() -> None:
     with tempfile.TemporaryDirectory() as d:
         d = Path(d)
         ck = _tiny_checkpoint(d)
-        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
         load_intent_checkpoint(str(ck), model)
         action_table = np.asarray(
             ActionGridSpec.from_env_config(str(_env_config_path())).build_action_table(), dtype=np.float64)
@@ -236,7 +236,7 @@ def test_c3_evaluator_resumes_by_identity_without_duplicating_or_skipping() -> N
     with tempfile.TemporaryDirectory() as d:
         d = Path(d)
         ck = _tiny_checkpoint(d)
-        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
         load_intent_checkpoint(str(ck), model)
         action_table = np.asarray(
             ActionGridSpec.from_env_config(str(_env_config_path())).build_action_table(), dtype=np.float64)
@@ -261,7 +261,7 @@ def test_c3_evaluator_keeps_result_kinds_and_ablation_arms_separate() -> None:
     with tempfile.TemporaryDirectory() as d:
         d = Path(d)
         ck = _tiny_checkpoint(d)
-        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
         load_intent_checkpoint(str(ck), model)
         action_table = np.asarray(
             ActionGridSpec.from_env_config(str(_env_config_path())).build_action_table(), dtype=np.float64)
@@ -293,7 +293,7 @@ def test_c3_ablation_arms_share_the_initial_state_but_may_diverge_after() -> Non
     with tempfile.TemporaryDirectory() as d:
         d = Path(d)
         ck = _tiny_checkpoint(d)
-        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
         load_intent_checkpoint(str(ck), model)
         action_table = np.asarray(
             ActionGridSpec.from_env_config(str(_env_config_path())).build_action_table(), dtype=np.float64)
@@ -427,10 +427,10 @@ def test_order1r_clearance_uses_the_simulator_swept_dmin() -> None:
     """
     from crowd_nav.bayesian_dvl.intent_evaluate import _run_one_episode, IntentEvaluateError
     from crowd_nav.bayesian_dvl.intent_train import _ScenarioEpisode
-    from crowd_nav.bayesian_dvl.intent_policy import HUMAN_FEATURE_DIM_V5
+    from crowd_nav.bayesian_dvl.intent_policy import HUMAN_FEATURE_DIM_V6
 
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V5)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
     model.eval()
     action_table = np.asarray(
         ActionGridSpec.from_env_config(str(_env_config_path())).build_action_table(), dtype=np.float64)
