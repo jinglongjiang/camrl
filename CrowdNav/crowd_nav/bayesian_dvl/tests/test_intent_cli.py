@@ -1333,3 +1333,48 @@ def test_final_dev_entry_point_is_outside_the_training_chain_hash() -> None:
     assert "intent_selection.py" not in src
     src_m = inspect.getsource(t.materialization_code_sha256)
     assert "intent_evaluate.py" not in src_m
+
+
+def test_final_dev_lazy_imports_all_resolve() -> None:
+    """cmd_eval_final_dev's happy path is expensive to run, so its deferred
+    imports are never exercised by the cheap tests -- a wrong module name
+    would surface only after the evaluation was launched. It did: an import
+    of a non-existent bayesian_dvl.provenance crashed the first launch.
+    """
+    import ast
+    import importlib
+    import inspect
+    from crowd_nav.bayesian_dvl import intent_evaluate
+
+    checked = 0
+    for fn in (intent_evaluate.cmd_eval_final_dev, intent_evaluate.final_dev_jobs):
+        tree = ast.parse(inspect.getsource(fn).lstrip())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                mod = importlib.import_module(node.module)
+                for alias in node.names:
+                    assert hasattr(mod, alias.name), f"{node.module} has no {alias.name}"
+                    checked += 1
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    importlib.import_module(alias.name)
+                    checked += 1
+    assert checked >= 2
+
+    # every free name the function body resolves at runtime must exist in
+    # the module (or be a builtin) -- _sha256_file is the one that bit.
+    import builtins
+    src = ast.parse(inspect.getsource(intent_evaluate.cmd_eval_final_dev).lstrip())
+    local = {a.arg for n in ast.walk(src) if isinstance(n, ast.arguments) for a in n.args}
+    local |= {n.id for n in ast.walk(src) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store)}
+    local |= {a.asname or a.name.split(".")[0]
+              for n in ast.walk(src) if isinstance(n, (ast.Import, ast.ImportFrom)) for a in n.names}
+    # names injected lazily from intent_train_cli by _cli_env()
+    from crowd_nav.bayesian_dvl import intent_train_cli as _t
+    injected = {n for n in dir(_t) if not n.startswith("__")}
+    for node in ast.walk(src):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+            n = node.id
+            if n in local or n in injected or hasattr(builtins, n):
+                continue
+            assert hasattr(intent_evaluate, n), f"cmd_eval_final_dev uses undefined name {n!r}"

@@ -474,9 +474,8 @@ def cmd_eval_final_dev(args) -> int:
     model = _load_eval_model(ck, cfg, device, grid.table_hash(), scene_hash)
     out_dir = Path(args.out_dir) if args.out_dir else ck.parent / "final_eval_200"
     prov = _provenance(cfg, args, scene_hash, grid.table_hash())
-    from crowd_nav.bayesian_dvl.provenance import sha256_of_file
     prov.update({"protocol": "final_dev_acceptance",
-                 "checkpoint_sha256": sha256_of_file(str(ck)),
+                 "checkpoint_sha256": _sha256_file(ck),
                  "decision_rule": "both scenarios success_rate >= 0.90 (point estimate)"})
 
     jobs = final_dev_jobs()
