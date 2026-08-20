@@ -19,7 +19,7 @@ import torch.nn as nn
 from crowd_nav.bayesian_dvl.intent_runtime_config import (
     ACTION_FEATURE_DIM, ActionGridSpec, FEATURE_SCHEMA_V6, FROZEN_VALUES,
     NORMALIZATION_CONSTANTS, PROGRESS_REWARD_NORMALIZED_K,
-    TRAINING_CONTRACT_V5_CAPPED_RANK_AUDIT_ONLY,
+    TRAINING_CONTRACT_V6_EPISODE_BALANCED_REPLAY,
     derive_return_bounds,
 )
 from crowd_nav.bayesian_dvl.contracts import (
@@ -448,7 +448,7 @@ __all__ = [
     'SceneCandidatesError',
     'SetEncoder',
     'StatisticsError',
-    'TRAINING_CONTRACT_V5_CAPPED_RANK_AUDIT_ONLY',
+    'TRAINING_CONTRACT_V6_EPISODE_BALANCED_REPLAY',
     'WAYPOINT_RADIUS',
     '_FakeConfig',
     '_FakeConfigSection',

@@ -47,7 +47,7 @@ from crowd_nav.bayesian_dvl import normalization as norm
 from crowd_nav.bayesian_dvl.intent_runtime_config import (
     CANDIDATE_FEATURE_DIM, FEATURE_SCHEMA_V6, HUMAN_FEATURE_DIM_V6,
     HUMAN_SCALAR_DIM_V6, MAX_CANDIDATE_GOALS, NORMALIZATION_CONSTANTS, FROZEN_VALUES,
-    TRAINING_CONTRACT_V5_CAPPED_RANK_AUDIT_ONLY,
+    TRAINING_CONTRACT_V6_EPISODE_BALANCED_REPLAY,
 )
 from crowd_nav.bayesian_dvl.contracts import HumanObservation, RobotObservation
 from crowd_nav.bayesian_dvl.geometry_features import _robot_feature_vector, compute_action_features_array
@@ -369,7 +369,7 @@ def save_intent_checkpoint(
     payload = {
         "checkpoint_schema": CHECKPOINT_SCHEMA_V7,
         "feature_schema": FEATURE_SCHEMA_V6,
-        "training_contract_schema": TRAINING_CONTRACT_V5_CAPPED_RANK_AUDIT_ONLY,
+        "training_contract_schema": TRAINING_CONTRACT_V6_EPISODE_BALANCED_REPLAY,
         "model_state_dict": model.state_dict(),
         "action_grid_hash": action_grid_hash,
         "scene_registry_sha256": scene_registry_sha256,
@@ -401,10 +401,10 @@ def load_intent_checkpoint(
         raise IntentPolicyError(f"checkpoint schema {checkpoint['checkpoint_schema']!r} != {CHECKPOINT_SCHEMA_V7!r}, fail closed, no compat loading")
     if checkpoint["feature_schema"] != FEATURE_SCHEMA_V6:
         raise IntentPolicyError(f"feature schema {checkpoint['feature_schema']!r} != {FEATURE_SCHEMA_V6!r}, fail closed")
-    if checkpoint["training_contract_schema"] != TRAINING_CONTRACT_V5_CAPPED_RANK_AUDIT_ONLY:
+    if checkpoint["training_contract_schema"] != TRAINING_CONTRACT_V6_EPISODE_BALANCED_REPLAY:
         raise IntentPolicyError(
             f"training contract {checkpoint['training_contract_schema']!r} != "
-            f"{TRAINING_CONTRACT_V5_CAPPED_RANK_AUDIT_ONLY!r}, fail closed -- the loss semantics these "
+            f"{TRAINING_CONTRACT_V6_EPISODE_BALANCED_REPLAY!r}, fail closed -- the loss semantics these "
             f"weights were fit under differ from what this code implements, and no shape check can "
             f"detect that")
     if expected_action_grid_hash is not None and checkpoint["action_grid_hash"] != expected_action_grid_hash:

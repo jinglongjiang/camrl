@@ -181,22 +181,24 @@ HUMAN_FEATURE_DIM_V6 = (HUMAN_SCALAR_DIM_V6 + MAX_CANDIDATE_GOALS * CANDIDATE_FE
                         + MAX_CANDIDATE_GOALS)   # = 62
 # The training contract: the data/loss SEMANTICS the weights were fit under,
 # a separate axis from feature_schema because tensor shapes cannot tell two
-# objectives apart. V5 is the current and only one:
+# objectives apart. V6 is the current and only one:
 #
 #   * demo rows get MC + ranking, online rows get MC only;
 #   * gradients are combined by projecting away the conflicting component
 #     and CAPPING the remainder at rank_cap_rho * |g_MC| -- an upper bound,
 #     never a fixed share;
 #   * training aborts only on arithmetic failure. MC regression, ranking
-#     quality and clipping frequency are RECORDED and judged afterwards by
-#     the checkpoint selector, which can see the whole curve.
+#     quality and clipping frequency are RECORDED for offline analysis.
+#   * online replay samples scenarios uniformly, then episodes uniformly,
+#     then one transition per selected episode. Replay eviction preserves
+#     complete episodes under the transition-count memory limit.
 #
 # V2/V3/V4 are deleted rather than kept as named refusals: anything that is
-# not V5 fails the equality check in load_intent_checkpoint, which is what
+# not V6 fails the equality check in load_intent_checkpoint, which is what
 # "no compat loading" has always meant, and a per-version branch only
 # invited a compat path back in.
-TRAINING_CONTRACT_V5_CAPPED_RANK_AUDIT_ONLY = (
-    "bdvl_intent_training_contract_capped_rank_audit_only_v5")
+TRAINING_CONTRACT_V6_EPISODE_BALANCED_REPLAY = (
+    "bdvl_intent_training_contract_episode_balanced_replay_v6")
 
 
 FROZEN_VALUES: Dict[str, object] = {
@@ -498,4 +500,3 @@ class ActionGridSpec:
     def table_hash(self) -> str:
         table = self.build_action_table()
         return _sha256_of_obj([[round(vx, 12), round(vy, 12)] for vx, vy in table])
-

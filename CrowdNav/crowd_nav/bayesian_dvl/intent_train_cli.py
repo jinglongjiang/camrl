@@ -201,7 +201,7 @@ IL_AUDIT_MAX_REGRESSION = 1.5
 # per-row overhead does not have to be linear. Reproduce with
 # scratchpad/stress_capacity.py (too slow/large for the standard suite:
 # ~25 s and 0.5 GB of transient disk).
-# Measured 2026-08-12 by serializing a FULL 200,000-row online ring through
+# Measured 2026-08-12 by serializing a FULL 200,000-row online replay through
 # _save_checkpoint: 0.254 GB final file, of which only 0.7 MB is fixed
 # (model + optimizer + run identity), i.e. 1268 B/row marginal. Reproduced
 # across two independent runs. The previous 3.7 KB came from extrapolating a
@@ -581,7 +581,7 @@ def _save_checkpoint(path: Path, art: TrainingArtifacts, cfg: IntentTrainingConf
                 "sample_rng_state": art.sample_rng.bit_generator.state,
                 # C4RF.3: the immutable demo corpus is NOT embedded; only
                 # its path+hash. A full checkpoint therefore holds the
-                # online ring only (~2.4 GB -> a few hundred MB).
+                # online episodes only (~2.4 GB -> a few hundred MB).
                 "replay_buffer_state": art.buffer.state_dict(include_demo=False),
                 "il_corpus_ref": art.il_corpus_ref,
                 "reservoir_rng_state": art.reservoir_rng.bit_generator.state,

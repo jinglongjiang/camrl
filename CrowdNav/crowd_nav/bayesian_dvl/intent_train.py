@@ -17,9 +17,10 @@ from __future__ import annotations
 
 import hashlib
 import random
+from collections import deque
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Deque, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
@@ -973,30 +974,22 @@ def collect_online_episode(
 
 
 class IntentReplay:
-    """THE single V6 replay (Order C4R.2). Holds BOTH roles:
+    """Replay for immutable demonstrations and complete online episodes.
 
       * a DEMO reservoir  -- bounded, reservoir-sampled so an arbitrarily
         large IL corpus stays within a fixed memory budget while remaining
         a uniform sample of everything ever added;
-      * an ONLINE ring    -- the usual fixed-capacity recent-experience ring.
+      * complete ONLINE episodes, evicted oldest-first under the existing
+        transition-count memory limit.
 
-    Real gap this closes (audit 2.2 point 2): the previous
-    ``OnlineReplayBuffer`` stored ONLY online transitions, so once the IL
-    phase ended every sampled batch was online-only and the ranking loss
-    was permanently zero. That is no longer mathematically WRONG (an
-    epsilon-random action is correctly never treated as an expert), but it
-    silently discards the demonstration supervision the plan requires and
-    invites catastrophic forgetting of the IL behaviour.
-
-    ``sample`` therefore draws a FIXED ``demo_ratio`` share from the demo
-    reservoir and the rest from the online ring, so online updates keep
-    seeing expert-ranked demo samples. The loss semantics are unchanged:
-    demo rows carry an expert set and get L_rank, online rows do not.
-
-    Both sub-buffers AND the reservoir counter are in ``state_dict`` --
-    without the counter, a resumed run's reservoir would accept new items
-    with the wrong probability and silently bias the demo distribution.
+    Online sampling is uniform over scenarios, then episodes, then a
+    transition inside each episode. This makes an episode the statistical
+    unit: a long success trajectory cannot outweigh several short collision
+    trajectories merely because it contains more rows. No outcome label is
+    used for sampling.
     """
+
+    REPLAY_SCHEMA = "bdvl_episode_balanced_replay_v1"
 
     def __init__(self, demo_capacity: int, online_capacity: int):
         if demo_capacity <= 0 or online_capacity <= 0:
@@ -1005,13 +998,14 @@ class IntentReplay:
         self.demo_capacity = int(demo_capacity)
         self.online_capacity = int(online_capacity)
         self._demo: List[IntentTransition] = []
-        self._online: List[IntentTransition] = []
-        self._online_next = 0
+        self._online_episodes: Deque[Tuple[str, Tuple[IntentTransition, ...]]] = deque()
+        self._online_by_scenario: Dict[str, Deque[Tuple[IntentTransition, ...]]] = {}
+        self._online_transition_count = 0
         self._demo_seen = 0   # total demo items EVER offered (reservoir denominator)
 
     # ---- sizes ----
     def __len__(self) -> int:
-        return len(self._demo) + len(self._online)
+        return len(self._demo) + self._online_transition_count
 
     @property
     def n_demo(self) -> int:
@@ -1019,7 +1013,11 @@ class IntentReplay:
 
     @property
     def n_online(self) -> int:
-        return len(self._online)
+        return self._online_transition_count
+
+    @property
+    def n_online_episodes(self) -> int:
+        return len(self._online_episodes)
 
     # ---- writes ----
     def add_demo(self, transitions: Sequence[IntentTransition], rng: np.random.Generator) -> None:
@@ -1037,15 +1035,30 @@ class IntentReplay:
                 if j < self.demo_capacity:
                     self._demo[j] = t
 
-    def add_online(self, transitions: Sequence[IntentTransition]) -> None:
+    def add_online(self, transitions: Sequence[IntentTransition], scenario: str) -> None:
+        if not scenario:
+            raise IntentTrainError("add_online requires a non-empty scenario")
+        if not transitions:
+            raise IntentTrainError("add_online requires a complete, non-empty episode")
+        if len(transitions) > self.online_capacity:
+            raise IntentTrainError(
+                f"online episode has {len(transitions)} transitions, exceeding replay capacity "
+                f"{self.online_capacity}; complete episodes cannot be truncated")
         for t in transitions:
             if t.source_role != "online":
                 raise IntentTrainError(f"add_online got a {t.source_role!r} transition")
-            if len(self._online) < self.online_capacity:
-                self._online.append(t)
-            else:
-                self._online[self._online_next] = t
-                self._online_next = (self._online_next + 1) % self.online_capacity
+        episode = tuple(transitions)
+        self._online_episodes.append((scenario, episode))
+        self._online_by_scenario.setdefault(scenario, deque()).append(episode)
+        self._online_transition_count += len(episode)
+        while self._online_transition_count > self.online_capacity:
+            old_scenario, old_episode = self._online_episodes.popleft()
+            scenario_episodes = self._online_by_scenario[old_scenario]
+            if scenario_episodes.popleft() is not old_episode:
+                raise IntentTrainError("online replay episode index is inconsistent")
+            if not scenario_episodes:
+                del self._online_by_scenario[old_scenario]
+            self._online_transition_count -= len(old_episode)
 
     # ---- reads ----
     def sample_demo_only(self, batch_size: int, rng: np.random.Generator) -> List[IntentTransition]:
@@ -1066,12 +1079,12 @@ class IntentReplay:
             raise IntentTrainError(f"batch_size must be positive, got {batch_size}")
         if not (0.0 <= demo_ratio <= 1.0):
             raise IntentTrainError(f"demo_ratio must be in [0,1], got {demo_ratio}")
-        if not self._demo and not self._online:
+        if not self._demo and not self._online_episodes:
             raise IntentTrainError("cannot sample from an empty replay")
         n_demo = int(round(batch_size * demo_ratio))
         if not self._demo:
             n_demo = 0
-        elif not self._online:
+        elif not self._online_episodes:
             n_demo = batch_size
         n_online = batch_size - n_demo
         out: List[IntentTransition] = []
@@ -1079,8 +1092,19 @@ class IntentReplay:
             idx = rng.integers(0, len(self._demo), size=n_demo)
             out.extend(self._demo[i] for i in idx)
         if n_online > 0:
-            idx = rng.integers(0, len(self._online), size=n_online)
-            out.extend(self._online[i] for i in idx)
+            scenarios = sorted(self._online_by_scenario)
+            per_scenario = {scenario: n_online // len(scenarios) for scenario in scenarios}
+            remainder = n_online % len(scenarios)
+            if remainder:
+                extra = rng.choice(len(scenarios), size=remainder, replace=False)
+                for index in np.atleast_1d(extra):
+                    per_scenario[scenarios[int(index)]] += 1
+            for scenario in scenarios:
+                episodes = self._online_by_scenario[scenario]
+                for episode_index in rng.integers(0, len(episodes), size=per_scenario[scenario]):
+                    episode = episodes[int(episode_index)]
+                    transition_index = int(rng.integers(0, len(episode)))
+                    out.append(episode[transition_index])
         return out
 
     # ---- resume ----
@@ -1132,17 +1156,23 @@ class IntentReplay:
         the formal budget; keeping a permanent copy every 500 episodes
         across 15 formal runs projected to ~705 GB. The demo side is
         byte-identical in all of them."""
-        online = self._online
-        if self.ONLINE_PERSIST_DROPS_ACTION_FEATURES:
-            online = [self._strip_for_persist(t) for t in online]
+        online_episodes = []
+        for scenario, episode in self._online_episodes:
+            rows = list(episode)
+            if self.ONLINE_PERSIST_DROPS_ACTION_FEATURES:
+                rows = [self._strip_for_persist(t) for t in rows]
+            online_episodes.append({"scenario": scenario, "transitions": rows})
         demo_rows = None
         if include_demo:
             demo_rows = [self._compact_humans(t) for t in self._demo]
         state = {
-            "online": online,
+            "replay_schema": self.REPLAY_SCHEMA,
+            "online_episodes": online_episodes,
             "online_action_feature_shape": (
-                list(self._online[0].all_action_features.shape) if self._online else None),
-            "online_next": self._online_next, "demo_seen": self._demo_seen,
+                list(self._online_episodes[0][1][0].all_action_features.shape)
+                if self._online_episodes else None),
+            "online_transition_count": self._online_transition_count,
+            "demo_seen": self._demo_seen,
             "demo_capacity": self.demo_capacity, "online_capacity": self.online_capacity,
             "demo_included": bool(include_demo),
         }
@@ -1156,6 +1186,10 @@ class IntentReplay:
         return state
 
     def load_state_dict(self, state: dict) -> None:
+        if state.get("replay_schema") != self.REPLAY_SCHEMA:
+            raise IntentTrainError(
+                f"replay schema {state.get('replay_schema')!r} != {self.REPLAY_SCHEMA!r}; "
+                "flat-transition replay checkpoints are retired")
         if (state["demo_capacity"] != self.demo_capacity
                 or state["online_capacity"] != self.online_capacity):
             raise IntentTrainError(
@@ -1179,18 +1213,26 @@ class IntentReplay:
             raise IntentTrainError(
                 "checkpoint omits the demo corpus (demo_included=False) but the replay's demo side is "
                 "empty -- load the immutable IL corpus artifact first")
-        online = [_restore(t) for t in state["online"]]
         shape = state.get("online_action_feature_shape")
-        if shape is not None:
-            import dataclasses
-            zeros = np.zeros(tuple(shape), dtype=np.float32)
-            online = [dataclasses.replace(t, all_action_features=zeros)
-                      if t.all_action_features is None else t for t in online]
-        elif any(t.all_action_features is None for t in online):
-            raise IntentTrainError(
-                "online rows were persisted without all_action_features but no shape was recorded")
-        self._online = online
-        self._online_next = int(state["online_next"])
+        zeros = np.zeros(tuple(shape), dtype=np.float32) if shape is not None else None
+        import dataclasses
+        self._online_episodes.clear()
+        self._online_by_scenario.clear()
+        self._online_transition_count = 0
+        for saved_episode in state["online_episodes"]:
+            scenario = saved_episode["scenario"]
+            transitions = []
+            for transition in saved_episode["transitions"]:
+                transition = _restore(transition)
+                if transition.all_action_features is None:
+                    if zeros is None:
+                        raise IntentTrainError(
+                            "online rows were persisted without all_action_features but no shape was recorded")
+                    transition = dataclasses.replace(transition, all_action_features=zeros)
+                transitions.append(transition)
+            self.add_online(transitions, scenario=scenario)
+        if self._online_transition_count != int(state["online_transition_count"]):
+            raise IntentTrainError("persisted online replay transition count is inconsistent")
         self._demo_seen = int(state["demo_seen"])
 
 
@@ -1226,7 +1268,7 @@ def run_online_training_step(
         is_heldout=is_heldout, gamma=gamma, n_samples=n_samples, horizon=horizon, device=device,
         belief_mode=belief_mode,
     )
-    buffer.add_online(episode.transitions)
+    buffer.add_online(episode.transitions, scenario=scenario)
     result = None
     for _ in range(max(1, updates)):
         batch = buffer.sample(min(batch_size, len(buffer)), sample_rng, demo_ratio=demo_ratio)

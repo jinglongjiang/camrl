@@ -338,15 +338,15 @@ def test_online_replay_buffer_fail_closed() -> None:
         assert False, "expected IntentTrainError on batch_size 0"
     except IntentTrainError:
         pass
-    # role enforcement: a demo transition may not enter the online ring
+    # role enforcement: a demo transition may not enter online replay
     try:
-        buf.add_online(demo)
-        assert False, "expected IntentTrainError putting a demo sample in the online ring"
+        buf.add_online(demo, scenario="standard")
+        assert False, "expected IntentTrainError putting a demo sample in online replay"
     except IntentTrainError:
         pass
 
 
-def test_online_replay_buffer_ring_overflow_and_sampling() -> None:
+def test_online_replay_evicts_complete_episodes() -> None:
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(0)
@@ -357,14 +357,51 @@ def test_online_replay_buffer_ring_overflow_and_sampling() -> None:
                                   explore_rng=np.random.default_rng(2))
     assert len(ep1.transitions) > 0 and ep1.outcome in ("success", "collision", "timeout")
 
-    capacity = 5
+    capacity = max(len(ep1.transitions), len(ep2.transitions))
     buf = IntentReplay(demo_capacity=100, online_capacity=capacity)
-    buf.add_online(ep1.transitions)
-    buf.add_online(ep2.transitions)
-    assert buf.n_online == min(capacity, len(ep1.transitions) + len(ep2.transitions))
-    assert any(t is ep2.transitions[-1] for t in buf._online), "ring must retain the most recent adds"
+    buf.add_online(ep1.transitions, scenario="standard")
+    buf.add_online(ep2.transitions, scenario="standard")
+    assert buf.n_online == len(ep2.transitions)
+    assert buf.n_online_episodes == 1
+    retained = buf._online_episodes[0][1]
+    assert len(retained) == len(ep2.transitions)
+    assert all(a is b for a, b in zip(retained, ep2.transitions)), \
+        "capacity eviction must retain the newest complete episode"
     batch = buf.sample(3, np.random.default_rng(0), demo_ratio=0.0)
     assert len(batch) == 3 and all(t.source_role == "online" for t in batch)
+
+
+def test_online_replay_samples_scenarios_and_episodes_not_rows() -> None:
+    env_config_path = _env_config_path()
+    action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
+    torch.manual_seed(0)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    long_episode = collect_online_episode(
+        env_config_path, model, action_table, "standard", 700001, epsilon=1.0,
+        explore_rng=np.random.default_rng(1)).transitions
+    short_episode = collect_online_episode(
+        env_config_path, model, action_table, "standard", 700002, epsilon=1.0,
+        explore_rng=np.random.default_rng(2)).transitions[:2]
+    assert len(long_episode) > 2
+
+    # Episode-uniform sampling: two episodes have equal probability even
+    # though one contains many more transitions.
+    buf = IntentReplay(demo_capacity=100, online_capacity=1000)
+    buf.add_online(long_episode, scenario="standard")
+    buf.add_online(short_episode, scenario="standard")
+    short_ids = {id(t) for t in short_episode}
+    batch = buf.sample(10000, np.random.default_rng(3), demo_ratio=0.0)
+    short_count = sum(id(t) in short_ids for t in batch)
+    assert 4700 <= short_count <= 5300, short_count
+
+    # Scenario allocation is exact up to the unavoidable one-row remainder.
+    balanced = IntentReplay(demo_capacity=100, online_capacity=1000)
+    balanced.add_online(long_episode, scenario="standard")
+    balanced.add_online(short_episode, scenario="junction_crowd")
+    junction_ids = {id(t) for t in short_episode}
+    batch = balanced.sample(101, np.random.default_rng(4), demo_ratio=0.0)
+    junction_count = sum(id(t) in junction_ids for t in batch)
+    assert junction_count in (50, 51), junction_count
 
 
 def test_online_replay_buffer_state_roundtrip() -> None:
@@ -376,15 +413,22 @@ def test_online_replay_buffer_state_roundtrip() -> None:
                                  explore_rng=np.random.default_rng(1))
     demo = collect_orca_episode(env_config_path, "standard", 700002).transitions
     a = IntentReplay(demo_capacity=100, online_capacity=100)
-    a.add_online(ep.transitions)
+    a.add_online(ep.transitions, scenario="standard")
     a.add_demo(demo, np.random.default_rng(0))
     state = a.state_dict()
 
     b = IntentReplay(demo_capacity=100, online_capacity=100)
     b.load_state_dict(state)
     assert (b.n_demo, b.n_online) == (a.n_demo, a.n_online)
+    assert b.n_online_episodes == a.n_online_episodes == 1
     assert b._demo_seen == a._demo_seen, "the reservoir counter must survive resume"
-    assert all(x.action_index == y.action_index for x, y in zip(a._online, b._online))
+    original = a._online_episodes[0][1]
+    restored = b._online_episodes[0][1]
+    assert all(x.action_index == y.action_index for x, y in zip(original, restored))
+    rng_a, rng_b = np.random.default_rng(9), np.random.default_rng(9)
+    sampled_a = a.sample(20, rng_a, demo_ratio=0.25)
+    sampled_b = b.sample(20, rng_b, demo_ratio=0.25)
+    assert [t.action_index for t in sampled_a] == [t.action_index for t in sampled_b]
 
     c = IntentReplay(demo_capacity=50, online_capacity=100)
     try:
@@ -392,6 +436,14 @@ def test_online_replay_buffer_state_roundtrip() -> None:
         assert False, "expected IntentTrainError on capacity mismatch"
     except IntentTrainError:
         pass
+
+    retired = dict(state)
+    retired.pop("replay_schema")
+    try:
+        IntentReplay(demo_capacity=100, online_capacity=100).load_state_dict(retired)
+        assert False, "expected retired flat-transition replay state to fail closed"
+    except IntentTrainError as exc:
+        assert "flat-transition replay checkpoints are retired" in str(exc)
 
 
 def test_c4r_mixed_replay_keeps_demo_supervision_alive_during_online() -> None:
@@ -409,7 +461,7 @@ def test_c4r_mixed_replay_keeps_demo_supervision_alive_during_online() -> None:
                                      explore_rng=np.random.default_rng(3)).transitions
     buf = IntentReplay(demo_capacity=1000, online_capacity=1000)
     buf.add_demo(demo, np.random.default_rng(0))
-    buf.add_online(online)
+    buf.add_online(online, scenario="standard")
 
     rng = np.random.default_rng(7)
     batch = buf.sample(100, rng, demo_ratio=0.20)
@@ -1067,7 +1119,7 @@ def test_c0_checkpoint_schema_v6_rejects_retired_v5_and_wrong_training_contract(
         save_intent_checkpoint(model, path, action_grid_hash="h", scene_registry_sha256="s")
         raw = torch.load(path, weights_only=False)
         assert raw["checkpoint_schema"] == CHECKPOINT_SCHEMA_V7
-        assert raw["training_contract_schema"] == TRAINING_CONTRACT_V5_CAPPED_RANK_AUDIT_ONLY
+        assert raw["training_contract_schema"] == TRAINING_CONTRACT_V6_EPISODE_BALANCED_REPLAY
 
         # Order 4: a V2 checkpoint (fixed rho=380) must be refused
         # BY NAME, not with a generic schema message. Its optimizer state,
@@ -1735,5 +1787,3 @@ def test_audit_metrics_are_chunked_without_changing_the_numbers() -> None:
         assert abs(got - mc_ref) < 1e-5, (cs, got, mc_ref)
     # a ragged split must not be systematically biased
     assert abs(_audit_mc_loss(model, batch, 16, chunk_rows=len(audit) - 1) - mc_ref) < 1e-5
-
-

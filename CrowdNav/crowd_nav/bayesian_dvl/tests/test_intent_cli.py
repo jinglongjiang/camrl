@@ -318,11 +318,12 @@ def test_c2_cli_resume_is_a_total_target_and_bit_identical_to_continuous() -> No
         assert A["extra"]["run_state"]["online_episodes_done"] == B["extra"]["run_state"]["online_episodes_done"] == 4
         assert A["extra"]["run_state"]["global_updates"] == B["extra"]["run_state"]["global_updates"]
         ra, rb = A["extra"]["replay_buffer_state"], B["extra"]["replay_buffer_state"]
-        # C4RF.3: checkpoints carry the ONLINE ring only; the immutable demo
+        # C4RF.3: checkpoints carry ONLINE episodes only; the immutable demo
         # corpus is referenced by path+hash, not embedded.
         assert ra["demo_included"] is False and rb["demo_included"] is False
         assert "demo" not in ra and "demo" not in rb
-        assert len(ra["online"]) == len(rb["online"])
+        assert len(ra["online_episodes"]) == len(rb["online_episodes"])
+        assert ra["online_transition_count"] == rb["online_transition_count"]
         assert ra["demo_seen"] == rb["demo_seen"], "the reservoir counter must survive resume"
         assert A["extra"]["reservoir_rng_state"] == B["extra"]["reservoir_rng_state"]
         assert (A["extra"]["il_corpus_ref"]["corpus_sha256"]
@@ -782,20 +783,21 @@ def test_c5_online_rows_persist_without_dead_action_features() -> None:
 
     a = IntentReplay(demo_capacity=1000, online_capacity=1000)
     a.add_demo(demo, np.random.default_rng(0))
-    a.add_online(online)
-    live = a._online[0].all_action_features
+    a.add_online(online, scenario="standard")
+    live = a._online_episodes[0][1][0].all_action_features
     state = a.state_dict(include_demo=False)
 
     # persisting must NOT mutate the live in-memory rows
-    assert a._online[0].all_action_features is live is not None, "state_dict must not damage the live buffer"
-    assert state["online"][0].all_action_features is None
+    assert a._online_episodes[0][1][0].all_action_features is live is not None, \
+        "state_dict must not damage the live buffer"
+    assert state["online_episodes"][0]["transitions"][0].all_action_features is None
     assert state["online_action_feature_shape"] == list(live.shape)
 
     b = IntentReplay(demo_capacity=1000, online_capacity=1000)
     b.add_demo(demo, np.random.default_rng(0))
     b.load_state_dict(state)
     assert b.n_online == a.n_online
-    restored = b._online[0].all_action_features
+    restored = b._online_episodes[0][1][0].all_action_features
     assert restored is not None and restored.shape == live.shape
     assert not restored.any(), "restored as zeros (never read for online rows)"
 

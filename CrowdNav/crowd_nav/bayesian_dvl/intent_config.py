@@ -255,15 +255,15 @@ def load_intent_training_config(path: Path = DEFAULT_TRAINING_CONFIG) -> IntentT
 def _validate(cfg: IntentTrainingConfig) -> None:
     # schema must match the CODE, not just be internally consistent
     from crowd_nav.bayesian_dvl.intent_runtime_config import (
-        FEATURE_SCHEMA_V6, TRAINING_CONTRACT_V5_CAPPED_RANK_AUDIT_ONLY,
+        FEATURE_SCHEMA_V6, TRAINING_CONTRACT_V6_EPISODE_BALANCED_REPLAY,
     )
     from crowd_nav.bayesian_dvl.intent_policy import CHECKPOINT_SCHEMA_V7
     if cfg.feature_schema != FEATURE_SCHEMA_V6:
         raise IntentConfigError(f"config feature_schema {cfg.feature_schema!r} != code's {FEATURE_SCHEMA_V6!r}")
-    if cfg.training_contract_schema != TRAINING_CONTRACT_V5_CAPPED_RANK_AUDIT_ONLY:
+    if cfg.training_contract_schema != TRAINING_CONTRACT_V6_EPISODE_BALANCED_REPLAY:
         raise IntentConfigError(
             f"config training_contract_schema {cfg.training_contract_schema!r} != "
-            f"code's {TRAINING_CONTRACT_V5_CAPPED_RANK_AUDIT_ONLY!r}")
+            f"code's {TRAINING_CONTRACT_V6_EPISODE_BALANCED_REPLAY!r}")
     if cfg.checkpoint_schema != CHECKPOINT_SCHEMA_V7:
         raise IntentConfigError(f"config checkpoint_schema {cfg.checkpoint_schema!r} != code's {CHECKPOINT_SCHEMA_V7!r}")
 
