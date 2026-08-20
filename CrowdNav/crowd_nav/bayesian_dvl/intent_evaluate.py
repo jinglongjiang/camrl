@@ -424,6 +424,85 @@ def cmd_eval(args, which: str) -> int:
     raise IntentCLIError(f"unknown eval kind {which!r}")
 
 
+# The final development acceptance run. Deliberately the thinnest possible
+# entry point: there is NO seed argument, NO scenario argument and NO
+# episode-count argument, because every one of them is a lever that could
+# turn a fixed pass/fail test into a search. The only thing the caller
+# chooses is which run directory to read final_ema.pth from.
+FINAL_DEV_CHECKPOINT_NAME = "final_ema.pth"
+
+
+def final_dev_jobs() -> Dict[str, List[Tuple[str, int, bool]]]:
+    """The two FROZEN development-acceptance blocks, one per scenario.
+
+    junction runs with shifted=True: 2_400_000-2_400_099 was frozen as the
+    HELD-OUT junction variant (shifted speeds, wider fork), which is harder
+    than the junction_crowd distribution trained on. The SR >= 0.90 bar is
+    defined against that harder variant, so running these seeds nominal
+    would be a different -- easier -- test than the one being decided.
+    """
+    # imported here, not at module level: intent_train_cli imports this
+    # module, so the seed blocks are reached the same lazy way the rest of
+    # the CLI helpers are.
+    from crowd_nav.bayesian_dvl.evaluation_protocol import STANDARD_SELECTION_DEV_SEEDS
+    from crowd_nav.bayesian_dvl.junction_scenario import JUNCTION_CROWD_SELECTION_DEV_SEEDS
+    return {
+        "standard": [("standard", s, False) for s in STANDARD_SELECTION_DEV_SEEDS],
+        "junction_crowd": [("junction_crowd", s, True)
+                           for s in JUNCTION_CROWD_SELECTION_DEV_SEEDS],
+    }
+
+
+def cmd_eval_final_dev(args) -> int:
+    """Score ONE final weight on both frozen development blocks.
+
+    Refuses anything but final_ema.pth. Milestones exist for curves and
+    diagnosis; scoring them here would make this a checkpoint search, which
+    is exactly what this run is not allowed to be.
+    """
+    _cli_env()
+    ck = Path(args.checkpoint)
+    if ck.name != FINAL_DEV_CHECKPOINT_NAME:
+        raise IntentCLIError(
+            f"eval-final-dev scores the FINAL weight only, got {ck.name!r}; "
+            f"milestones are for curves and diagnosis, not for selection")
+    cfg = load_intent_training_config(args.config)
+    device = resolve_device(args.device)
+    grid = ActionGridSpec.from_env_config(str(args.env_config))
+    action_table = np.asarray(grid.build_action_table(), dtype=np.float64)
+    scene_hash = scene_registry_sha256(cfg)
+    model = _load_eval_model(ck, cfg, device, grid.table_hash(), scene_hash)
+    out_dir = Path(args.out_dir) if args.out_dir else ck.parent / "final_eval_200"
+    prov = _provenance(cfg, args, scene_hash, grid.table_hash())
+    from crowd_nav.bayesian_dvl.provenance import sha256_of_file
+    prov.update({"protocol": "final_dev_acceptance",
+                 "checkpoint_sha256": sha256_of_file(str(ck)),
+                 "decision_rule": "both scenarios success_rate >= 0.90 (point estimate)"})
+
+    jobs = final_dev_jobs()
+    paths = {}
+    for scenario, job in sorted(jobs.items()):
+        # ONE directory per scenario: a shared one lets resume append the
+        # second scenario's rows to the first file and average them together.
+        csv_path = run_persistent_evaluation(
+            args.env_config, model, action_table, out_dir / scenario, "selection_dev", job,
+            method="intent_bdvl_final_dev", n_samples=cfg.future_n_samples,
+            horizon=cfg.future_horizon, device=str(device), provenance=prov,
+            resume=not args.no_resume)
+        rows = list(csv.DictReader(open(csv_path)))
+        if len(rows) != len(job):
+            raise IntentCLIError(f"{scenario}: {len(rows)} rows for {len(job)} jobs")
+        seen = [int(r["episode_seed"]) for r in rows]
+        if len(set(seen)) != len(job):
+            raise IntentCLIError(f"{scenario}: duplicate episode seeds ({len(set(seen))} unique)")
+        if set(seen) != {s for _, s, _ in job}:
+            raise IntentCLIError(f"{scenario}: episode seeds do not match the frozen block")
+        paths[scenario] = csv_path
+        _print_summary(f"final dev acceptance -- {scenario}", csv_path)
+    print(f"final dev acceptance CSVs -> {out_dir}")
+    return 0
+
+
 def cmd_ablate(args) -> int:
     _cli_env()
     cfg = load_intent_training_config(args.config)
@@ -485,6 +564,13 @@ def build_parser() -> argparse.ArgumentParser:
         e.add_argument("--no-resume", action="store_true")
         e.add_argument("--base-seed", type=int, default=PAPER_MAIN_BASE_SEED,
                        help="eval-paper only: the frozen Test8 base seed")
+    # No --episodes, no --seed, no --scenario: the blocks and their counts
+    # are the test, not parameters of it.
+    f = sub.add_parser("eval-final-dev")
+    f.add_argument("--checkpoint", type=Path, required=True,
+                   help=f"must be a {FINAL_DEV_CHECKPOINT_NAME}; milestones are refused")
+    f.add_argument("--out-dir", type=Path, default=None)
+    f.add_argument("--no-resume", action="store_true")
     a = sub.add_parser("ablate")
     a.add_argument("--checkpoint", type=Path, required=True)
     a.add_argument("--arm", type=str, default=None, choices=["full", "mean", "cv", "uniform"])
@@ -500,6 +586,8 @@ def main(argv=None) -> int:
     try:
         if args.cmd == "ablate":
             return cmd_ablate(args)
+        if args.cmd == "eval-final-dev":
+            return cmd_eval_final_dev(args)
         return cmd_eval(args, args.cmd)
     except Exception as exc:
         if type(exc).__name__ not in ("IntentCLIError", "IntentConfigError", "CandidateAuditError"):

@@ -1,9 +1,9 @@
 {
   "action_grid_hash": "711a5fd167e04383787df16ec25a400dfbaddc7cdf8dc78852c00e19ec11cdcf",
   "checkpoint_schema": "bdvl_intent_checkpoint_v7_candidate_set",
-  "code_hash": "f813f95a300838a91bb1489709f17ceb5332b63442c5bfdc7e9f9cca6af13451",
-  "config_content_hash": "fe61d7da5e0c5503738f1402eb119f22ef490e7014907a19ddb11dfce4c04045",
-  "config_sha256": "14629ef8a4a1bbb844abda0fb5b1750a5a125af88f0c8d2e1d58d80eaebbbe18",
+  "code_hash": "6d607e6784ab0456ffdaed2cb5eb199d4efc32c65d8be508178d049911554149",
+  "config_content_hash": "109a4eb032e6998fd78e543e85eb53ff92249376ff6e69e458bbd139e54f7a82",
+  "config_sha256": "20d5c861ac3990a3dd6a639f862912819b7593909fc39b9a75b80a8ad1d01ed4",
   "feature_schema": "bdvl_z_state_goal_intent_v6_candidate_set",
   "groups": {
     "configs": {
@@ -12,8 +12,8 @@
         "sha256": "d2e6d71fd4d77c14fbc1caad74860e1b88a2e2fc977aba21a3b91556a0e6cf07"
       },
       "crowd_nav/configs/train_intent_bdvl.config": {
-        "bytes": 10774,
-        "sha256": "14629ef8a4a1bbb844abda0fb5b1750a5a125af88f0c8d2e1d58d80eaebbbe18"
+        "bytes": 11003,
+        "sha256": "20d5c861ac3990a3dd6a639f862912819b7593909fc39b9a75b80a8ad1d01ed4"
       }
     },
     "external_dependencies": {
@@ -124,40 +124,40 @@
         "sha256": "2d15ae1940f8a4bb8f5f59e2533979cf58a7004b669932b07e7527c49e6586ce"
       },
       "crowd_nav/bayesian_dvl/intent_config.py": {
-        "bytes": 20097,
-        "sha256": "700dae9d8606e9e348c23fd0d3194227af3f07b5a14c146d2979ac7749704714"
+        "bytes": 20100,
+        "sha256": "9957562002f573dd4540071e951422734107c6e3ea88e6d9db68fa2bba3710c8"
       },
       "crowd_nav/bayesian_dvl/intent_crowdnav_policy.py": {
         "bytes": 9965,
         "sha256": "535bed4618c0bd913a4f660b8242d6ad73cc900acd32204e70c79e992b47b7be"
       },
       "crowd_nav/bayesian_dvl/intent_evaluate.py": {
-        "bytes": 23786,
-        "sha256": "184ca71f19a2d7c1856e8c4c4036031a024282a6d491b1af2eff2336ecf331c3"
+        "bytes": 28398,
+        "sha256": "51e2927eff50eb30e32ab06fd7fd4842e6687c19eca8ec639de39a4c929ba6f1"
       },
       "crowd_nav/bayesian_dvl/intent_monitor.py": {
         "bytes": 19145,
         "sha256": "8d071a07696b1f10f6f475d3bd510b565c1dc21d612c92b73ebccb938806cb4f"
       },
       "crowd_nav/bayesian_dvl/intent_policy.py": {
-        "bytes": 22111,
-        "sha256": "d58f7e3fb9dd908d076512d89577da5e353c9398b2f897362a189cb841c31524"
+        "bytes": 22115,
+        "sha256": "46b0ce48e822d6daf8fa834b9cfb17f99aff529641d8232214df270572cb370a"
       },
       "crowd_nav/bayesian_dvl/intent_runtime_config.py": {
-        "bytes": 24292,
-        "sha256": "5a1dfc9762d6b60ba378334b2dc4946c69cbf62bd0462057288e42f1a647af20"
+        "bytes": 24441,
+        "sha256": "5aa9b26bc0ef60aef9eb15725172f1357c1af98a4434a59e2caa2f6083a1a2ea"
       },
       "crowd_nav/bayesian_dvl/intent_tracker.py": {
         "bytes": 17652,
         "sha256": "1bcc9cbed4b53d81ae12f3e3a568698a9d5aa7f0fe0ea38382c43c22819232da"
       },
       "crowd_nav/bayesian_dvl/intent_train.py": {
-        "bytes": 103078,
-        "sha256": "c3276cdf9d8293db43718e74f1c147edbc431353a96002a0ce87ed2f591c9ec7"
+        "bytes": 105596,
+        "sha256": "9aa4db67816c218049eb77074dfe70b7ccaf449ccf3be734323f89ff50452164"
       },
       "crowd_nav/bayesian_dvl/intent_train_cli.py": {
-        "bytes": 88994,
-        "sha256": "afb7dd902a9028b7a65d805960e48d39d88ed463a4c768a14133d93185b4986d"
+        "bytes": 89000,
+        "sha256": "50afa2f0b6a498dc8882faaf643fc84620d3e230007a36ee269bd1f6250e322d"
       },
       "crowd_nav/bayesian_dvl/iqn.py": {
         "bytes": 9489,
@@ -206,12 +206,12 @@
         "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
       },
       "crowd_nav/bayesian_dvl/tests/_common.py": {
-        "bytes": 24906,
-        "sha256": "0e2770f233491602bb3c5d05751217af2174e5886381f09e622d58acd5d0cc5d"
+        "bytes": 24908,
+        "sha256": "ed4e29609bceea0e4e4f88e70c8646dcd99ba974709bcd2563c589aa6feea540"
       },
       "crowd_nav/bayesian_dvl/tests/test_intent_cli.py": {
-        "bytes": 68114,
-        "sha256": "f0c1d8ecfff95c78c45c3f7f60a728443c5493cb25a7cf4be1726a7f233a9a1e"
+        "bytes": 71638,
+        "sha256": "b39b32ab517ceae5584fb2cd54ef60315336e94fbd5f1a6b999ad3ef72c77470"
       },
       "crowd_nav/bayesian_dvl/tests/test_intent_integration.py": {
         "bytes": 23807,
@@ -230,8 +230,8 @@
         "sha256": "9fbce11972d0ae18ac6ca8ab4ecd03503bd43a54827e3a5a57aa26a6d7d67502"
       },
       "crowd_nav/bayesian_dvl/tests/test_intent_training.py": {
-        "bytes": 95178,
-        "sha256": "a9f92d7df484ac5e69e2f1dac0a569c9ebe89a225f03b51171ffe82623a949d9"
+        "bytes": 97950,
+        "sha256": "f64583e9fdc7d77dfc7473c8c19d8a1584d535e6463e4bed54a82a54df384b66"
       },
       "crowd_nav/bayesian_dvl/tests/test_scene_candidates.py": {
         "bytes": 7878,
@@ -240,9 +240,9 @@
     }
   },
   "manifest_schema": "bdvl_intent_source_manifest_v1",
-  "manifest_sha256": "079cb0f67e6719263b94636714fee72e893e41373bac437f96e48df43de10f29",
+  "manifest_sha256": "28f28094acd0e5613cf2b78b9bda4d67af75187a5251e27506912572a5ed768a",
   "n_files": 56,
   "python": "3.8.10",
   "scene_registry_hash": "d64facd35dbf64dbcd0262216c809dc3cf8cc5b533798d44b184e9eff2627c4c",
-  "training_contract_schema": "bdvl_intent_training_contract_capped_rank_audit_only_v5"
+  "training_contract_schema": "bdvl_intent_training_contract_episode_balanced_replay_v6"
 }

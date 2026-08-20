@@ -8,6 +8,8 @@ from crowd_nav.bayesian_dvl.tests._common import *  # noqa: F401,F403
 import subprocess
 import sys as _sys
 
+import pytest
+
 from crowd_nav.bayesian_dvl.intent_config import (
     DEFAULT_TRAINING_CONFIG, IntentConfigError, load_intent_training_config,
 )
@@ -1267,3 +1269,67 @@ def test_order3w_corpus_identity_is_decoupled_from_training_knobs() -> None:
     assert cfg.il_passes == 2400, (
         "il_passes is frozen at 2400 -- the first pass at which all 3 diagnostic "
         "seeds simultaneously satisfy the pre-registered constraints")
+
+
+def test_final_dev_acceptance_block_is_frozen_and_final_only() -> None:
+    """The development-acceptance run must not be steerable.
+
+    Everything that could turn a fixed pass/fail test into a search is
+    checked here: which weight it reads, which seeds it uses, how many, and
+    whether junction runs the harder shifted variant the 0.90 bar was
+    defined against.
+    """
+    from crowd_nav.bayesian_dvl.intent_evaluate import (
+        final_dev_jobs, cmd_eval_final_dev, build_parser, FINAL_DEV_CHECKPOINT_NAME)
+    from crowd_nav.bayesian_dvl.evaluation_protocol import STANDARD_SELECTION_DEV_SEEDS
+    from crowd_nav.bayesian_dvl.junction_scenario import JUNCTION_CROWD_SELECTION_DEV_SEEDS
+
+    jobs = final_dev_jobs()
+    assert set(jobs) == {"standard", "junction_crowd"}
+
+    std, jct = jobs["standard"], jobs["junction_crowd"]
+    assert len(std) == 100 and len(jct) == 100
+    assert [s for _, s, _ in std] == list(STANDARD_SELECTION_DEV_SEEDS)
+    assert [s for _, s, _ in jct] == list(JUNCTION_CROWD_SELECTION_DEV_SEEDS)
+    assert [s for _, s, _ in std] == list(range(2_900_000, 2_900_100))
+    assert [s for _, s, _ in jct] == list(range(2_400_000, 2_400_100))
+    # no seed appears twice, and the two blocks are disjoint
+    assert len({s for _, s, _ in std}) == 100 and len({s for _, s, _ in jct}) == 100
+    assert not ({s for _, s, _ in std} & {s for _, s, _ in jct})
+
+    # standard is nominal; junction is the HARDER shifted variant the
+    # SR >= 0.90 bar was defined against. Flipping either silently changes
+    # what the acceptance decision means.
+    assert all(shifted is False for _, _, shifted in std)
+    assert all(shifted is True for _, _, shifted in jct)
+    assert all(sc == "standard" for sc, _, _ in std)
+    assert all(sc == "junction_crowd" for sc, _, _ in jct)
+
+    # the subcommand exposes NO lever: no seed, scenario or episode count
+    p = build_parser()
+    action = next(a for a in p._subparsers._group_actions if a.choices)
+    opts = {o for a in action.choices["eval-final-dev"]._actions for o in a.option_strings}
+    assert not (opts & {"--episodes", "--seed", "--base-seed", "--scenario", "--seeds"}), opts
+    assert {"--checkpoint", "--out-dir", "--no-resume"} <= opts
+
+    # milestones are refused before anything is loaded or run
+    assert FINAL_DEV_CHECKPOINT_NAME == "final_ema.pth"
+    for name in ("milestone_ep010000.pth", "milestone_ep002500.pth", "resume_latest.pth"):
+        args = p.parse_args(["eval-final-dev", "--checkpoint", f"/nonexistent/{name}"])
+        with pytest.raises(Exception) as exc:
+            cmd_eval_final_dev(args)
+        assert "FINAL weight only" in str(exc.value), (name, exc.value)
+
+
+def test_final_dev_entry_point_is_outside_the_training_chain_hash() -> None:
+    """intent_evaluate.py must stay out of code_sha256(), or adding this
+    evaluator would move the hash the formal plan binds and invalidate the
+    mean/cv arms that have to be comparable with the full arm already run.
+    """
+    import inspect
+    from crowd_nav.bayesian_dvl import intent_train_cli as t
+    src = inspect.getsource(t.code_sha256)
+    assert "intent_evaluate.py" not in src
+    assert "intent_selection.py" not in src
+    src_m = inspect.getsource(t.materialization_code_sha256)
+    assert "intent_evaluate.py" not in src_m
