@@ -1378,3 +1378,75 @@ def test_final_dev_lazy_imports_all_resolve() -> None:
             if n in local or n in injected or hasattr(builtins, n):
                 continue
             assert hasattr(intent_evaluate, n), f"cmd_eval_final_dev uses undefined name {n!r}"
+
+
+def test_paper_junction_block_is_frozen_and_final_only() -> None:
+    """The junction core-ablation paper block must be unsteerable and must
+    run the shifted variant -- paper_test is a HELDOUT geometry role, so
+    scoring it nominal would answer an easier question than the paper's.
+    """
+    import ast
+    import builtins
+    import importlib
+    import inspect
+    from crowd_nav.bayesian_dvl import intent_evaluate
+    from crowd_nav.bayesian_dvl.intent_evaluate import (
+        paper_junction_jobs, cmd_eval_paper_junction, build_parser, RESULT_KINDS)
+    from crowd_nav.bayesian_dvl.junction_scenario import JUNCTION_CROWD_PAPER_TEST_SEEDS
+
+    jobs = paper_junction_jobs()
+    assert len(jobs) == 500
+    assert [s for _, s, _ in jobs] == list(JUNCTION_CROWD_PAPER_TEST_SEEDS)
+    assert [s for _, s, _ in jobs] == list(range(2_500_000, 2_500_500))
+    assert len({s for _, s, _ in jobs}) == 500
+    assert all(sc == "junction_crowd" and shifted is True for sc, _, shifted in jobs)
+
+    # its own result kind: pooling these rows with the stress block or with
+    # selection-dev would mix a paper number with a development one
+    assert "paper_junction" in RESULT_KINDS
+    assert len(set(RESULT_KINDS)) == len(RESULT_KINDS)
+
+    # disjoint from every development block already spent
+    from crowd_nav.bayesian_dvl.evaluation_protocol import STANDARD_SELECTION_DEV_SEEDS
+    from crowd_nav.bayesian_dvl.junction_scenario import (
+        JUNCTION_CROWD_SELECTION_DEV_SEEDS, JUNCTION_CROWD_ONLINE_SEEDS, JUNCTION_CROWD_IL_SEEDS)
+    paper = {s for _, s, _ in jobs}
+    for spent in (STANDARD_SELECTION_DEV_SEEDS, JUNCTION_CROWD_SELECTION_DEV_SEEDS,
+                  JUNCTION_CROWD_ONLINE_SEEDS, JUNCTION_CROWD_IL_SEEDS):
+        assert not (paper & set(spent))
+
+    p = build_parser()
+    action = next(a for a in p._subparsers._group_actions if a.choices)
+    opts = {o for a in action.choices["eval-paper-junction"]._actions for o in a.option_strings}
+    assert not (opts & {"--episodes", "--seed", "--base-seed", "--scenario", "--seeds"}), opts
+
+    args = p.parse_args(["eval-paper-junction", "--checkpoint", "/nonexistent/milestone_ep010000.pth",
+                         "--arm-label", "mean"])
+    with pytest.raises(Exception) as exc:
+        cmd_eval_paper_junction(args)
+    assert "FINAL weight only" in str(exc.value)
+
+    # same AST sweep that caught the bad provenance import
+    checked = 0
+    for fn in (cmd_eval_paper_junction, paper_junction_jobs):
+        tree = ast.parse(inspect.getsource(fn).lstrip())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                mod = importlib.import_module(node.module)
+                for alias in node.names:
+                    assert hasattr(mod, alias.name), f"{node.module} has no {alias.name}"
+                    checked += 1
+    assert checked >= 1
+    src = ast.parse(inspect.getsource(cmd_eval_paper_junction).lstrip())
+    local = {a.arg for n in ast.walk(src) if isinstance(n, ast.arguments) for a in n.args}
+    local |= {n.id for n in ast.walk(src) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store)}
+    local |= {a.asname or a.name.split(".")[0]
+              for n in ast.walk(src) if isinstance(n, (ast.Import, ast.ImportFrom)) for a in n.names}
+    from crowd_nav.bayesian_dvl import intent_train_cli as _t
+    injected = {n for n in dir(_t) if not n.startswith("__")}
+    for node in ast.walk(src):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+            n = node.id
+            if n in local or n in injected or hasattr(builtins, n):
+                continue
+            assert hasattr(intent_evaluate, n), f"cmd_eval_paper_junction uses undefined name {n!r}"

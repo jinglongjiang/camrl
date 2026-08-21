@@ -62,7 +62,8 @@ class IntentEvaluateError(ValueError):
 
 
 # The three result KINDS must never share a directory (plan C3.3).
-RESULT_KINDS = ("paper_main", "heldout_junction", "ablation", "dev_standard", "selection_dev")
+RESULT_KINDS = ("paper_main", "heldout_junction", "ablation", "dev_standard", "selection_dev",
+                "paper_junction")
 
 
 def initial_state_hash(robot, humans) -> str:
@@ -502,6 +503,58 @@ def cmd_eval_final_dev(args) -> int:
     return 0
 
 
+def paper_junction_jobs() -> List[Tuple[str, int, bool]]:
+    """The junction core-ablation paper block: 2_500_000-2_500_499, shifted.
+
+    Frozen and never touched by training or selection. shifted=True because
+    ``paper_test`` is a HELDOUT_GEOMETRY_ROLE -- the same harder variant the
+    development-acceptance block uses, not the trained-on distribution.
+    """
+    from crowd_nav.bayesian_dvl.junction_scenario import JUNCTION_CROWD_PAPER_TEST_SEEDS
+    return [("junction_crowd", s, True) for s in JUNCTION_CROWD_PAPER_TEST_SEEDS]
+
+
+def cmd_eval_paper_junction(args) -> int:
+    """Score ONE final weight on the frozen junction paper-test block.
+
+    ``eval-paper`` covers the Test8 negative control; nothing covered this
+    block, which is the core ablation the paper's junction claim rests on.
+    Same discipline as eval-final-dev: final weight only, no seed, scenario
+    or episode-count argument.
+    """
+    _cli_env()
+    ck = Path(args.checkpoint)
+    if ck.name != FINAL_DEV_CHECKPOINT_NAME:
+        raise IntentCLIError(
+            f"the paper junction test scores the FINAL weight only, got {ck.name!r}")
+    cfg = load_intent_training_config(args.config)
+    device = resolve_device(args.device)
+    grid = ActionGridSpec.from_env_config(str(args.env_config))
+    action_table = np.asarray(grid.build_action_table(), dtype=np.float64)
+    scene_hash = scene_registry_sha256(cfg)
+    model = _load_eval_model(ck, cfg, device, grid.table_hash(), scene_hash)
+    out_dir = Path(args.out_dir) if args.out_dir else ck.parent / "paper_junction"
+    prov = _provenance(cfg, args, scene_hash, grid.table_hash())
+    prov.update({"protocol": "paper_junction_core_ablation",
+                 "checkpoint_sha256": _sha256_file(ck),
+                 "seed_block": "2500000-2500499", "shifted": True})
+
+    jobs = paper_junction_jobs()
+    csv_path = run_persistent_evaluation(
+        args.env_config, model, action_table, out_dir, "paper_junction", jobs,
+        method=f"intent_bdvl_paper_junction:{args.arm_label}", n_samples=cfg.future_n_samples,
+        horizon=cfg.future_horizon, device=str(device), provenance=prov,
+        resume=not args.no_resume)
+    rows = list(csv.DictReader(open(csv_path)))
+    if len(rows) != len(jobs):
+        raise IntentCLIError(f"{len(rows)} rows for {len(jobs)} jobs")
+    seen = [int(r["episode_seed"]) for r in rows]
+    if set(seen) != {s for _, s, _ in jobs} or len(set(seen)) != len(jobs):
+        raise IntentCLIError("episode seeds do not match the frozen paper-test block")
+    _print_summary("paper junction core ablation (shifted, 500 frozen seeds)", csv_path)
+    return 0
+
+
 def cmd_ablate(args) -> int:
     _cli_env()
     cfg = load_intent_training_config(args.config)
@@ -570,6 +623,14 @@ def build_parser() -> argparse.ArgumentParser:
                    help=f"must be a {FINAL_DEV_CHECKPOINT_NAME}; milestones are refused")
     f.add_argument("--out-dir", type=Path, default=None)
     f.add_argument("--no-resume", action="store_true")
+    j = sub.add_parser("eval-paper-junction")
+    j.add_argument("--checkpoint", type=Path, required=True,
+                   help=f"must be a {FINAL_DEV_CHECKPOINT_NAME}")
+    j.add_argument("--out-dir", type=Path, default=None)
+    j.add_argument("--no-resume", action="store_true")
+    j.add_argument("--arm-label", type=str, required=True, choices=["full", "mean", "cv"],
+                   help="which arm produced this weight; recorded in the method column so the "
+                        "three arms' rows stay distinguishable when pooled")
     a = sub.add_parser("ablate")
     a.add_argument("--checkpoint", type=Path, required=True)
     a.add_argument("--arm", type=str, default=None, choices=["full", "mean", "cv", "uniform"])
@@ -587,6 +648,8 @@ def main(argv=None) -> int:
             return cmd_ablate(args)
         if args.cmd == "eval-final-dev":
             return cmd_eval_final_dev(args)
+        if args.cmd == "eval-paper-junction":
+            return cmd_eval_paper_junction(args)
         return cmd_eval(args, args.cmd)
     except Exception as exc:
         if type(exc).__name__ not in ("IntentCLIError", "IntentConfigError", "CandidateAuditError"):
