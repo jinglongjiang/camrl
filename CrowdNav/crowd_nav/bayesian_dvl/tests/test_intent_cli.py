@@ -1420,8 +1420,7 @@ def test_paper_junction_block_is_frozen_and_final_only() -> None:
     opts = {o for a in action.choices["eval-paper-junction"]._actions for o in a.option_strings}
     assert not (opts & {"--episodes", "--seed", "--base-seed", "--scenario", "--seeds"}), opts
 
-    args = p.parse_args(["eval-paper-junction", "--checkpoint", "/nonexistent/milestone_ep010000.pth",
-                         "--arm-label", "mean"])
+    args = p.parse_args(["eval-paper-junction", "--checkpoint", "/nonexistent/milestone_ep010000.pth"])
     with pytest.raises(Exception) as exc:
         cmd_eval_paper_junction(args)
     assert "FINAL weight only" in str(exc.value)
@@ -1450,3 +1449,45 @@ def test_paper_junction_block_is_frozen_and_final_only() -> None:
             if n in local or n in injected or hasattr(builtins, n):
                 continue
             assert hasattr(intent_evaluate, n), f"cmd_eval_paper_junction uses undefined name {n!r}"
+
+
+def test_belief_mode_is_derived_from_the_checkpoint_not_a_flag() -> None:
+    """A mean/cv-trained network scored with `full` belief features is fed a
+    different input distribution than it was fit on, so the three-arm
+    comparison would measure that mismatch instead of the belief treatment.
+
+    The mode therefore comes from extra.training_arm inside the weights, and
+    there is no flag that could disagree with them.
+    """
+    import ast
+    import inspect
+    import tempfile
+    import torch
+    from pathlib import Path as _P
+    from crowd_nav.bayesian_dvl import intent_evaluate as ev
+
+    # the eval paths that score a formal weight all pass belief_mode through
+    for fn_name in ("cmd_eval", "cmd_eval_final_dev", "cmd_eval_paper_junction"):
+        src = inspect.getsource(getattr(ev, fn_name))
+        assert "checkpoint_arm(" in src, f"{fn_name} does not derive the arm from the checkpoint"
+        assert "belief_mode=arm" in src, f"{fn_name} does not pass the derived arm as belief_mode"
+
+    # no CLI flag may set the belief mode on those subcommands
+    p = ev.build_parser()
+    action = next(a for a in p._subparsers._group_actions if a.choices)
+    for name in ("eval-paper", "eval-final-dev", "eval-paper-junction"):
+        opts = {o for a in action.choices[name]._actions for o in a.option_strings}
+        assert not (opts & {"--belief-mode", "--arm", "--arm-label", "--mode"}), (name, opts)
+
+    with tempfile.TemporaryDirectory() as d:
+        good = _P(d) / "final_ema.pth"
+        for arm in ("full", "mean", "cv"):
+            torch.save({"extra": {"training_arm": arm}}, good)
+            assert ev.checkpoint_arm(good) == arm
+        # fails closed rather than guessing
+        for bad in ({}, {"extra": {}}, {"extra": {"training_arm": "uniform"}},
+                    {"extra": {"training_arm": None}}):
+            torch.save(bad, good)
+            with pytest.raises(Exception) as exc:
+                ev.checkpoint_arm(good)
+            assert "refusing to guess" in str(exc.value) or "does not record" in str(exc.value)

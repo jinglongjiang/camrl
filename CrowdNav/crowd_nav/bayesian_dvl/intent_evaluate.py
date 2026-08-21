@@ -374,8 +374,13 @@ def cmd_eval(args, which: str) -> int:
     model = _load_eval_model(Path(args.checkpoint), cfg, device, grid.table_hash(), scene_hash)
     out_dir = Path(args.out_dir) if args.out_dir else Path(args.checkpoint).parent / "results"
     prov = _provenance(cfg, args, scene_hash, grid.table_hash())
-    common = dict(n_samples=cfg.future_n_samples, horizon=cfg.future_horizon, device=str(device),
-                  provenance=prov, resume=not args.no_resume)
+    # belief_mode comes from the WEIGHTS, not from a flag: scoring a
+    # mean/cv checkpoint with full features would measure an input mismatch
+    # instead of the belief treatment.
+    arm = checkpoint_arm(Path(args.checkpoint))
+    prov["belief_mode"] = arm
+    common = dict(belief_mode=arm, n_samples=cfg.future_n_samples, horizon=cfg.future_horizon,
+                  device=str(device), provenance=prov, resume=not args.no_resume)
 
     if which == "validate":
         seeds = list(cfg.validation_seeds)[: args.episodes] if args.episodes else list(cfg.validation_seeds)
@@ -433,6 +438,26 @@ def cmd_eval(args, which: str) -> int:
 FINAL_DEV_CHECKPOINT_NAME = "final_ema.pth"
 
 
+def checkpoint_arm(path: Path) -> str:
+    """The belief arm a checkpoint was TRAINED under, read from the file.
+
+    belief_mode selects how human features are built at evaluation time
+    (build_intent_human_feature_batch's ``mode``). A mean- or cv-trained
+    network scored with ``full`` features is being fed a different input
+    distribution than it was fit on, so the ablation would measure that
+    mismatch rather than the belief treatment. Deriving the mode from the
+    weights themselves means the two can never disagree -- there is no flag
+    to set wrong.
+    """
+    payload = torch.load(str(path), map_location="cpu", weights_only=False)
+    arm = (payload.get("extra") or {}).get("training_arm")
+    if arm not in ("full", "mean", "cv"):
+        raise IntentCLIError(
+            f"{Path(path).name} does not record which arm trained it "
+            f"(extra.training_arm={arm!r}); refusing to guess the belief mode")
+    return str(arm)
+
+
 def final_dev_jobs() -> Dict[str, List[Tuple[str, int, bool]]]:
     """The two FROZEN development-acceptance blocks, one per scenario.
 
@@ -475,7 +500,8 @@ def cmd_eval_final_dev(args) -> int:
     model = _load_eval_model(ck, cfg, device, grid.table_hash(), scene_hash)
     out_dir = Path(args.out_dir) if args.out_dir else ck.parent / "final_eval_200"
     prov = _provenance(cfg, args, scene_hash, grid.table_hash())
-    prov.update({"protocol": "final_dev_acceptance",
+    arm = checkpoint_arm(ck)
+    prov.update({"protocol": "final_dev_acceptance", "belief_mode": arm,
                  "checkpoint_sha256": _sha256_file(ck),
                  "decision_rule": "both scenarios success_rate >= 0.90 (point estimate)"})
 
@@ -486,7 +512,7 @@ def cmd_eval_final_dev(args) -> int:
         # second scenario's rows to the first file and average them together.
         csv_path = run_persistent_evaluation(
             args.env_config, model, action_table, out_dir / scenario, "selection_dev", job,
-            method="intent_bdvl_final_dev", n_samples=cfg.future_n_samples,
+            belief_mode=arm, method="intent_bdvl_final_dev", n_samples=cfg.future_n_samples,
             horizon=cfg.future_horizon, device=str(device), provenance=prov,
             resume=not args.no_resume)
         rows = list(csv.DictReader(open(csv_path)))
@@ -535,14 +561,15 @@ def cmd_eval_paper_junction(args) -> int:
     model = _load_eval_model(ck, cfg, device, grid.table_hash(), scene_hash)
     out_dir = Path(args.out_dir) if args.out_dir else ck.parent / "paper_junction"
     prov = _provenance(cfg, args, scene_hash, grid.table_hash())
-    prov.update({"protocol": "paper_junction_core_ablation",
+    arm = checkpoint_arm(ck)
+    prov.update({"protocol": "paper_junction_core_ablation", "belief_mode": arm,
                  "checkpoint_sha256": _sha256_file(ck),
                  "seed_block": "2500000-2500499", "shifted": True})
 
     jobs = paper_junction_jobs()
     csv_path = run_persistent_evaluation(
         args.env_config, model, action_table, out_dir, "paper_junction", jobs,
-        method=f"intent_bdvl_paper_junction:{args.arm_label}", n_samples=cfg.future_n_samples,
+        belief_mode=arm, method="intent_bdvl_paper_junction", n_samples=cfg.future_n_samples,
         horizon=cfg.future_horizon, device=str(device), provenance=prov,
         resume=not args.no_resume)
     rows = list(csv.DictReader(open(csv_path)))
@@ -628,9 +655,6 @@ def build_parser() -> argparse.ArgumentParser:
                    help=f"must be a {FINAL_DEV_CHECKPOINT_NAME}")
     j.add_argument("--out-dir", type=Path, default=None)
     j.add_argument("--no-resume", action="store_true")
-    j.add_argument("--arm-label", type=str, required=True, choices=["full", "mean", "cv"],
-                   help="which arm produced this weight; recorded in the method column so the "
-                        "three arms' rows stay distinguishable when pooled")
     a = sub.add_parser("ablate")
     a.add_argument("--checkpoint", type=Path, required=True)
     a.add_argument("--arm", type=str, default=None, choices=["full", "mean", "cv", "uniform"])
