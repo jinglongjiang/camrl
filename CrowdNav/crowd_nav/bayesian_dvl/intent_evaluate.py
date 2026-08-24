@@ -646,10 +646,19 @@ def cmd_eval_paper_baseline(args) -> int:
     grid = ActionGridSpec.from_env_config(str(args.env_config))
     scene_hash = scene_registry_sha256(cfg)
     out_dir = Path(args.out_dir)
-    prov = _provenance(cfg, args, scene_hash, grid.table_hash())
-    prov.update({"protocol": "paper_baseline", "baseline_method": args.method,
-                 "checkpoint_sha256": None,
-                 "note": "no learned weights; identical scenarios/seeds/initial states as the arms"})
+    # _provenance() is checkpoint-shaped and reads the weight file; a
+    # baseline has no weights, so the same fields are recorded WITHOUT
+    # inventing a checkpoint for it.
+    prov = {
+        "protocol": "paper_baseline", "baseline_method": args.method,
+        "checkpoint": None, "checkpoint_sha256": None,
+        "config_path": cfg.source_path, "config_sha256": cfg.source_sha256,
+        "config_content_hash": cfg.content_hash(), "code_hash": code_sha256(),
+        "action_grid_hash": grid.table_hash(), "scene_registry_hash": scene_hash,
+        "feature_schema": cfg.feature_schema,
+        "training_contract_schema": cfg.training_contract_schema,
+        "note": "no learned weights; identical scenarios/seeds/initial states as the arms",
+    }
     action_fn = _orca_action_fn()
 
     # Test8 negative control, then the junction core-ablation block -- the

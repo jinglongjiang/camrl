@@ -1564,3 +1564,39 @@ def test_baseline_episodes_pair_with_the_arms_by_initial_state() -> None:
         # and the baseline controller really can drive that env
         act = _orca_action_fn()(env)
         assert hasattr(act, "vx") and hasattr(act, "vy")
+
+
+def test_baseline_command_runs_end_to_end(monkeypatch, tmp_path) -> None:
+    """Actually EXECUTE the baseline command.
+
+    The three checks above all stop at the argument-validation raise, so the
+    body past it was never run -- and it crashed on launch reading an
+    args.checkpoint that this subcommand deliberately does not have. Static
+    checks cannot see a missing attribute on a Namespace; only running it
+    can. The job lists are shrunk to one episode each so this stays cheap
+    while still covering provenance, the run, the row check and the summary.
+    """
+    from crowd_nav.bayesian_dvl import intent_evaluate as ev
+
+    monkeypatch.setattr(ev, "paper_main_jobs",
+                        lambda **kw: [("baseline_circle", 30_260_816, False)])
+    monkeypatch.setattr(ev, "paper_junction_jobs",
+                        lambda: [("junction_crowd", 2_500_000, True)])
+
+    args = ev.build_parser().parse_args(
+        ["eval-paper-baseline", "--method", "orca", "--out-dir", str(tmp_path)])
+    assert not hasattr(args, "checkpoint"), "this subcommand must not take a checkpoint"
+    assert ev.cmd_eval_paper_baseline(args) == 0
+
+    import csv as _csv
+    import json as _json
+    for kind in ("paper_main", "paper_junction"):
+        rows = list(_csv.DictReader((tmp_path / kind / "arm_none" / "episodes.csv").open()))
+        assert len(rows) == 1, kind
+        assert rows[0]["method"] == "baseline_orca:none"
+        assert rows[0]["initial_state_hash"]
+        for k in ("min_clearance", "path_ratio", "discomfort_frequency", "mean_speed"):
+            float(rows[0][k])
+        prov = _json.loads((tmp_path / kind / "arm_none" / "manifest.json").read_text())["provenance"]
+        assert prov["checkpoint"] is None and prov["checkpoint_sha256"] is None
+        assert prov["code_hash"] and prov["config_content_hash"]
