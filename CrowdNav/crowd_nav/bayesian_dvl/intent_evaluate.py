@@ -100,9 +100,18 @@ class EpisodeMetrics:
 def _run_one_episode(
     env, robot, scene, model, action_table, belief_mode: str, planner_seed: int,
     advance_hidden_state=None, n_samples: int = 60, horizon: int = 8, device: str = "cpu",
+    action_fn=None,
 ) -> EpisodeMetrics:
-    """Drive ONE episode with the model's own greedy policy and collect the
-    full plan-section-7 metric set."""
+    """Drive ONE episode and collect the full plan-section-7 metric set.
+
+    ``action_fn`` replaces ONLY the choice of action: given the env it
+    returns the ActionXY to take. Everything downstream -- the simulator's
+    swept ``dmin``, path length, discomfort, outcome mapping, path ratio,
+    smoothness, the initial-state hash -- runs through this one function for
+    every method. A baseline scored by a separate runner would drift on any
+    of those definitions and the comparison would silently stop being a
+    comparison, which is the whole reason a baseline exists.
+    """
     bank = IntentBeliefBank(make_candidate_fn(scene), dt=FROZEN_VALUES["dt"], speed=TRACKER_DEFAULTS["speed_prior"])
     planner_rng = np.random.default_rng(planner_seed)
     max_steps = int(round(FROZEN_VALUES["time_limit"] / FROZEN_VALUES["dt"])) + 1
@@ -125,19 +134,27 @@ def _run_one_episode(
             HumanObservation(i, float(h.px), float(h.py), float(h.vx), float(h.vy), float(h.radius))
             for i, h in enumerate(env.humans)
         ]
-        bank.update({h.track_id: (h.px, h.py) for h in humans})
-        robot_obs = RobotObservation.from_full_state(env.robot.get_full_state())
-        remaining = remaining_time_fraction(env.global_time, FROZEN_VALUES["time_limit"])
+        if action_fn is None:
+            bank.update({h.track_id: (h.px, h.py) for h in humans})
+            robot_obs = RobotObservation.from_full_state(env.robot.get_full_state())
+            remaining = remaining_time_fraction(env.global_time, FROZEN_VALUES["time_limit"])
 
-        t0 = time.perf_counter()
-        human_feats, human_mask = build_intent_human_feature_batch(
-            bank, robot_obs, humans, mode=belief_mode, rng=planner_rng, horizon=horizon, n_samples=n_samples)
-        results = score_candidates_v5(
-            model, robot_obs, human_feats, human_mask, action_table, remaining, device=device)
-        best = max(results, key=lambda r: r.q_mean)
-        latencies.append((time.perf_counter() - t0) * 1000.0)
+            t0 = time.perf_counter()
+            human_feats, human_mask = build_intent_human_feature_batch(
+                bank, robot_obs, humans, mode=belief_mode, rng=planner_rng, horizon=horizon, n_samples=n_samples)
+            results = score_candidates_v5(
+                model, robot_obs, human_feats, human_mask, action_table, remaining, device=device)
+            best = max(results, key=lambda r: r.q_mean)
+            latencies.append((time.perf_counter() - t0) * 1000.0)
+            vx, vy = action_table[best.action_index]
+        else:
+            # the baseline plans from the simulator state directly: it has no
+            # belief bank and no action grid, so neither is built for it
+            t0 = time.perf_counter()
+            act = action_fn(env)
+            latencies.append((time.perf_counter() - t0) * 1000.0)
+            vx, vy = float(act.vx), float(act.vy)
 
-        vx, vy = action_table[best.action_index]
         speeds.append(float(np.hypot(vx, vy)))
         headings.append(float(np.arctan2(vy, vx)))
 
@@ -267,6 +284,7 @@ def run_persistent_evaluation(
     device: str = "cpu",
     provenance: Optional[Dict[str, object]] = None,
     resume: bool = True,
+    action_fn=None,
 ) -> Path:
     """Run ``jobs`` = [(scenario, episode_seed, is_heldout), ...], appending
     one row per episode to ``out_dir/episodes.csv`` and writing a manifest.
@@ -307,7 +325,8 @@ def run_persistent_evaluation(
 
         m = _run_one_episode(
             env, robot, scene, model, action_table, belief_mode, planner_seed=5_000_000 + episode_seed,
-            advance_hidden_state=advance, n_samples=n_samples, horizon=horizon, device=device)
+            advance_hidden_state=advance, n_samples=n_samples, horizon=horizon, device=device,
+            action_fn=action_fn)
         record = EpisodeRecord(
             method=f"{method}:{belief_mode}", scenario=scenario, profile=profile,
             suite_seed=suite_seed, episode_seed=episode_seed, outcome=m.outcome, steps=m.steps,
@@ -582,6 +601,76 @@ def cmd_eval_paper_junction(args) -> int:
     return 0
 
 
+BASELINE_METHODS = ("orca",)
+
+
+def _orca_action_fn():
+    """ORCA driving the robot from the simulator state.
+
+    ``build_formal_scenario_env`` already attaches an ORCA policy to the
+    robot -- the BDVL evaluator simply bypasses it and drives the robot
+    itself. Here that same policy plans, so the baseline and the arms differ
+    in the controller and in nothing else: identical scenario construction,
+    identical episode seeds, identical initial states.
+    """
+    from crowd_sim.envs.policy.orca import ORCA
+    from crowd_sim.envs.utils.state import JointState
+    state = {}
+
+    def act(env):
+        policy = state.get("policy")
+        if policy is None:
+            policy = ORCA()
+            policy.time_step = FROZEN_VALUES["dt"]
+            policy.max_speed = float(env.robot.v_pref)
+            policy.multiagent_training = True
+            state["policy"] = policy
+        return policy.predict(JointState(env.robot.get_full_state(),
+                                         [h.get_observable_state() for h in env.humans]))
+    return act
+
+
+def cmd_eval_paper_baseline(args) -> int:
+    """Score a classical baseline on the SAME frozen paper protocol.
+
+    Without this the arms' numbers have no scale: whether dense_circle 0.626
+    is good or bad is undefined until something else is measured on those
+    exact episodes. The baseline has no weights, so it is run ONCE -- the
+    episode identities come from the frozen base seed, not from a training
+    seed, and the same rows pair with every arm of every seed.
+    """
+    _cli_env()
+    if args.method not in BASELINE_METHODS:
+        raise IntentCLIError(f"unknown baseline {args.method!r}, expected one of {list(BASELINE_METHODS)}")
+    cfg = load_intent_training_config(args.config)
+    grid = ActionGridSpec.from_env_config(str(args.env_config))
+    scene_hash = scene_registry_sha256(cfg)
+    out_dir = Path(args.out_dir)
+    prov = _provenance(cfg, args, scene_hash, grid.table_hash())
+    prov.update({"protocol": "paper_baseline", "baseline_method": args.method,
+                 "checkpoint_sha256": None,
+                 "note": "no learned weights; identical scenarios/seeds/initial states as the arms"})
+    action_fn = _orca_action_fn()
+
+    # Test8 negative control, then the junction core-ablation block -- the
+    # same two blocks, in the same protocol, that every arm is scored on.
+    for kind, jobs in (("paper_main", paper_main_jobs(base_seed=PAPER_MAIN_BASE_SEED)),
+                       ("paper_junction", paper_junction_jobs())):
+        csv_path = run_persistent_evaluation(
+            args.env_config, None, None, out_dir, kind, jobs,
+            # "none", not the "full" default: this controller has no belief at
+            # all, and a row labelled baseline_orca:full would read as though
+            # it did. It also gives the baseline its own arm_none directory.
+            belief_mode="none", method=f"baseline_{args.method}", n_samples=cfg.future_n_samples,
+            horizon=cfg.future_horizon, device="cpu", provenance=prov,
+            resume=not args.no_resume, action_fn=action_fn)
+        rows = list(csv.DictReader(open(csv_path)))
+        if len(rows) != len(jobs):
+            raise IntentCLIError(f"{kind}: {len(rows)} rows for {len(jobs)} jobs")
+        _print_summary(f"paper baseline {args.method} -- {kind}", csv_path)
+    return 0
+
+
 def cmd_ablate(args) -> int:
     _cli_env()
     cfg = load_intent_training_config(args.config)
@@ -650,6 +739,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help=f"must be a {FINAL_DEV_CHECKPOINT_NAME}; milestones are refused")
     f.add_argument("--out-dir", type=Path, default=None)
     f.add_argument("--no-resume", action="store_true")
+    b = sub.add_parser("eval-paper-baseline")
+    b.add_argument("--method", type=str, required=True, choices=list(BASELINE_METHODS))
+    b.add_argument("--out-dir", type=Path, required=True)
+    b.add_argument("--no-resume", action="store_true")
+
     j = sub.add_parser("eval-paper-junction")
     j.add_argument("--checkpoint", type=Path, required=True,
                    help=f"must be a {FINAL_DEV_CHECKPOINT_NAME}")
@@ -674,6 +768,8 @@ def main(argv=None) -> int:
             return cmd_eval_final_dev(args)
         if args.cmd == "eval-paper-junction":
             return cmd_eval_paper_junction(args)
+        if args.cmd == "eval-paper-baseline":
+            return cmd_eval_paper_baseline(args)
         return cmd_eval(args, args.cmd)
     except Exception as exc:
         if type(exc).__name__ not in ("IntentCLIError", "IntentConfigError", "CandidateAuditError"):

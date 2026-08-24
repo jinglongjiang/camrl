@@ -1491,3 +1491,76 @@ def test_belief_mode_is_derived_from_the_checkpoint_not_a_flag() -> None:
             with pytest.raises(Exception) as exc:
                 ev.checkpoint_arm(good)
             assert "refusing to guess" in str(exc.value) or "does not record" in str(exc.value)
+
+
+def test_baseline_runs_through_the_same_metric_path_as_the_arms() -> None:
+    """A baseline exists to give the arms' numbers a scale, which only works
+    if both are measured identically. The action choice is the ONLY thing
+    that may differ, so the baseline must go through _run_one_episode rather
+    than through a second runner that could drift on clearance, path ratio,
+    discomfort or the outcome mapping.
+    """
+    import inspect
+    from crowd_nav.bayesian_dvl import intent_evaluate as ev
+
+    # one metric implementation, reached by both paths
+    src = inspect.getsource(ev.cmd_eval_paper_baseline)
+    assert "run_persistent_evaluation(" in src
+    assert "action_fn=action_fn" in src
+    assert "EpisodeMetrics(" not in src, "the baseline computes its own metrics"
+    assert "min_clearance" not in src and "path_ratio" not in src
+
+    ep = inspect.getsource(ev._run_one_episode)
+    assert "if action_fn is None:" in ep
+    # the shared tail: everything after the action choice is common code
+    for shared in ('info["dmin"]', "discomfort_steps", "path_length +=",
+                   '"reach_goal": "success"', "np.unwrap"):
+        assert shared in ep, shared
+    # the swept-clearance fail-closed guard must not have an escape hatch
+    assert 'raise IntentEvaluateError(' in ep
+
+    # the baseline is scored on the SAME frozen blocks as every arm
+    assert "paper_main_jobs(base_seed=PAPER_MAIN_BASE_SEED)" in src
+    assert "paper_junction_jobs()" in src
+    # and it is labelled as having no belief, not as the full arm
+    assert 'belief_mode="none"' in src
+
+    # no lever: no seed, scenario or episode-count flag
+    p = ev.build_parser()
+    action = next(a for a in p._subparsers._group_actions if a.choices)
+    opts = {o for a in action.choices["eval-paper-baseline"]._actions for o in a.option_strings}
+    assert not (opts & {"--episodes", "--seed", "--base-seed", "--scenario", "--belief-mode"}), opts
+    assert "--method" in opts
+
+    # unknown baselines are refused rather than silently producing rows
+    args = p.parse_args(["eval-paper-baseline", "--method", "orca", "--out-dir", "/tmp/x"])
+    args.method = "not_a_baseline"
+    with pytest.raises(Exception) as exc:
+        ev.cmd_eval_paper_baseline(args)
+    assert "unknown baseline" in str(exc.value)
+
+
+def test_baseline_episodes_pair_with_the_arms_by_initial_state() -> None:
+    """The pairing claim, checked against the simulator rather than asserted:
+    rebuilding a formal scenario at a given episode seed must reproduce the
+    initial state hash regardless of which controller will drive it.
+    """
+    from pathlib import Path as _P
+    from crowd_nav.bayesian_dvl.intent_train import build_formal_scenario_env
+    from crowd_nav.bayesian_dvl.intent_evaluate import initial_state_hash, _orca_action_fn
+    from crowd_nav.bayesian_dvl.evaluation_protocol import (
+        paper_main_episode_seed, PAPER_MAIN_BASE_SEED)
+    from crowd_nav.bayesian_dvl.intent_train_cli import DEFAULT_ENV_CONFIG
+
+    for scenario in ("baseline_circle", "large_circle"):
+        seed = paper_main_episode_seed(scenario, 0, PAPER_MAIN_BASE_SEED)
+        hashes = []
+        for _ in range(2):
+            env, robot, shape, size = build_formal_scenario_env(_P(DEFAULT_ENV_CONFIG), scenario)
+            env.case_counter["test"] = seed % (2**32 - 1)
+            env.reset()
+            hashes.append(initial_state_hash(robot, env.humans))
+        assert hashes[0] == hashes[1], scenario
+        # and the baseline controller really can drive that env
+        act = _orca_action_fn()(env)
+        assert hasattr(act, "vx") and hasattr(act, "vy")

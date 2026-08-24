@@ -132,8 +132,8 @@
         "sha256": "535bed4618c0bd913a4f660b8242d6ad73cc900acd32204e70c79e992b47b7be"
       },
       "crowd_nav/bayesian_dvl/intent_evaluate.py": {
-        "bytes": 32731,
-        "sha256": "0709c059e13b0ede8bac66f13f401383b2ffe390f8d7c0741bd184f855e5fa41"
+        "bytes": 37413,
+        "sha256": "d1c25536696b0307e41213bd68bc25ddde35edbd192aecaa0e8e5c28b616bed9"
       },
       "crowd_nav/bayesian_dvl/intent_monitor.py": {
         "bytes": 19145,
@@ -210,8 +210,8 @@
         "sha256": "ed4e29609bceea0e4e4f88e70c8646dcd99ba974709bcd2563c589aa6feea540"
       },
       "crowd_nav/bayesian_dvl/tests/test_intent_cli.py": {
-        "bytes": 79637,
-        "sha256": "b02b26a075ebaf6e7c8587edfb33965f507f82c7ff8b68703af8cc053b5c5cef"
+        "bytes": 83273,
+        "sha256": "c6756b12bee53406ca65083c4f56a2c725b7dbb017a30c1d6687c916ded28469"
       },
       "crowd_nav/bayesian_dvl/tests/test_intent_integration.py": {
         "bytes": 23807,
@@ -240,7 +240,7 @@
     }
   },
   "manifest_schema": "bdvl_intent_source_manifest_v1",
-  "manifest_sha256": "ada6c90f129b4720892e59efcab3ecd1a1b79b16140b830d0d6f1d2c756ac711",
+  "manifest_sha256": "2d442d9fbb3df204f8fad9db43f25eacd25bb77a04875b494c3260db56b4731f",
   "n_files": 56,
   "python": "3.8.10",
   "scene_registry_hash": "d64facd35dbf64dbcd0262216c809dc3cf8cc5b533798d44b184e9eff2627c4c",
