@@ -403,7 +403,7 @@ def cmd_eval(args, which: str) -> int:
 
     if which == "validate":
         seeds = list(cfg.validation_seeds)[: args.episodes] if args.episodes else list(cfg.validation_seeds)
-        jobs = [("standard", s, False) for s in seeds]
+        jobs = [("circle", s, False) for s in seeds]
         csv_path = run_persistent_evaluation(args.env_config, model, action_table, out_dir, "paper_main",
                                               jobs, method="intent_bdvl_validation", **common)
         _print_summary("validation (training health only -- never checkpoint selection)", csv_path)
@@ -440,7 +440,7 @@ def cmd_eval(args, which: str) -> int:
         # never to select the paper's weights.
         seeds = (list(STANDARD_DEV_DIAGNOSTIC_SEEDS)[: args.episodes] if args.episodes
                  else list(STANDARD_DEV_DIAGNOSTIC_SEEDS))
-        jobs = [("standard", s, False) for s in seeds]
+        jobs = [("circle", s, False) for s in seeds]
         csv_path = run_persistent_evaluation(args.env_config, model, action_table, out_dir, "dev_standard",
                                               jobs, **common)
         _print_summary("development standard-scenario diagnostic (greedy, DEV-ONLY seeds)", csv_path)
@@ -492,7 +492,7 @@ def final_dev_jobs() -> Dict[str, List[Tuple[str, int, bool]]]:
     from crowd_nav.bayesian_dvl.evaluation_protocol import STANDARD_SELECTION_DEV_SEEDS
     from crowd_nav.bayesian_dvl.junction_scenario import JUNCTION_CROWD_SELECTION_DEV_SEEDS
     return {
-        "standard": [("standard", s, False) for s in STANDARD_SELECTION_DEV_SEEDS],
+        "circle": [("circle", s, False) for s in STANDARD_SELECTION_DEV_SEEDS],
         "junction_crowd": [("junction_crowd", s, True)
                            for s in JUNCTION_CROWD_SELECTION_DEV_SEEDS],
     }
@@ -706,7 +706,7 @@ def cmd_ablate(args) -> int:
 from crowd_nav.bayesian_dvl.intent_config import (  # noqa: E402
     IntentConfigError, load_intent_training_config,
 )
-from crowd_nav.bayesian_dvl.intent_policy import HUMAN_FEATURE_DIM_V6  # noqa: E402
+from crowd_nav.bayesian_dvl.intent_policy import HUMAN_FEATURE_DIM_V7  # noqa: E402
 from crowd_nav.bayesian_dvl.evaluation_protocol import PAPER_MAIN_BASE_SEED  # noqa: E402
 
 

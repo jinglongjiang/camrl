@@ -38,7 +38,7 @@ import torch
 
 from crowd_nav.bayesian_dvl.intent_config import IntentTrainingConfig, load_intent_training_config
 from crowd_nav.bayesian_dvl.intent_evaluate import run_persistent_evaluation
-from crowd_nav.bayesian_dvl.intent_policy import HUMAN_FEATURE_DIM_V6, load_intent_checkpoint
+from crowd_nav.bayesian_dvl.intent_policy import HUMAN_FEATURE_DIM_V7, load_intent_checkpoint
 from crowd_nav.bayesian_dvl.intent_runtime_config import ActionGridSpec
 from crowd_nav.bayesian_dvl.intent_train import (
     STANDARD_SELECTION_DEV_SEEDS, select_checkpoint,
@@ -165,7 +165,7 @@ def evaluate_milestones(run_dir: Path, env_config: Path, cfg: IntentTrainingConf
     # selection: selecting a checkpoint on the same episodes that certified
     # the candidate model would couple the two.
     jobs = {
-        "standard": [("standard", s, False) for s in list(STANDARD_SELECTION_DEV_SEEDS)[:episodes]],
+        "circle": [("circle", s, False) for s in list(STANDARD_SELECTION_DEV_SEEDS)[:episodes]],
         "junction_crowd": [("junction_crowd", s, True)
                            for s in list(JUNCTION_CROWD_SELECTION_DEV_SEEDS)[:episodes]],
     }
@@ -174,7 +174,7 @@ def evaluate_milestones(run_dir: Path, env_config: Path, cfg: IntentTrainingConf
         ck = run_dir / f"milestone_ep{ep:06d}.pth"
         if not ck.exists():
             raise SelectionError(f"missing milestone checkpoint {ck}")
-        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
         # NOTE: no code-hash check here -- load_intent_checkpoint validates the
         # schema, feature schema, training contract, action grid and scene
         # registry, which is exactly what must match for a fair comparison.
@@ -238,7 +238,7 @@ def report(evaluated: dict, out_dir: Path, run_dir: Path, min_sr: float = 0.90) 
     print("\n=== paired McNemar (same episodes, same initial states) ===", flush=True)
     tests = {}
     eps = list(results)
-    for scenario in ("standard", "junction_crowd"):
+    for scenario in ("circle", "junction_crowd"):
         for i in range(len(eps)):
             for j in range(i + 1, len(eps)):
                 a, b = eps[i], eps[j]

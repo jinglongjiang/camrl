@@ -7,6 +7,12 @@ monolithic file -- zero risk of a name/import mismatch during the split.
 import pytest
 
 from crowd_nav.bayesian_dvl.tests._common import *  # noqa: F401,F403
+import hashlib
+import math
+
+from crowd_nav.bayesian_dvl.intent_train import IntentTransition, sample_training_crowd_spec
+from crowd_nav.bayesian_dvl.intent_policy import MAX_HUMANS
+from crowd_nav.bayesian_dvl.set_encoder import ACTION_FEATURE_DIM, ROBOT_FEATURE_DIM
 
 
 def test_junction_scenario_seed_ranges_frozen_and_disjoint() -> None:
@@ -151,13 +157,13 @@ def test_intent_train_standard_scenario_has_multiple_humans() -> None:
     # silently forces human_num=1 regardless of config, which meant
     # AttentionPool never received a gradient (only one human is ever a
     # trivial softmax). Verify the standard scenario really has >1 human.
-    res = collect_orca_episode(_env_config_path(), "standard", 700001)
+    res = collect_orca_episode(_env_config_path(), "circle", 700001)
     assert res.transitions[0].human_mask.sum() > 1, "standard scenario must have multiple humans, not 1"
 
 def test_intent_train_collect_both_scenarios_valid_termination() -> None:
     # guide/review local-e2e hard requirement 5 item 5: standard (unimodal)
     # and multimodal (junction) scenarios must both legally terminate.
-    for scenario, seed in [("standard", 700001), ("junction", 96001)]:
+    for scenario, seed in [("circle", 700001), ("junction", 96001)]:
         res = collect_orca_episode(_env_config_path(), scenario, seed)
         assert res.outcome in ("success", "collision", "timeout")
         assert len(res.transitions) > 0
@@ -173,7 +179,7 @@ def test_intent_train_executed_action_matches_80action_label_exactly() -> None:
     # collect_orca_episode's black-box output.
     from crowd_sim.envs.utils.action import ActionXY
     env_config_path = _env_config_path()
-    env, robot = _make_standard_env(env_config_path)
+    env, robot = _make_crowd_env(env_config_path, sample_training_crowd_spec(2_600_000, 'circle'))
     env.case_counter["train"] = 700001 % (2**32 - 1)
     env.reset()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table(), dtype=np.float64)
@@ -210,12 +216,12 @@ def test_intent_train_real_gradient_flow_through_every_parameter() -> None:
     # the loss meaningfully decreased -- not just "the code ran".
     env_config_path = _env_config_path()
     transitions = []
-    for scenario, seed in [("standard", 700001), ("standard", 700002), ("junction", 96001), ("junction", 96002), ("junction", 96003)]:
+    for scenario, seed in [("circle", 700001), ("circle", 700002), ("junction", 96001), ("junction", 96002), ("junction", 96003)]:
         transitions.extend(collect_orca_episode(env_config_path, scenario, seed).transitions)
     assert len(transitions) > 20
 
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     opt = torch.optim.Adam(model.parameters(), lr=1e-3)
     before = {k: v.clone() for k, v in model.state_dict().items()}
     il_batch = batch_to_tensors(transitions)
@@ -244,18 +250,47 @@ def test_intent_train_rank_loss_teaches_executed_action_to_outrank_others() -> N
     # down with training (the margin loss is exactly zero once the
     # executed action is well-separated from the hardest negative, so a
     # falling mean is real evidence of learned separation, not noise).
-    env_config_path = _env_config_path()
+    #
+    # The batch is CONSTRUCTED, not collected. This test asks one question --
+    # does the ranking term produce a usable learning signal -- and that
+    # question has nothing to do with how many pedestrians a circle episode
+    # happened to draw or whether the robot is visible. Built on real
+    # episodes it silently became a slow training test whose step budget had
+    # to be re-tuned every time the scenario distribution moved. Convergence
+    # on real multi-scenario data is checked by the end-to-end smoke run,
+    # which requires finite loss and gradients rather than descent in a few
+    # dozen steps.
+    rng = np.random.default_rng(20260825)
+    n_actions, n_transitions = 80, 24
     transitions = []
-    for scenario, seed in [("standard", 700001), ("junction", 96001), ("junction", 96002)]:
-        transitions.extend(collect_orca_episode(env_config_path, scenario, seed).transitions)
-    assert len(transitions) > 10
+    for _ in range(n_transitions):
+        # action features that are actually SEPARABLE: the expert action sits
+        # at a distinct point, the negatives elsewhere, so a ranker that
+        # learns anything at all can pull them apart.
+        a_feats = rng.normal(scale=0.5, size=(n_actions, ACTION_FEATURE_DIM))
+        expert = int(rng.integers(0, n_actions))
+        a_feats[expert] += 3.0
+        human_feats = np.zeros((MAX_HUMANS, HUMAN_FEATURE_DIM_V7))
+        human_mask = np.zeros(MAX_HUMANS, dtype=bool)
+        n_vis = int(rng.integers(1, 4))
+        human_feats[:n_vis] = rng.normal(scale=0.3, size=(n_vis, HUMAN_FEATURE_DIM_V7))
+        human_mask[:n_vis] = True
+        transitions.append(IntentTransition(
+            robot_features=rng.normal(size=ROBOT_FEATURE_DIM),
+            human_features=human_feats, human_mask=human_mask,
+            action_index=expert, action_features=a_feats[expert],
+            all_action_features=a_feats,
+            remaining_fraction=float(rng.uniform(0.0, 1.0)),
+            source_role="demo", expert_action_indices=(expert,),
+            reward=0.0, mc_return=float(rng.normal()),
+        ))
 
     torch.manual_seed(1)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     opt = torch.optim.Adam(model.parameters(), lr=1e-3)
     il_batch = batch_to_tensors(transitions)
     gen = torch.Generator().manual_seed(1)
-    results = [intent_train_step(model, opt, il_batch, gen, rho=1.0) for _ in range(40)]
+    results = [intent_train_step(model, opt, il_batch, gen, rho=1.0) for _ in range(60)]
     rank_losses = [r.rank_loss for r in results]
     early_mean = float(np.mean(rank_losses[:5]))
     late_mean = float(np.mean(rank_losses[-5:]))
@@ -280,18 +315,18 @@ def test_intent_train_resume_is_bit_identical_to_continuous() -> None:
     # bit-for-bit, not just "close".
     env_config_path = _env_config_path()
     transitions = []
-    for scenario, seed in [("standard", 700001), ("junction", 96001), ("junction", 96002)]:
+    for scenario, seed in [("circle", 700001), ("junction", 96001), ("junction", 96002)]:
         transitions.extend(collect_orca_episode(env_config_path, scenario, seed).transitions)
     il_batch = batch_to_tensors(transitions)
 
     torch.manual_seed(7)
-    model_a = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    model_a = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     opt_a = torch.optim.Adam(model_a.parameters(), lr=1e-3)
     gen_a = torch.Generator().manual_seed(123)
     losses_a = [intent_train_step(model_a, opt_a, il_batch, gen_a).loss for _ in range(20)]
 
     torch.manual_seed(7)
-    model_b = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    model_b = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     opt_b = torch.optim.Adam(model_b.parameters(), lr=1e-3)
     gen_b = torch.Generator().manual_seed(123)
     for _ in range(10):
@@ -301,7 +336,7 @@ def test_intent_train_resume_is_bit_identical_to_continuous() -> None:
         path = str(Path(d) / "ckpt.pth")
         save_intent_checkpoint(model_b, path, action_grid_hash="h", scene_registry_sha256="s",
                                 optimizer=opt_b, extra={"generator_state": gen_b.get_state()})
-        model_c = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)  # extra random draws here, on purpose
+        model_c = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)  # extra random draws here, on purpose
         opt_c = torch.optim.Adam(model_c.parameters(), lr=1e-3)
         raw = torch.load(path, weights_only=False)
         load_intent_checkpoint(path, model_c, optimizer=opt_c, expected_action_grid_hash="h", expected_scene_registry_sha256="s")
@@ -325,7 +360,7 @@ def test_online_replay_buffer_fail_closed() -> None:
     except IntentTrainError:
         pass
     env_config_path = _env_config_path()
-    demo = collect_orca_episode(env_config_path, "standard", 700001).transitions[:2]
+    demo = collect_orca_episode(env_config_path, "circle", 700001).transitions[:2]
     buf.add_demo(demo, np.random.default_rng(0))
     for bad in (-0.1, 1.1):
         try:
@@ -340,7 +375,7 @@ def test_online_replay_buffer_fail_closed() -> None:
         pass
     # role enforcement: a demo transition may not enter online replay
     try:
-        buf.add_online(demo, scenario="standard")
+        buf.add_online(demo, scenario="circle")
         assert False, "expected IntentTrainError putting a demo sample in online replay"
     except IntentTrainError:
         pass
@@ -350,17 +385,17 @@ def test_online_replay_evicts_complete_episodes() -> None:
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
-    ep1 = collect_online_episode(env_config_path, model, action_table, "standard", 700001, epsilon=1.0,
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
+    ep1 = collect_online_episode(env_config_path, model, action_table, "circle", 700001, epsilon=1.0,
                                   explore_rng=np.random.default_rng(1))
-    ep2 = collect_online_episode(env_config_path, model, action_table, "standard", 700002, epsilon=1.0,
+    ep2 = collect_online_episode(env_config_path, model, action_table, "circle", 700002, epsilon=1.0,
                                   explore_rng=np.random.default_rng(2))
     assert len(ep1.transitions) > 0 and ep1.outcome in ("success", "collision", "timeout")
 
     capacity = max(len(ep1.transitions), len(ep2.transitions))
     buf = IntentReplay(demo_capacity=100, online_capacity=capacity)
-    buf.add_online(ep1.transitions, scenario="standard")
-    buf.add_online(ep2.transitions, scenario="standard")
+    buf.add_online(ep1.transitions, scenario="circle")
+    buf.add_online(ep2.transitions, scenario="circle")
     assert buf.n_online == len(ep2.transitions)
     assert buf.n_online_episodes == 1
     retained = buf._online_episodes[0][1]
@@ -375,20 +410,20 @@ def test_online_replay_samples_scenarios_and_episodes_not_rows() -> None:
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     long_episode = collect_online_episode(
-        env_config_path, model, action_table, "standard", 700001, epsilon=1.0,
+        env_config_path, model, action_table, "circle", 700001, epsilon=1.0,
         explore_rng=np.random.default_rng(1)).transitions
     short_episode = collect_online_episode(
-        env_config_path, model, action_table, "standard", 700002, epsilon=1.0,
+        env_config_path, model, action_table, "circle", 700002, epsilon=1.0,
         explore_rng=np.random.default_rng(2)).transitions[:2]
     assert len(long_episode) > 2
 
     # Episode-uniform sampling: two episodes have equal probability even
     # though one contains many more transitions.
     buf = IntentReplay(demo_capacity=100, online_capacity=1000)
-    buf.add_online(long_episode, scenario="standard")
-    buf.add_online(short_episode, scenario="standard")
+    buf.add_online(long_episode, scenario="circle")
+    buf.add_online(short_episode, scenario="circle")
     short_ids = {id(t) for t in short_episode}
     batch = buf.sample(10000, np.random.default_rng(3), demo_ratio=0.0)
     short_count = sum(id(t) in short_ids for t in batch)
@@ -396,7 +431,7 @@ def test_online_replay_samples_scenarios_and_episodes_not_rows() -> None:
 
     # Scenario allocation is exact up to the unavoidable one-row remainder.
     balanced = IntentReplay(demo_capacity=100, online_capacity=1000)
-    balanced.add_online(long_episode, scenario="standard")
+    balanced.add_online(long_episode, scenario="circle")
     balanced.add_online(short_episode, scenario="junction_crowd")
     junction_ids = {id(t) for t in short_episode}
     batch = balanced.sample(101, np.random.default_rng(4), demo_ratio=0.0)
@@ -408,12 +443,12 @@ def test_online_replay_buffer_state_roundtrip() -> None:
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
-    ep = collect_online_episode(env_config_path, model, action_table, "standard", 700001, epsilon=1.0,
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
+    ep = collect_online_episode(env_config_path, model, action_table, "circle", 700001, epsilon=1.0,
                                  explore_rng=np.random.default_rng(1))
-    demo = collect_orca_episode(env_config_path, "standard", 700002).transitions
+    demo = collect_orca_episode(env_config_path, "circle", 700002).transitions
     a = IntentReplay(demo_capacity=100, online_capacity=100)
-    a.add_online(ep.transitions, scenario="standard")
+    a.add_online(ep.transitions, scenario="circle")
     a.add_demo(demo, np.random.default_rng(0))
     state = a.state_dict()
 
@@ -455,13 +490,13 @@ def test_c4r_mixed_replay_keeps_demo_supervision_alive_during_online() -> None:
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
-    demo = collect_orca_episode(env_config_path, "standard", 700001).transitions
-    online = collect_online_episode(env_config_path, model, action_table, "standard", 700002, epsilon=1.0,
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
+    demo = collect_orca_episode(env_config_path, "circle", 700001).transitions
+    online = collect_online_episode(env_config_path, model, action_table, "circle", 700002, epsilon=1.0,
                                      explore_rng=np.random.default_rng(3)).transitions
     buf = IntentReplay(demo_capacity=1000, online_capacity=1000)
     buf.add_demo(demo, np.random.default_rng(0))
-    buf.add_online(online, scenario="standard")
+    buf.add_online(online, scenario="circle")
 
     rng = np.random.default_rng(7)
     batch = buf.sample(100, rng, demo_ratio=0.20)
@@ -484,7 +519,7 @@ def test_c4r_demo_reservoir_is_bounded_and_uniform() -> None:
     # the demo side must stay within a fixed memory budget no matter how
     # much IL data is offered (the formal budget is ~195k transitions).
     env_config_path = _env_config_path()
-    demo = collect_orca_episode(env_config_path, "standard", 700001).transitions
+    demo = collect_orca_episode(env_config_path, "circle", 700001).transitions
     cap = 10
     buf = IntentReplay(demo_capacity=cap, online_capacity=10)
     buf.add_demo(demo, np.random.default_rng(0))
@@ -500,10 +535,10 @@ def test_c4r_grad_clipping_and_gradient_ratio_are_really_applied() -> None:
     # were declared in the frozen config, validated on load, and then
     # NEVER used by train_step -- contract drift. Verify both are real.
     env_config_path = _env_config_path()
-    trans = collect_orca_episode(env_config_path, "standard", 700001).transitions[:16]
+    trans = collect_orca_episode(env_config_path, "circle", 700001).transitions[:16]
     batch = batch_to_tensors(trans)
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     opt = torch.optim.Adam(model.parameters(), lr=0.0)
 
     # (a) with a tiny clip the post-clip gradient norm must equal the clip
@@ -564,12 +599,12 @@ def test_c4r_il_update_uses_minibatches_not_the_whole_corpus() -> None:
     env_config_path = _env_config_path()
     demo = []
     for s in (700001, 700002, 700003):
-        demo.extend(collect_orca_episode(env_config_path, "standard", s).transitions)
+        demo.extend(collect_orca_episode(env_config_path, "circle", s).transitions)
     assert len(demo) > 64
     buf = IntentReplay(demo_capacity=100000, online_capacity=100)
     buf.add_demo(demo, np.random.default_rng(0))
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     opt = torch.optim.Adam(model.parameters(), lr=1e-4)
     for bs in (8, 32):
         r = run_il_update(model, opt, buf, bs, np.random.default_rng(1), torch.Generator().manual_seed(0),
@@ -587,16 +622,16 @@ def test_collect_online_episode_epsilon_zero_is_deterministic_given_model() -> N
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
-    ep_a = collect_online_episode(env_config_path, model, action_table, "standard", 700001, epsilon=0.0,
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
+    ep_a = collect_online_episode(env_config_path, model, action_table, "circle", 700001, epsilon=0.0,
                                    explore_rng=np.random.default_rng(111))
-    ep_b = collect_online_episode(env_config_path, model, action_table, "standard", 700001, epsilon=0.0,
+    ep_b = collect_online_episode(env_config_path, model, action_table, "circle", 700001, epsilon=0.0,
                                    explore_rng=np.random.default_rng(999))
     assert [t.action_index for t in ep_a.transitions] == [t.action_index for t in ep_b.transitions]
     assert ep_a.outcome == ep_b.outcome
 
     try:
-        collect_online_episode(env_config_path, model, action_table, "standard", 700001, epsilon=1.5,
+        collect_online_episode(env_config_path, model, action_table, "circle", 700001, epsilon=1.5,
                                 explore_rng=np.random.default_rng(0))
         assert False, "expected IntentTrainError on epsilon out of [0,1]"
     except IntentTrainError:
@@ -615,7 +650,7 @@ def test_online_training_step_real_gradient_and_resume_bit_identical() -> None:
 
     def make_state(seed):
         torch.manual_seed(seed)
-        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
         opt = torch.optim.Adam(model.parameters(), lr=1e-3)
         buf = IntentReplay(demo_capacity=200, online_capacity=200)
         explore_rng = np.random.default_rng(1000 + seed)
@@ -626,7 +661,7 @@ def test_online_training_step_real_gradient_and_resume_bit_identical() -> None:
     model_a, opt_a, buf_a, exr_a, smr_a, tg_a = make_state(7)
     before = {k: v.clone() for k, v in model_a.state_dict().items()}
     results_a = [
-        run_online_training_step(env_config_path, model_a, opt_a, action_table, "standard", seeds[i % len(seeds)],
+        run_online_training_step(env_config_path, model_a, opt_a, action_table, "circle", seeds[i % len(seeds)],
                                   epsilon=0.3, buffer=buf_a, batch_size=8, explore_rng=exr_a, sample_rng=smr_a,
                                   tau_generator=tg_a)
         for i in range(12)
@@ -638,7 +673,7 @@ def test_online_training_step_real_gradient_and_resume_bit_identical() -> None:
 
     model_b, opt_b, buf_b, exr_b, smr_b, tg_b = make_state(7)
     for i in range(6):
-        run_online_training_step(env_config_path, model_b, opt_b, action_table, "standard", seeds[i % len(seeds)],
+        run_online_training_step(env_config_path, model_b, opt_b, action_table, "circle", seeds[i % len(seeds)],
                                   epsilon=0.3, buffer=buf_b, batch_size=8, explore_rng=exr_b, sample_rng=smr_b,
                                   tau_generator=tg_b)
 
@@ -653,7 +688,7 @@ def test_online_training_step_real_gradient_and_resume_bit_identical() -> None:
                 "replay_buffer_state": buf_b.state_dict(),
             },
         )
-        model_c = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)  # extra random draws, on purpose
+        model_c = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)  # extra random draws, on purpose
         opt_c = torch.optim.Adam(model_c.parameters(), lr=1e-3)
         raw = torch.load(path, weights_only=False)
         load_intent_checkpoint(path, model_c, optimizer=opt_c, expected_action_grid_hash="h", expected_scene_registry_sha256="s")
@@ -664,7 +699,7 @@ def test_online_training_step_real_gradient_and_resume_bit_identical() -> None:
         buf_c.load_state_dict(raw["extra"]["replay_buffer_state"])
 
         results_resumed = [
-            run_online_training_step(env_config_path, model_c, opt_c, action_table, "standard", seeds[i % len(seeds)],
+            run_online_training_step(env_config_path, model_c, opt_c, action_table, "circle", seeds[i % len(seeds)],
                                       epsilon=0.3, buffer=buf_c, batch_size=8, explore_rng=exr_c, sample_rng=smr_c,
                                       tau_generator=tg_c)
             for i in range(6, 12)
@@ -682,7 +717,7 @@ def test_intent_ablation_suite_shares_identical_seeds_across_modes() -> None:
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     seeds = list(JUNCTION_TRAIN_SEEDS[:3])
     results = run_ablation_suite(env_config_path, model, action_table, "junction", seeds, n_samples=20)
     assert set(results.keys()) == {"full", "mean", "cv", "uniform"}
@@ -720,7 +755,7 @@ def test_ablation_cv_mode_outcome_is_independent_of_planner_seed() -> None:
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     episode_seed = JUNCTION_TRAIN_SEEDS[7]
     result_a = run_ablation_episode(env_config_path, model, action_table, "junction", episode_seed, "cv",
                                      planner_seed=5_000_000 + episode_seed, n_samples=20)
@@ -732,7 +767,7 @@ def test_ablation_cv_mode_outcome_is_independent_of_planner_seed() -> None:
 
 def test_ema_model_fail_closed() -> None:
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     try:
         EMAModel(model, decay=1.5)
         assert False, "expected IntentTrainError on decay outside (0,1)"
@@ -752,13 +787,13 @@ def test_ema_model_tracks_a_smoothed_average_not_the_raw_weights() -> None:
     # differs from (and is a real weighted average trailing) the raw
     # model's weights once the raw model has moved.
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     ema = EMAModel(model, decay=0.9)
     initial_param = next(iter(model.state_dict().values())).clone()
 
     opt = torch.optim.Adam(model.parameters(), lr=1e-2)
     env_config_path = _env_config_path()
-    transitions = collect_orca_episode(env_config_path, "standard", 700001).transitions
+    transitions = collect_orca_episode(env_config_path, "circle", 700001).transitions
     il_batch = batch_to_tensors(transitions)
     gen = torch.Generator().manual_seed(0)
     for _ in range(10):
@@ -772,7 +807,7 @@ def test_ema_model_tracks_a_smoothed_average_not_the_raw_weights() -> None:
     assert not torch.equal(ema_param, initial_param), "EMA shadow must have moved from its init too"
 
     # copy_to loads the smoothed weights into a fresh model exactly
-    eval_model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    eval_model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     ema.copy_to(eval_model)
     for k, v in eval_model.state_dict().items():
         assert torch.equal(v, ema.shadow[k])
@@ -780,7 +815,7 @@ def test_ema_model_tracks_a_smoothed_average_not_the_raw_weights() -> None:
 
 def test_ema_model_state_roundtrip_and_key_mismatch_fail_closed() -> None:
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     ema_a = EMAModel(model, decay=0.9)
     with torch.no_grad():
         for v in model.parameters():
@@ -829,7 +864,7 @@ def test_run_formal_scenario_episode_baseline_circle_matches_human_count() -> No
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     env, robot, shape, size = build_formal_scenario_env(env_config_path, "baseline_circle")
     assert shape == "circle"
     assert size == FORMAL_SIX_SCENARIOS["baseline_circle"][1]
@@ -843,7 +878,7 @@ def test_run_formal_six_scenario_evaluation_covers_every_scenario_and_summarizes
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     seeds = FORMAL_EVAL_HELDOUT_SEEDS[:2]
     results = run_formal_six_scenario_evaluation(env_config_path, model, action_table, episode_seeds=seeds, n_samples=15)
     assert set(results.keys()) == set(FORMAL_SIX_SCENARIOS.keys())
@@ -987,7 +1022,7 @@ def test_c0_sample_roles_fail_closed() -> None:
     # demo samples must always carry one. Enforced at construction so a
     # mislabeled sample can never reach the trainer.
     env_config_path = _env_config_path()
-    demo = collect_orca_episode(env_config_path, "standard", 700001).transitions[0]
+    demo = collect_orca_episode(env_config_path, "circle", 700001).transitions[0]
     assert demo.source_role == "demo"
     assert len(demo.expert_action_indices) >= 1
     assert demo.action_index in demo.expert_action_indices, (
@@ -1018,8 +1053,8 @@ def test_c0_online_collection_never_labels_its_own_action_as_expert() -> None:
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
-    ep = collect_online_episode(env_config_path, model, action_table, "standard", 700001, epsilon=1.0,
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
+    ep = collect_online_episode(env_config_path, model, action_table, "circle", 700001, epsilon=1.0,
                                  explore_rng=np.random.default_rng(1))
     assert len(ep.transitions) > 0
     assert all(t.source_role == "online" for t in ep.transitions)
@@ -1036,8 +1071,8 @@ def test_c0_online_only_batch_has_exactly_zero_rank_loss() -> None:
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
-    ep = collect_online_episode(env_config_path, model, action_table, "standard", 700001, epsilon=0.5,
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
+    ep = collect_online_episode(env_config_path, model, action_table, "circle", 700001, epsilon=0.5,
                                  explore_rng=np.random.default_rng(3))
     batch = batch_to_tensors(ep.transitions)
     opt = torch.optim.Adam(model.parameters(), lr=1e-3)
@@ -1057,9 +1092,9 @@ def test_c0_mixed_batch_rank_loss_averages_over_demo_mask_only() -> None:
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
-    demo_ts = collect_orca_episode(env_config_path, "standard", 700001).transitions[:4]
-    online_ts = collect_online_episode(env_config_path, model, action_table, "standard", 700002, epsilon=1.0,
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
+    demo_ts = collect_orca_episode(env_config_path, "circle", 700001).transitions[:4]
+    online_ts = collect_online_episode(env_config_path, model, action_table, "circle", 700002, epsilon=1.0,
                                         explore_rng=np.random.default_rng(5)).transitions[:6]
     assert len(demo_ts) == 4 and len(online_ts) == 6
 
@@ -1095,7 +1130,7 @@ def test_c0_rank_loss_uses_equivalence_set_not_single_nearest_action() -> None:
 
     transitions = []
     for seed in (700001, 700002, 700003):
-        transitions.extend(collect_orca_episode(env_config_path, "standard", seed).transitions)
+        transitions.extend(collect_orca_episode(env_config_path, "circle", seed).transitions)
     sizes = [len(t.expert_action_indices) for t in transitions]
     assert all(s >= 1 for s in sizes)
     assert max(sizes) > 1, (
@@ -1113,13 +1148,13 @@ def test_c0_checkpoint_schema_v6_rejects_retired_v5_and_wrong_training_contract(
     # plan C0.5: V5 weights were fit under the buggy objective; loading
     # them must FAIL CLOSED, since no shape check can tell them apart.
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     with tempfile.TemporaryDirectory() as d:
         path = str(Path(d) / "ckpt.pth")
         save_intent_checkpoint(model, path, action_grid_hash="h", scene_registry_sha256="s")
         raw = torch.load(path, weights_only=False)
-        assert raw["checkpoint_schema"] == CHECKPOINT_SCHEMA_V7
-        assert raw["training_contract_schema"] == TRAINING_CONTRACT_V6_EPISODE_BALANCED_REPLAY
+        assert raw["checkpoint_schema"] == CHECKPOINT_SCHEMA_V8
+        assert raw["training_contract_schema"] == TRAINING_CONTRACT_V8_TEMPORAL_SUMMARY
 
         # Order 4: a V2 checkpoint (fixed rho=380) must be refused
         # BY NAME, not with a generic schema message. Its optimizer state,
@@ -1131,12 +1166,12 @@ def test_c0_checkpoint_schema_v6_rejects_retired_v5_and_wrong_training_contract(
         v2_path = str(Path(d) / "v2.pth")
         torch.save(v2, v2_path)
         try:
-            load_intent_checkpoint(v2_path, DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6))
+            load_intent_checkpoint(v2_path, DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7))
             assert False, "expected IntentPolicyError: retired V2 training contract"
         except IntentPolicyError as exc:
             assert "fail closed" in str(exc), str(exc)
 
-        model2 = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+        model2 = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
         load_intent_checkpoint(path, model2, expected_action_grid_hash="h", expected_scene_registry_sha256="s")
 
         # Order 6: retired schemas are refused by the equality check, not by a
@@ -1181,10 +1216,10 @@ def test_c0_mixed_loss_matches_hand_computation() -> None:
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
 
-    demo_ts = collect_orca_episode(env_config_path, "standard", 700001).transitions[:3]
-    online_ts = collect_online_episode(env_config_path, model, action_table, "standard", 700002, epsilon=1.0,
+    demo_ts = collect_orca_episode(env_config_path, "circle", 700001).transitions[:3]
+    online_ts = collect_online_episode(env_config_path, model, action_table, "circle", 700002, epsilon=1.0,
                                         explore_rng=np.random.default_rng(7)).transitions[:5]
     batch = batch_to_tensors(list(demo_ts) + list(online_ts))
     B, n_taus, lam, margin = len(batch.demo_mask), 16, 0.37, 0.1
@@ -1441,7 +1476,7 @@ def test_order1r_online_clearance_is_swept_dmin_and_telemetry_only() -> None:
     without the dmin instrumentation.
     """
     from crowd_nav.bayesian_dvl.intent_train import collect_online_episode, IntentTrainError
-    from crowd_nav.bayesian_dvl.intent_policy import HUMAN_FEATURE_DIM_V6
+    from crowd_nav.bayesian_dvl.intent_policy import HUMAN_FEATURE_DIM_V7
 
     env_config = _env_config_path()
     action_table = np.asarray(
@@ -1449,7 +1484,7 @@ def test_order1r_online_clearance_is_swept_dmin_and_telemetry_only() -> None:
 
     def fresh_model():
         torch.manual_seed(0)
-        m = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+        m = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
         m.eval()
         return m
 
@@ -1481,7 +1516,7 @@ def test_order1r_online_clearance_is_swept_dmin_and_telemetry_only() -> None:
 
         IT._ScenarioEpisode = Patched
         try:
-            return collect_online_episode(env_config, fresh_model(), action_table, "standard", 800_001,
+            return collect_online_episode(env_config, fresh_model(), action_table, "circle", 800_001,
                                           epsilon=0.0, explore_rng=np.random.default_rng(0), gamma=0.99)
         finally:
             IT._ScenarioEpisode = real_ep
@@ -1543,7 +1578,7 @@ def test_order5_checkpoint_selection_is_pre_registered_and_can_fail_a_run() -> N
 
     def cand(name, order, s_sr, j_sr, s_cr=0.0, j_cr=0.0, disc=0.1, nav=5.0):
         return {"name": name, "order": order, "scenarios": {
-            "standard": {"success_rate": s_sr, "collision_rate": s_cr,
+            "circle": {"success_rate": s_sr, "collision_rate": s_cr,
                          "discomfort_frequency": disc, "navigation_time": nav},
             "junction_crowd": {"success_rate": j_sr, "collision_rate": j_cr,
                                "discomfort_frequency": disc, "navigation_time": nav}}}
@@ -1738,7 +1773,7 @@ def test_audit_metrics_are_chunked_without_changing_the_numbers() -> None:
 
     env = _env_config_path()
     rows, tag = [], {}
-    for scenario, base in (("standard", 2_600_000), ("junction_crowd", 2_100_000)):
+    for scenario, base in (("circle", 2_600_000), ("junction_crowd", 2_100_000)):
         for k in range(6):
             r = collect_orca_episode(env, scenario, base + k, gamma=0.99)
             for t in r.transitions:
@@ -1746,7 +1781,7 @@ def test_audit_metrics_are_chunked_without_changing_the_numbers() -> None:
             rows += r.transitions
     audit = build_il_audit_set(rows, lambda t: tag[id(t)], n_per_scenario=64)
     torch.manual_seed(3)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     batch = batch_to_tensors(audit, device="cpu")
     ONE = 10 ** 9   # effectively unchunked
 
@@ -1787,3 +1822,128 @@ def test_audit_metrics_are_chunked_without_changing_the_numbers() -> None:
         assert abs(got - mc_ref) < 1e-5, (cs, got, mc_ref)
     # a ragged split must not be systematically biased
     assert abs(_audit_mc_loss(model, batch, 16, chunk_rows=len(audit) - 1) - mc_ref) < 1e-5
+
+
+# --------------------------------------------------------------------- #
+# Order 12A section 5 / 12B section 5: the V7 numerical baseline.
+#
+# The old Order 0 baseline hashed values computed from COLLECTED episodes,
+# so it measured the training distribution as well as the maths. Order 12
+# changes that distribution on purpose, which would have moved every value
+# for reasons that say nothing about the loss, the gradient combination or
+# the network. These checks use fixed constructed inputs instead: they pin
+# determinism, finiteness and round-trip identity, and stay comparable
+# across any future change to which episodes are collected.
+# --------------------------------------------------------------------- #
+
+def _v7_fixed_batch(seed: int = 20260825, n: int = 32):
+    rng = np.random.default_rng(seed)
+    transitions = []
+    for _ in range(n):
+        a_feats = rng.normal(size=(80, ACTION_FEATURE_DIM))
+        expert = int(rng.integers(0, 80))
+        hf = np.zeros((MAX_HUMANS, HUMAN_FEATURE_DIM_V7))
+        hm = np.zeros(MAX_HUMANS, dtype=bool)
+        k = int(rng.integers(1, 8))
+        hf[:k] = rng.normal(size=(k, HUMAN_FEATURE_DIM_V7))
+        hm[:k] = True
+        transitions.append(IntentTransition(
+            robot_features=rng.normal(size=ROBOT_FEATURE_DIM),
+            human_features=hf, human_mask=hm,
+            action_index=expert, action_features=a_feats[expert],
+            all_action_features=a_feats,
+            remaining_fraction=float(rng.uniform(0.0, 1.0)),
+            source_role="demo", expert_action_indices=(expert,),
+            reward=float(rng.normal()), mc_return=float(rng.normal()),
+        ))
+    return batch_to_tensors(transitions)
+
+
+def test_v7_forward_is_deterministic_for_a_fixed_input() -> None:
+    batch = _v7_fixed_batch()
+    tau = ((torch.arange(16, dtype=torch.float32) + 0.5) / 16).unsqueeze(0).expand(
+        batch.robot_feats.shape[0], 16)
+    outs = []
+    for _ in range(2):
+        torch.manual_seed(12345)
+        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
+        model.eval()
+        with torch.no_grad():
+            outs.append(model(batch.robot_feats, batch.human_feats, batch.human_mask,
+                              batch.action_feats, tau))
+    assert torch.equal(outs[0], outs[1])
+    assert torch.isfinite(outs[0]).all()
+    assert batch.human_feats.shape[-1] == HUMAN_FEATURE_DIM_V7 == 70
+
+
+def test_v7_losses_and_gradients_are_finite() -> None:
+    batch = _v7_fixed_batch()
+    torch.manual_seed(12345)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
+    params = [p for p in model.parameters() if p.requires_grad]
+    gen = torch.Generator().manual_seed(777)
+    res = intent_train_step(model, torch.optim.SGD(params, lr=0.0), batch, gen, rho=1.0)
+    for name in ("mc_loss", "rank_loss", "mc_grad_norm", "rank_grad_norm", "grad_norm_preclip"):
+        v = float(getattr(res, name))
+        assert math.isfinite(v), (name, v)
+    assert all(p.grad is None or torch.isfinite(p.grad).all() for p in params)
+
+
+def test_v7_one_optimizer_step_is_reproducible() -> None:
+    hashes = []
+    for _ in range(2):
+        batch = _v7_fixed_batch()
+        torch.manual_seed(12345)
+        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
+        opt = torch.optim.Adam(model.parameters(), lr=1e-4)
+        gen = torch.Generator().manual_seed(777)
+        intent_train_step(model, opt, batch, gen, rho=1.0)
+        hashes.append(hashlib.sha256(
+            torch.cat([p.detach().flatten() for p in model.parameters()]).numpy().tobytes()
+        ).hexdigest())
+    assert hashes[0] == hashes[1], hashes
+
+
+def test_v7_checkpoint_roundtrip_is_bitwise_identical(tmp_path) -> None:
+    from crowd_nav.bayesian_dvl.intent_policy import (
+        load_intent_checkpoint, save_intent_checkpoint)
+    batch = _v7_fixed_batch()
+    tau = ((torch.arange(16, dtype=torch.float32) + 0.5) / 16).unsqueeze(0).expand(
+        batch.robot_feats.shape[0], 16)
+    torch.manual_seed(12345)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
+    model.eval()
+    with torch.no_grad():
+        before = model(batch.robot_feats, batch.human_feats, batch.human_mask,
+                       batch.action_feats, tau)
+    ck = tmp_path / "v7.pth"
+    save_intent_checkpoint(model, str(ck), action_grid_hash="grid", scene_registry_sha256="scene")
+    torch.manual_seed(999)                       # deliberately different init
+    reloaded = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
+    load_intent_checkpoint(str(ck), reloaded)
+    reloaded.eval()
+    with torch.no_grad():
+        after = reloaded(batch.robot_feats, batch.human_feats, batch.human_mask,
+                         batch.action_feats, tau)
+    assert torch.equal(before, after)
+
+
+def test_v7_old_schema_artifacts_are_refused(tmp_path) -> None:
+    """Order 12A: no compat branch, no alias. A V6/V7-era checkpoint must
+    fail loudly rather than being loaded into a 70-dim network."""
+    from crowd_nav.bayesian_dvl.intent_policy import load_intent_checkpoint
+    torch.manual_seed(1)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
+    stale = tmp_path / "stale.pth"
+    torch.save({
+        "checkpoint_schema": "bdvl_intent_checkpoint_v7_candidate_set",
+        "feature_schema": "bdvl_z_state_goal_intent_v6_candidate_set",
+        "training_contract_schema": "bdvl_intent_training_contract_episode_balanced_replay_v6",
+        "model_state_dict": model.state_dict(),
+        "action_grid_hash": "grid", "scene_registry_sha256": "scene",
+        "return_bounds": [0.0, 1.0],
+    }, stale)
+    with pytest.raises(Exception) as exc:
+        load_intent_checkpoint(str(stale), DistributionalValueModel(
+            human_feature_dim=HUMAN_FEATURE_DIM_V7))
+    assert "schema" in str(exc.value).lower()

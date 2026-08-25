@@ -88,6 +88,28 @@ PAPER_MAIN_BASE_SEED = 30_260_816
 # must never be reinterpreted as a PASS.
 TEST8_AUDIT_BASE_SEED_RETIRED = 20_260_816
 TEST8_AUDIT_BASE_SEED = 40_260_817
+# Order 12 section 7: the development acceptance base for the domain-
+# randomised, invisible-robot chain. A NEW base is required because every
+# earlier development block has been spent -- 2_900_000/2_400_000 decided the
+# previous full arm, and the paper blocks must stay untouched for the paper.
+# Reusing a seen block would mean judging a new policy on episodes an earlier
+# decision already looked at.
+DOMAIN_V3_DEV_BASE_SEED = 50_260_818
+DOMAIN_V3_DEV_EPISODES_PER_SCENARIO = 100
+
+
+def domain_v3_dev_episode_seed(scenario_name: str, episode_index: int,
+                               base_seed: int = DOMAIN_V3_DEV_BASE_SEED) -> int:
+    """Same identity formula as the paper protocol, a different base."""
+    return paper_main_episode_seed(scenario_name, episode_index, base_seed)
+
+
+def domain_v3_dev_jobs(episodes_per_scenario: int = DOMAIN_V3_DEV_EPISODES_PER_SCENARIO,
+                       base_seed: int = DOMAIN_V3_DEV_BASE_SEED):
+    return [(name, domain_v3_dev_episode_seed(name, ep, base_seed), False)
+            for name in PAPER_MAIN_CASE_IDS for ep in range(episodes_per_scenario)]
+
+
 PAPER_MAIN_EPISODES_PER_SCENARIO = 500
 # case_id follows FORMAL_SIX_SCENARIOS' insertion order, which matches
 # test8.py's hardcoded list: baseline_circle=0 ... large_square=5.

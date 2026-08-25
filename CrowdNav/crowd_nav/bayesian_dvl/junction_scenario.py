@@ -30,7 +30,7 @@ from typing import Dict, Tuple
 
 import numpy as np
 
-from crowd_nav.bayesian_dvl.intent_runtime_config import FROZEN_VALUES
+from crowd_nav.bayesian_dvl.intent_runtime_config import FROZEN_VALUES, robot_visible_from
 from crowd_nav.bayesian_dvl.contracts import HumanObservation, RobotObservation
 from crowd_nav.bayesian_dvl.scene_candidates import PublicScene, junction_scene
 from crowd_sim.envs.crowd_sim import CrowdSim
@@ -184,7 +184,8 @@ def build_junction_episode(env_config_path: Path, cfg: JunctionEpisodeConfig):
     # rather than relying on that as an accident.
     robot_orca.multiagent_training = True
     robot.set_policy(robot_orca)
-    robot.visible = True
+    # Order 12: invisible robot; the config is the single definition.
+    robot.visible = robot_visible_from(env_config)
     robot.time_step = FROZEN_VALUES["dt"]
     robot.env = env
     env.set_robot(robot)
@@ -470,7 +471,8 @@ def build_junction_crowd_episode(env_config_path: Path, cfg: JunctionCrowdEpisod
     robot_orca = ORCA(); robot_orca.configure(env_config)
     robot_orca.multiagent_training = True  # else CrowdSim.reset() silently forces human_num=1
     robot.set_policy(robot_orca)
-    robot.visible = True
+    # Order 12: invisible robot; the config is the single definition.
+    robot.visible = robot_visible_from(env_config)
     robot.time_step = FROZEN_VALUES["dt"]
     robot.env = env
     env.set_robot(robot)

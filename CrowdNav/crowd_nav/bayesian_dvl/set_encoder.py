@@ -177,9 +177,9 @@ class SetEncoder(nn.Module):
     ):
         super().__init__()
         from crowd_nav.bayesian_dvl.intent_runtime_config import (
-            CANDIDATE_FEATURE_DIM, HUMAN_SCALAR_DIM_V6, MAX_CANDIDATE_GOALS,
+            CANDIDATE_FEATURE_DIM, HUMAN_SCALAR_DIM_V7, MAX_CANDIDATE_GOALS,
         )
-        self.scalar_dim = HUMAN_SCALAR_DIM_V6 if scalar_dim is None else int(scalar_dim)
+        self.scalar_dim = HUMAN_SCALAR_DIM_V7 if scalar_dim is None else int(scalar_dim)
         self.max_candidates = MAX_CANDIDATE_GOALS if max_candidates is None else int(max_candidates)
         self.candidate_feature_dim = (
             CANDIDATE_FEATURE_DIM if candidate_feature_dim is None else int(candidate_feature_dim))

@@ -66,7 +66,7 @@ def test_c2_config_validation_fails_closed() -> None:
             return p
 
         cases = [
-            ("IL split mismatch", lambda c: c.set("il", "il_episodes_standard", "1")),
+            ("IL split mismatch", lambda c: c.set("il", "il_episodes_circle", "1")),
             ("mix not summing to 1", lambda c: c.set("online", "mix_standard", "0.9")),
             ("gamma out of range", lambda c: c.set("optim", "gamma", "1.5")),
             ("epsilon_end > start", lambda c: c.set("exploration", "epsilon_end", "0.9")),
@@ -143,19 +143,27 @@ def test_c2_epsilon_schedule_is_a_function_of_the_global_cursor() -> None:
         pass
 
 
-def test_c2_online_schedule_is_fifty_fifty_and_never_uses_formal_seeds() -> None:
-    # plan section 4.1: the online mix is FROZEN 50/50 and written into the
-    # schedule itself; section 6: training must never touch formal seeds.
+def test_c2_online_schedule_is_a_three_cycle_and_never_uses_formal_seeds() -> None:
+    # Order 12: the online mix is a FROZEN circle/square/junction three-cycle
+    # written into the schedule itself, so replay sees three independent
+    # scenario labels in equal numbers. Section 6: training must never touch
+    # formal seeds.
     cfg = load_intent_training_config(DEFAULT_TRAINING_CONFIG)
-    scen = [online_episode_at(cfg, i)[0] for i in range(200)]
-    assert scen.count("standard") == 100 and scen.count("junction_crowd") == 100
+    scen = [online_episode_at(cfg, i)[0] for i in range(201)]
+    assert scen[:6] == ["circle", "square", "junction_crowd"] * 2, scen[:6]
+    for name in ("circle", "square", "junction_crowd"):
+        assert scen.count(name) == 67, (name, scen.count(name))
+    # square must NOT have been folded back into a single "standard" bucket
+    assert "standard" not in set(scen)
     for i in range(400):
         scenario, seed = online_episode_at(cfg, i)
         _assert_not_formal_seed(seed)  # must not raise
     plan = il_episode_plan(cfg)
     assert len(plan) == cfg.il_episodes_total
-    assert sum(1 for s, _ in plan if s == "standard") == cfg.il_episodes_standard
+    assert sum(1 for s, _ in plan if s == "circle") == cfg.il_episodes_circle
+    assert sum(1 for s, _ in plan if s == "square") == cfg.il_episodes_square
     assert sum(1 for s, _ in plan if s == "junction_crowd") == cfg.il_episodes_junction_crowd
+    assert {s for s, _ in plan} == {"circle", "square", "junction_crowd"}
     for _s, seed in plan:
         _assert_not_formal_seed(seed)
     # and the guard really does fire on a formal seed
@@ -225,10 +233,10 @@ def test_c2_vectorized_ranking_matches_the_per_sample_loop() -> None:
     # de-duplicated from n_demo*80 down to n_demo passes). It must be
     # numerically identical to the straightforward per-sample loop.
     env_config_path = _env_config_path()
-    trans = collect_orca_episode(env_config_path, "standard", 700001).transitions[:6]
+    trans = collect_orca_episode(env_config_path, "circle", 700001).transitions[:6]
     b = batch_to_tensors(trans)
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     n_taus, margin = 16, 0.1
     n_act = b.all_action_feats.shape[1]
     ft = (torch.arange(n_taus, dtype=torch.float32) + 0.5) / n_taus
@@ -354,14 +362,14 @@ def test_c2_final_ema_artifact_holds_ema_weights_not_raw() -> None:
         raw = torch.load(str(_resume_path(run)), map_location="cpu", weights_only=False)
         fin = torch.load(str(run / "final_ema.pth"), map_location="cpu", weights_only=False)
         assert fin["extra"]["artifact_role"] == "final_ema"
-        assert fin["checkpoint_schema"] == CHECKPOINT_SCHEMA_V7
+        assert fin["checkpoint_schema"] == CHECKPOINT_SCHEMA_V8
         ema = raw["extra"]["ema_state_dict"]
         assert all(torch.equal(fin["model_state_dict"][k].float(), ema[k].float()) for k in fin["model_state_dict"]), \
             "final_ema.model_state_dict must BE the EMA"
         assert not all(torch.equal(fin["model_state_dict"][k].float(), raw["model_state_dict"][k].float())
                        for k in fin["model_state_dict"]), "final_ema must differ from the raw weights"
         # it must load through the ordinary loader with no special casing
-        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
         load_intent_checkpoint(str(run / "final_ema.pth"), model)
 
 
@@ -394,7 +402,7 @@ def test_c4_cpu_cuda_top1_action_agreement() -> None:
     action_table = np.asarray(
         ActionGridSpec.from_env_config(str(env_config_path)).build_action_table(), dtype=np.float64)
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
 
     scene = public_junction_crowd_scene(is_heldout=False)
     bank = IntentBeliefBank(make_candidate_fn(scene), dt=FROZEN_VALUES["dt"], speed=1.0)
@@ -429,11 +437,11 @@ def test_c4_training_step_is_device_independent_in_its_random_stream() -> None:
     # checkpoint's generator state would be device-bound and CPU/CUDA
     # parity would be uncheckable in principle.
     env_config_path = _env_config_path()
-    trans = collect_orca_episode(env_config_path, "standard", 700001).transitions[:8]
+    trans = collect_orca_episode(env_config_path, "circle", 700001).transitions[:8]
     losses = {}
     for dev in (["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]):
         torch.manual_seed(3)
-        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6).to(dev)
+        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7).to(dev)
         opt = torch.optim.Adam(model.parameters(), lr=1e-4)
         batch = batch_to_tensors(trans, device=dev)
         gen = torch.Generator().manual_seed(5)
@@ -455,14 +463,14 @@ def test_c4rf_every_training_episode_has_a_distinct_seed() -> None:
     from crowd_nav.bayesian_dvl.intent_train_cli import il_episode_plan, online_episode_at
     cfg = load_intent_training_config(DEFAULT_TRAINING_CONFIG)
     plan = il_episode_plan(cfg)
-    il_std = [s for k, s in plan if k == "standard"]
+    il_std = [s for k, s in plan if k == "circle"]
     il_jc = [s for k, s in plan if k == "junction_crowd"]
-    assert len(il_std) == len(set(il_std)) == cfg.il_episodes_standard
+    assert len(il_std) == len(set(il_std)) == cfg.il_episodes_circle
     assert len(il_jc) == len(set(il_jc)) == cfg.il_episodes_junction_crowd, (
         f"IL junction must use one distinct seed per episode, got {len(set(il_jc))} for {len(il_jc)} episodes")
 
     on = [online_episode_at(cfg, i) for i in range(cfg.online_episodes_total)]
-    on_std = [s for k, s in on if k == "standard"]
+    on_std = [s for k, s in on if k == "circle"]
     on_jc = [s for k, s in on if k == "junction_crowd"]
     assert len(on_std) == len(set(on_std)) and len(on_jc) == len(set(on_jc)), (
         "every online episode must have a distinct seed")
@@ -471,7 +479,7 @@ def test_c4rf_every_training_episode_has_a_distinct_seed() -> None:
 
     # exceeding the frozen block must fail closed, not wrap around
     import dataclasses
-    over = dataclasses.replace(cfg, il_episodes_junction_crowd=999999, il_episodes_standard=1,
+    over = dataclasses.replace(cfg, il_episodes_junction_crowd=999999, il_episodes_circle=1,
                                il_episodes_total=1000000)
     try:
         il_episode_plan(over)
@@ -487,11 +495,20 @@ def test_c4rf_seed_inventory_bounds_match_the_real_schedule() -> None:
     cfg = load_intent_training_config(DEFAULT_TRAINING_CONFIG)
     inv = seed_inventory(cfg)
     assert inv["ok"], inv["overlaps"]
-    on_std = [s for i in range(cfg.online_episodes_total)
-              for k, s in [online_episode_at(cfg, i)] if k == "standard"]
-    lo, hi = inv["derived_ranges"]["online_standard"]
-    assert lo == min(on_std) and hi == max(on_std), (
-        f"reported online_standard range [{lo},{hi}] != real [{min(on_std)},{max(on_std)}]")
+    # circle and square are checked SEPARATELY: they draw from disjoint blocks,
+    # and one derived bound being right says nothing about the other.
+    for shape in ("circle", "square"):
+        real = [s for i in range(cfg.online_episodes_total)
+                for k, s in [online_episode_at(cfg, i)] if k == shape]
+        lo, hi = inv["derived_ranges"][f"online_{shape}"]
+        assert lo == min(real) and hi == max(real), (
+            f"reported online_{shape} range [{lo},{hi}] != real [{min(real)},{max(real)}]")
+        assert len(real) == len(set(real)), f"online_{shape} reuses a seed"
+    c = [s for i in range(cfg.online_episodes_total)
+         for k, s in [online_episode_at(cfg, i)] if k == "circle"]
+    q = [s for i in range(cfg.online_episodes_total)
+         for k, s in [online_episode_at(cfg, i)] if k == "square"]
+    assert not (set(c) & set(q)), "circle and square online seeds overlap"
     # the large junction blocks must be in the inventory too
     for name in ("junction_crowd_il", "junction_crowd_online"):
         assert name in inv["blocks"], f"{name} missing from the seed inventory"
@@ -533,7 +550,7 @@ def test_c4rf_checkpoint_omits_the_immutable_demo_corpus() -> None:
     # formal budget, and a permanent copy every 500 episodes across 15
     # formal runs projected to ~705 GB of byte-identical demo data.
     env_config_path = _env_config_path()
-    demo = collect_orca_episode(env_config_path, "standard", 700001).transitions
+    demo = collect_orca_episode(env_config_path, "circle", 700001).transitions
     buf = IntentReplay(demo_capacity=1000, online_capacity=1000)
     buf.add_demo(demo, np.random.default_rng(0))
     full = buf.state_dict(include_demo=True)
@@ -573,14 +590,14 @@ def test_c4rf_il_corpus_is_immutable_shared_and_identity_checked() -> None:
         )
         assert path.exists() and path.with_suffix(".manifest.json").exists()
         assert [row[:2] for row in progress] == [(1, 2), (2, 2)]
-        assert all(row[2] in ("standard", "junction_crowd") and row[5] > 0 for row in progress)
+        assert all(row[2] in ("circle", "junction_crowd") and row[5] > 0 for row in progress)
         assert meta["training_arm"] is None, "A3: the corpus records no arm"
         assert meta["n_transitions"] > 0
         assert len(meta["corpus_sha256"]) == 64
         manifest = json.loads(path.with_suffix(".manifest.json").read_text())
         assert len(manifest["episode_identities"]) == meta["n_episodes"]
         for scenario, seed, n_trans, outcome in manifest["episode_identities"]:
-            assert scenario in ("standard", "junction_crowd") and n_trans > 0
+            assert scenario in ("circle", "junction_crowd") and n_trans > 0
             assert outcome in ("success", "collision", "timeout")
 
         # a second load is byte-identical -> the 5 seeds really share it
@@ -654,12 +671,12 @@ def test_c4rf_ema_shadow_follows_the_model_device_on_resume() -> None:
     # never reproduced it, and the earlier CUDA coverage was `train`, not
     # `resume`.
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     ema = EMAModel(model, decay=0.99)
     saved = {k: v.detach().cpu().clone() for k, v in ema.state_dict().items()}  # as torch.load returns
 
     for dev in (["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]):
-        m = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6).to(dev)
+        m = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7).to(dev)
         e = EMAModel(m, decay=0.99)
         e.load_state_dict(saved)          # CPU tensors into a possibly-CUDA shadow
         for v in e.shadow.values():
@@ -778,14 +795,14 @@ def test_c5_online_rows_persist_without_dead_action_features() -> None:
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
-    demo = collect_orca_episode(env_config_path, "standard", 700001).transitions
-    online = collect_online_episode(env_config_path, model, action_table, "standard", 700002,
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
+    demo = collect_orca_episode(env_config_path, "circle", 700001).transitions
+    online = collect_online_episode(env_config_path, model, action_table, "circle", 700002,
                                      epsilon=1.0, explore_rng=np.random.default_rng(3)).transitions
 
     a = IntentReplay(demo_capacity=1000, online_capacity=1000)
     a.add_demo(demo, np.random.default_rng(0))
-    a.add_online(online, scenario="standard")
+    a.add_online(online, scenario="circle")
     live = a._online_episodes[0][1][0].all_action_features
     state = a.state_dict(include_demo=False)
 
@@ -837,7 +854,7 @@ def test_a2_replay_persists_only_valid_human_rows() -> None:
     # A2: human_features is [MAX_HUMANS=20, 29] but scenarios run 5 people;
     # 15 of 20 rows are structural zeros (~58% of a row).
     env_config_path = _env_config_path()
-    demo = collect_orca_episode(env_config_path, "standard", 700001).transitions
+    demo = collect_orca_episode(env_config_path, "circle", 700001).transitions
     buf = IntentReplay(demo_capacity=500, online_capacity=500)
     buf.add_demo(demo, np.random.default_rng(0))
     live_shape = buf._demo[0].human_features.shape
@@ -864,7 +881,7 @@ def test_a3_one_raw_corpus_serves_every_arm() -> None:
     env_config_path = _env_config_path()
     action_table = np.asarray(
         ActionGridSpec.from_env_config(str(env_config_path)).build_action_table(), dtype=np.float64)
-    for scenario, seed in (("standard", 2_600_000), ("junction_crowd", 2_100_000)):
+    for scenario, seed in (("circle", 2_600_000), ("junction_crowd", 2_100_000)):
         reference = collect_orca_episode(env_config_path, scenario, seed, belief_mode="full").transitions
         raw = collect_raw_orca_episode(env_config_path, scenario, seed)
         assert len(raw.steps) == len(reference)
@@ -1177,7 +1194,7 @@ def test_order4_production_audit_selector_is_fixed_512_and_balanced() -> None:
     gate even though the frozen contract is 256 rows per scenario.
     """
     rows = [object() for _ in range(700)]
-    labels = ["standard"] * 350 + ["junction_crowd"] * 350
+    labels = ["circle"] * 350 + ["junction_crowd"] * 350
     selected = _select_il_audit_rows(rows, labels, is_pilot=False)
     assert len(selected) == 512
     assert len({id(x) for x in selected}) == 512
@@ -1186,7 +1203,7 @@ def test_order4_production_audit_selector_is_fixed_512_and_balanced() -> None:
     # A tiny pilot remains usable, but a formal run must fail closed when the
     # frozen per-scenario minimum cannot be formed.
     tiny_rows = [object() for _ in range(10)]
-    tiny_labels = ["standard"] * 5 + ["junction_crowd"] * 5
+    tiny_labels = ["circle"] * 5 + ["junction_crowd"] * 5
     assert _select_il_audit_rows(tiny_rows, tiny_labels, is_pilot=True) == tiny_rows
     try:
         _select_il_audit_rows(tiny_rows, tiny_labels, is_pilot=False)
@@ -1285,9 +1302,9 @@ def test_final_dev_acceptance_block_is_frozen_and_final_only() -> None:
     from crowd_nav.bayesian_dvl.junction_scenario import JUNCTION_CROWD_SELECTION_DEV_SEEDS
 
     jobs = final_dev_jobs()
-    assert set(jobs) == {"standard", "junction_crowd"}
+    assert set(jobs) == {"circle", "junction_crowd"}
 
-    std, jct = jobs["standard"], jobs["junction_crowd"]
+    std, jct = jobs["circle"], jobs["junction_crowd"]
     assert len(std) == 100 and len(jct) == 100
     assert [s for _, s, _ in std] == list(STANDARD_SELECTION_DEV_SEEDS)
     assert [s for _, s, _ in jct] == list(JUNCTION_CROWD_SELECTION_DEV_SEEDS)
@@ -1302,7 +1319,7 @@ def test_final_dev_acceptance_block_is_frozen_and_final_only() -> None:
     # what the acceptance decision means.
     assert all(shifted is False for _, _, shifted in std)
     assert all(shifted is True for _, _, shifted in jct)
-    assert all(sc == "standard" for sc, _, _ in std)
+    assert all(sc == "circle" for sc, _, _ in std)
     assert all(sc == "junction_crowd" for sc, _, _ in jct)
 
     # the subcommand exposes NO lever: no seed, scenario or episode count
@@ -1600,3 +1617,96 @@ def test_baseline_command_runs_end_to_end(monkeypatch, tmp_path) -> None:
         prov = _json.loads((tmp_path / kind / "arm_none" / "manifest.json").read_text())["provenance"]
         assert prov["checkpoint"] is None and prov["checkpoint_sha256"] is None
         assert prov["code_hash"] and prov["config_content_hash"]
+
+
+# --------------------------------------------------------------------- #
+# Order 12 section 2 / 12B section 4: the randomised training distribution.
+# The old distribution was two fixed points (circle with 5 pedestrians at
+# radius 4, and the 5-pedestrian junction), so five of the six Test8
+# scenarios asked the policy to extrapolate. These pin that the replacement
+# really is a range, and that it is reproducible from the seed alone.
+# --------------------------------------------------------------------- #
+
+def test_order12_training_distribution_covers_its_declared_range() -> None:
+    from collections import Counter
+    from crowd_nav.bayesian_dvl.intent_train import (
+        sample_training_crowd_spec, TRAINING_CROWD_RANGES)
+    for shape in ("circle", "square"):
+        rng_n, rng_size = TRAINING_CROWD_RANGES[shape]["n"], TRAINING_CROWD_RANGES[shape]["size"]
+        counts, sizes = Counter(), []
+        for i in range(10_000):
+            spec = sample_training_crowd_spec(2_600_000 + i, shape)
+            counts[spec["human_num"]] += 1
+            sizes.append(spec["size"])
+            assert rng_n[0] <= spec["human_num"] <= rng_n[1]
+            assert rng_size[0] <= spec["size"] <= rng_size[1]
+        missing = [n for n in range(rng_n[0], rng_n[1] + 1) if counts[n] == 0]
+        assert not missing, f"{shape} never drew crowd sizes {missing}"
+        # the ends of the size range must actually be approached, not just the middle
+        span = rng_size[1] - rng_size[0]
+        assert min(sizes) < rng_size[0] + 0.02 * span, (shape, min(sizes))
+        assert max(sizes) > rng_size[1] - 0.02 * span, (shape, max(sizes))
+
+
+def test_order12_sampling_is_reproducible_and_shape_specific() -> None:
+    from crowd_nav.bayesian_dvl.intent_train import sample_training_crowd_spec
+    for seed in (2_600_000, 2_600_137, 2_610_999):
+        for shape in ("circle", "square"):
+            a = sample_training_crowd_spec(seed, shape)
+            b = sample_training_crowd_spec(seed, shape)
+            assert a == b, (seed, shape, a, b)
+    # the same seed under a different shape is a different draw: circle seed X
+    # and square seed X must not be the same layout wearing two labels
+    differ = sum(1 for i in range(200)
+                 if sample_training_crowd_spec(2_600_000 + i, "circle")["human_num"]
+                 != sample_training_crowd_spec(2_600_000 + i, "square")["human_num"])
+    assert differ > 100, differ
+    with pytest.raises(Exception):
+        sample_training_crowd_spec(2_600_000, "junction_crowd")
+
+
+def test_order12_online_schedule_is_balanced_across_the_three_scenarios() -> None:
+    from crowd_nav.bayesian_dvl.intent_train_cli import online_episode_at
+    cfg = load_intent_training_config(DEFAULT_TRAINING_CONFIG)
+    scen = [online_episode_at(cfg, i)[0] for i in range(cfg.online_episodes_total)]
+    n = len(scen)
+    for name in ("circle", "square", "junction_crowd"):
+        share = scen.count(name) / n
+        assert 0.32 < share < 0.35, (name, share)
+    assert scen[:9] == ["circle", "square", "junction_crowd"] * 3
+
+
+def test_order12_env_and_candidate_geometry_agree_for_both_shapes() -> None:
+    """The candidate provider must describe the SAME arena the pedestrians
+    walk in. A circle scene under a square crossing would put every candidate
+    destination somewhere nobody is heading -- and the arena size is now
+    sampled per episode, so the scene has to be rebuilt from the seed too."""
+    from crowd_nav.bayesian_dvl.intent_train import (
+        _ScenarioEpisode, _scene_for_scenario, sample_training_crowd_spec)
+    from crowd_nav.bayesian_dvl.scene_candidates import circle_scene, square_scene
+    ec = _env_config_path()
+    for shape, seed in (("circle", 2_600_000), ("square", 2_610_000),
+                        ("circle", 2_600_137), ("square", 2_610_137)):
+        spec = sample_training_crowd_spec(seed, shape)
+        ep = _ScenarioEpisode(ec, shape, seed)
+        assert len(ep.env.humans) == int(spec["human_num"]), (shape, seed)
+
+        # the scene the episode built must equal the scene rebuilt from the
+        # seed at the sampled size -- this is what the materialiser relies on
+        size = float(spec["size"])
+        expected = (square_scene(width=size, n_rows=4) if shape == "square"
+                    else circle_scene(radius=size, n_sectors=8))
+        got = _scene_for_scenario(shape, False, seed)
+        assert len(got.destinations) == len(expected.destinations), (shape, seed)
+        for a, b in zip(got.destinations, expected.destinations):
+            assert np.allclose(np.asarray(a.position), np.asarray(b.position)), (shape, seed)
+        assert len(ep.scene.destinations) == len(expected.destinations), (shape, seed)
+
+        # a wrong size must be detectable: a different draw gives a different arena
+        other = sample_training_crowd_spec(seed + 1, shape)
+        if abs(other["size"] - size) > 1e-9:
+            wrong = (square_scene(width=float(other["size"]), n_rows=4) if shape == "square"
+                     else circle_scene(radius=float(other["size"]), n_sectors=8))
+            assert not np.allclose(
+                np.asarray([d.position for d in got.destinations]),
+                np.asarray([d.position for d in wrong.destinations])), (shape, seed)

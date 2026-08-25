@@ -19,7 +19,7 @@ def _result(outcome: str, episode_seed: int = 1):
         path_ratio=0.97,
         min_clearance=0.12,
         discomfort_frequency=0.25,
-        scenario="standard",
+        scenario="circle",
         episode_seed=episode_seed,
         epsilon=0.2,
         loss=0.4,
@@ -119,11 +119,11 @@ def test_online_training_result_keeps_navigation_outcome_and_episode_metrics() -
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(19)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     buffer = IntentReplay(demo_capacity=20, online_capacity=200)
     result = run_online_training_step(
-        env_config_path, model, optimizer, action_table, "standard", 700001, 0.2,
+        env_config_path, model, optimizer, action_table, "circle", 700001, 0.2,
         buffer, 8, np.random.default_rng(1), np.random.default_rng(2),
         torch.Generator().manual_seed(3),
     )
@@ -131,7 +131,7 @@ def test_online_training_result_keeps_navigation_outcome_and_episode_metrics() -
     assert result.episode_steps > 0 and np.isfinite(result.episode_return)
     assert result.navigation_time > 0 and result.path_length >= 0
     assert np.isfinite(result.path_ratio) and np.isfinite(result.min_clearance)
-    assert result.scenario == "standard" and result.episode_seed == 700001
+    assert result.scenario == "circle" and result.episode_seed == 700001
 
 
 def test_development_validation_uses_legal_disjoint_seeds_and_does_not_mutate_model() -> None:
@@ -140,7 +140,7 @@ def test_development_validation_uses_legal_disjoint_seeds_and_does_not_mutate_mo
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(23)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     model.train()
     before = {k: v.clone() for k, v in model.state_dict().items()}
     rows = run_development_validation(
@@ -148,7 +148,7 @@ def test_development_validation_uses_legal_disjoint_seeds_and_does_not_mutate_mo
         belief_mode="full", n_samples=4, horizon=3, device="cpu",
     )
     assert [(r["scenario"], r["episode_seed"]) for r in rows] == [
-        ("standard", 97301), ("junction_crowd", JUNCTION_CROWD_VALIDATION_SEEDS[0])]
+        ("circle", 97301), ("junction_crowd", JUNCTION_CROWD_VALIDATION_SEEDS[0])]
     assert all(r["outcome"] in ("success", "collision", "timeout") for r in rows)
     assert model.training, "validation must restore the caller's train/eval mode"
     assert all(torch.equal(before[k], model.state_dict()[k]) for k in before)

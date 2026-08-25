@@ -128,11 +128,11 @@ ACTION_FEATURE_DIM = 5
 # The row stays ONE packed vector so replay storage, batching and every call
 # site keep their [B, N, D] shapes; set_encoder.SetEncoder is the single
 # place that knows the layout:
-#   [0 : S]                       scalar block (S = HUMAN_SCALAR_DIM_V6, incl. candidate count)
+#   [0 : S]                       scalar block (S = HUMAN_SCALAR_DIM_V7, incl. candidate count)
 #   [S : S + G*F]                 G candidates x F features, row-major
 #   [S + G*F : S + G*F + G]       per-candidate validity mask
 # Checkpoint-incompatible with v5 by dimensionality, and must fail closed.
-FEATURE_SCHEMA_V6 = "bdvl_z_state_goal_intent_v6_candidate_set"
+FEATURE_SCHEMA_V7 = "bdvl_z_state_goal_intent_v7_temporal_summary"
 
 MAX_CANDIDATE_GOALS = 8
 
@@ -176,9 +176,33 @@ CANDIDATE_FEATURE_DIM = 5
 # are valid. So the mean/cv arms -- whose block is all zeros by definition --
 # could not see how many public destinations existed, a public fact they had
 # in v5. test_candidate_count_reaches_the_network pins it.
-HUMAN_SCALAR_DIM_V6 = 14
-HUMAN_FEATURE_DIM_V6 = (HUMAN_SCALAR_DIM_V6 + MAX_CANDIDATE_GOALS * CANDIDATE_FEATURE_DIM
-                        + MAX_CANDIDATE_GOALS)   # = 62
+# Order 12A: eight deterministic trend scalars summarising the last
+# TEMPORAL_HISTORY_STEPS observations of a track. The network sees only the
+# CURRENT frame, so nothing told it whether a pedestrian was accelerating,
+# turning, or whether its own posterior had just flipped -- the Bayesian
+# tracker updates over time, but every trace of that evolution was collapsed
+# away before the policy saw it. These are computed, not learned: no Mamba,
+# LSTM, GRU, TCN or Transformer, and no new trainable layer.
+TEMPORAL_HISTORY_STEPS = 8
+TEMPORAL_SUMMARY_DIM = 8
+# Indices 0-4 are PUBLIC motion trends (identical across arms); 5-7 are
+# posterior trends, which the mean/cv ablations must not see.
+TEMPORAL_PUBLIC_DIM = 5
+TEMPORAL_SUMMARY_FIELDS = (
+    "velocity_delta_x", "velocity_delta_y", "speed_delta", "heading_change",
+    "history_fill", "posterior_jsd", "entropy_delta", "top1_stability",
+)
+
+# 14 base scalars (geometry, kinematics, track age, posterior entropy/margin,
+# future summary, candidate count) + the 8 Order 12A trend scalars.
+# Explicit indices into the scalar block. Positional guesses like
+# "candidate count is the last scalar" silently pointed at the trend block
+# the moment one was appended -- a test caught exactly that.
+HUMAN_SCALAR_IDX_CANDIDATE_COUNT = 13
+HUMAN_SCALAR_IDX_TEMPORAL = 14
+HUMAN_SCALAR_DIM_V7 = 14 + TEMPORAL_SUMMARY_DIM                     # = 22
+HUMAN_FEATURE_DIM_V7 = (HUMAN_SCALAR_DIM_V7 + MAX_CANDIDATE_GOALS * CANDIDATE_FEATURE_DIM
+                        + MAX_CANDIDATE_GOALS)                       # = 70
 # The training contract: the data/loss SEMANTICS the weights were fit under,
 # a separate axis from feature_schema because tensor shapes cannot tell two
 # objectives apart. V6 is the current and only one:
@@ -197,8 +221,12 @@ HUMAN_FEATURE_DIM_V6 = (HUMAN_SCALAR_DIM_V6 + MAX_CANDIDATE_GOALS * CANDIDATE_FE
 # not V6 fails the equality check in load_intent_checkpoint, which is what
 # "no compat loading" has always meant, and a per-version branch only
 # invited a compat path back in.
-TRAINING_CONTRACT_V6_EPISODE_BALANCED_REPLAY = (
-    "bdvl_intent_training_contract_episode_balanced_replay_v6")
+# Order 12: the robot is invisible to pedestrians and the training
+# distribution is randomised over circle/square geometry, 5-20 pedestrians
+# and a range of arena sizes. Both change what the data IS, not merely how
+# it is fitted, so weights trained under v6 are not loadable here.
+TRAINING_CONTRACT_V8_TEMPORAL_SUMMARY = (
+    "bdvl_intent_training_contract_temporal_summary_domain_randomized_v8")
 
 
 FROZEN_VALUES: Dict[str, object] = {
@@ -343,6 +371,22 @@ PROGRESS_REWARD_NORMALIZED_K: float = float(FROZEN_VALUES["progress_reward"]) * 
 
 class RegistryError(ValueError):
     """Raised when a registry, config file, or action grid fails validation."""
+
+
+def robot_visible_from(env_config) -> bool:
+    """Read ``[robot] visible`` from the env config, failing closed.
+
+    Order 12: this is the ONE definition of the setting, shared by training
+    and evaluation. The scenario builders used to force the robot visible
+    unconditionally, which silently overrode the config -- so the config
+    said one thing and every episode did another, and the whole 35000-episode
+    suite ran against yielding pedestrians without that being a decision
+    anyone made. There is deliberately no default: a config that does not
+    state it is an error, not an implicit True.
+    """
+    if not env_config.has_option("robot", "visible"):
+        raise ValueError("env config has no [robot] visible; refusing to assume a value")
+    return env_config.getboolean("robot", "visible")
 
 
 def _sha256_of_obj(obj: object) -> str:

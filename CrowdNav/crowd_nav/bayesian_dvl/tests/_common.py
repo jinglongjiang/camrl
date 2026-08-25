@@ -17,9 +17,9 @@ from pathlib import Path
 import numpy as np
 import torch.nn as nn
 from crowd_nav.bayesian_dvl.intent_runtime_config import (
-    ACTION_FEATURE_DIM, ActionGridSpec, FEATURE_SCHEMA_V6, FROZEN_VALUES,
+    ACTION_FEATURE_DIM, ActionGridSpec, FEATURE_SCHEMA_V7, FROZEN_VALUES,
     NORMALIZATION_CONSTANTS, PROGRESS_REWARD_NORMALIZED_K,
-    TRAINING_CONTRACT_V6_EPISODE_BALANCED_REPLAY,
+    TRAINING_CONTRACT_V8_TEMPORAL_SUMMARY,
     derive_return_bounds,
 )
 from crowd_nav.bayesian_dvl.contracts import (
@@ -38,11 +38,11 @@ from crowd_nav.bayesian_dvl.scene_candidates import (
     square_scene,
 )
 from crowd_nav.bayesian_dvl.intent_runtime_config import (
-    CANDIDATE_FEATURE_DIM, FEATURE_SCHEMA_V6, HUMAN_FEATURE_DIM_V6, HUMAN_SCALAR_DIM_V6,
+    CANDIDATE_FEATURE_DIM, FEATURE_SCHEMA_V7, HUMAN_FEATURE_DIM_V7, HUMAN_SCALAR_DIM_V7,
     MAX_CANDIDATE_GOALS,
 )
 from crowd_nav.bayesian_dvl.intent_policy import (
-    CHECKPOINT_SCHEMA_V7, HUMAN_FEATURE_DIM_V6, IntentPolicyError, build_intent_human_feature_batch,
+    CHECKPOINT_SCHEMA_V8, HUMAN_FEATURE_DIM_V7, IntentPolicyError, build_intent_human_feature_batch,
     load_intent_checkpoint, remaining_time_fraction as intent_remaining_time_fraction,
     save_intent_checkpoint, score_candidates_v5,
 )
@@ -60,7 +60,7 @@ from crowd_nav.bayesian_dvl.junction_scenario import (
 from crowd_nav.bayesian_dvl.intent_train import (
     RawEpisode, RawStep,
     FORMAL_EVAL_HELDOUT_SEEDS, FORMAL_SIX_SCENARIOS, EMAModel, IntentReplay, IntentTrainError,
-    IntentBatch, _make_standard_env, batch_to_tensors, build_formal_scenario_env, collect_online_episode,
+    IntentBatch, _make_crowd_env, batch_to_tensors, build_formal_scenario_env, collect_online_episode,
     run_il_update,
     collect_orca_episode, collect_raw_orca_episode, compute_mc_returns, materialize_arm_transitions,
     run_formal_scenario_episode, run_formal_six_scenario_evaluation,
@@ -389,7 +389,7 @@ __all__ = [
     'ActionGridSpec',
     'CALIBRATION_TAUS',
 
-    'CHECKPOINT_SCHEMA_V7',
+    'CHECKPOINT_SCHEMA_V8',
     'CROWD_HELDOUT_BACKGROUND_SPEED_RANGE',
     'CROWD_HELDOUT_EXIT_LEFT',
     'CROWD_HELDOUT_EXIT_RIGHT',
@@ -405,14 +405,14 @@ __all__ = [
     'EXIT_RIGHT',
     'EpisodeRecord',
     'EvaluatorError',
-    'FEATURE_SCHEMA_V6',
+    'FEATURE_SCHEMA_V7',
     'FORMAL_EVAL_HELDOUT_SEEDS',
     'FORMAL_SIX_SCENARIOS',
     'FROZEN_VALUES',
     'GoalIntentTracker',
     'HUMAN_FEATURE_DIM',
-    'HUMAN_FEATURE_DIM_V6', 'junction_crowd_role_of_seed', 'HUMAN_FEATURE_DIM_V6', 'HUMAN_SCALAR_DIM_V6',
-    'CANDIDATE_FEATURE_DIM', 'MAX_CANDIDATE_GOALS', 'FEATURE_SCHEMA_V6',
+    'HUMAN_FEATURE_DIM_V7', 'junction_crowd_role_of_seed', 'HUMAN_FEATURE_DIM_V7', 'HUMAN_SCALAR_DIM_V7',
+    'CANDIDATE_FEATURE_DIM', 'MAX_CANDIDATE_GOALS', 'FEATURE_SCHEMA_V7',
     'HumanObservation',
     'IQNValueNetwork',
     'IntentBatch',
@@ -448,7 +448,7 @@ __all__ = [
     'SceneCandidatesError',
     'SetEncoder',
     'StatisticsError',
-    'TRAINING_CONTRACT_V6_EPISODE_BALANCED_REPLAY',
+    'TRAINING_CONTRACT_V8_TEMPORAL_SUMMARY',
     'WAYPOINT_RADIUS',
     '_FakeConfig',
     '_FakeConfigSection',
@@ -473,7 +473,7 @@ __all__ = [
     '_junction_bank_2exit',
     '_make_full_state',
     '_make_observable_state',
-    '_make_standard_env',
+    '_make_crowd_env',
     '_positions_from_kinematics',
     '_random_crowd',
     '_run_intent_track',

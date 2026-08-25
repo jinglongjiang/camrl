@@ -49,13 +49,13 @@ import numpy as np
 import torch
 
 from crowd_nav.bayesian_dvl.intent_runtime_config import (
-    ActionGridSpec, FEATURE_SCHEMA_V6, TRACKER_DEFAULTS,
+    ActionGridSpec, FEATURE_SCHEMA_V7, TRACKER_DEFAULTS,
 )
 from crowd_nav.bayesian_dvl.intent_config import (
     DEFAULT_TRAINING_CONFIG, IntentConfigError, IntentTrainingConfig, load_intent_training_config,
 )
 from crowd_nav.bayesian_dvl.intent_policy import (
-    CHECKPOINT_SCHEMA_V7, HUMAN_FEATURE_DIM_V6, load_intent_checkpoint, save_intent_checkpoint,
+    CHECKPOINT_SCHEMA_V8, HUMAN_FEATURE_DIM_V7, load_intent_checkpoint, save_intent_checkpoint,
 )
 from crowd_nav.bayesian_dvl.intent_train import (
     ABORT_TYPES, ABORT_WARMUP_FAILURE, TEST8_AUDIT_BASE_SEED, TEST8_AUDIT_BASE_SEED_RETIRED,
@@ -135,8 +135,15 @@ IL_CORPUS_SCHEMA = "bdvl_intent_raw_il_corpus_v2"  # A3: arm-INDEPENDENT raw epi
 # (candidates now carry geometry and a count, so a V1 corpus materialises
 # into a different feature vector), and mixing the two would pool episodes
 # from two different feature schemas.
-STANDARD_IL_SEED_BASE = 2_600_000      # standard-scenario IL seeds (2_600_000-2_602_499)
-STANDARD_ONLINE_SEED_BASE = 2_700_000  # standard-scenario online seeds (2_700_000-2_704_999)
+# Order 12: the single "standard" block is split so circle and square draw
+# from DISJOINT seeds. Sharing a block would give the two geometries the same
+# episode identities, and sample_training_crowd_spec keys off the seed -- so
+# circle seed X and square seed X would be two different layouts wearing one
+# identity in every log, plan and inventory.
+CIRCLE_IL_SEED_BASE = 2_600_000        # circle IL seeds   (2_600_000-2_601_666)
+SQUARE_IL_SEED_BASE = 2_610_000        # square IL seeds   (2_610_000-2_611_666)
+CIRCLE_ONLINE_SEED_BASE = 2_700_000    # circle online     (2_700_000-2_703_333)
+SQUARE_ONLINE_SEED_BASE = 2_710_000    # square online     (2_710_000-2_713_332)
 # The standard validation block. The config's ``validation_seeds`` IS this
 # block -- it is not listed separately in the inventory, because listing the
 # same seeds twice would report a self-overlap.
@@ -392,7 +399,7 @@ def build_il_corpus(env_config_path: Path, cfg: IntentTrainingConfig, arm: str, 
     plan = il_episode_plan(cfg)
     if n_episodes is not None:
         per = max(1, n_episodes // 2)
-        plan = ([p for p in plan if p[0] == "standard"][:per]
+        plan = ([p for p in plan if p[0] in ("circle", "square")][:per]
                 + [p for p in plan if p[0] == "junction_crowd"][:per])
     episodes, identities = [], []
     for done, (scenario, ep_seed) in enumerate(plan, 1):
@@ -446,7 +453,7 @@ def materialized_cache_identity(cfg: IntentTrainingConfig, arm: str, corpus_sha2
         "cache_schema": MATERIALIZED_CACHE_SCHEMA,
         "corpus_sha256": corpus_sha256,
         "arm": arm,
-        "feature_schema": FEATURE_SCHEMA_V6,
+        "feature_schema": FEATURE_SCHEMA_V7,
         "scene_registry_sha256": scene_registry_sha256(cfg),
         "action_grid_hash": ActionGridSpec.from_env_config(str(DEFAULT_ENV_CONFIG)).table_hash(),
         # only the code that PRODUCES rows, not the code that consumes them
@@ -599,7 +606,7 @@ def _save_milestone(path: Path, art: TrainingArtifacts, cfg: IntentTrainingConfi
     """C4RF.3: a periodic SMALL artifact -- model + EMA + run identity, no
     replay. Enough to evaluate or restart-from-weights at that point in
     training; a full bit-exact resume uses the rolling A/B slots."""
-    ema_model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    ema_model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     art.ema.copy_to(ema_model)
 
     def _write(tmp: Path):
@@ -623,7 +630,7 @@ def _save_final_ema(path: Path, art: TrainingArtifacts, cfg: IntentTrainingConfi
     """Plan 2.2 point 14: the deployment/paper artifact must have the EMA
     as its ``model_state_dict``, so an ordinary loader gets the EMA
     weights -- not the raw weights with the EMA hidden in ``extra``."""
-    ema_model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    ema_model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     art.ema.copy_to(ema_model)
 
     def _write(tmp: Path):
@@ -644,7 +651,7 @@ def _save_final_ema(path: Path, art: TrainingArtifacts, cfg: IntentTrainingConfi
 def _build_artifacts(cfg: IntentTrainingConfig, seed: int, device: torch.device,
                      action_grid_hash: str, scene_hash: str) -> TrainingArtifacts:
     torch.manual_seed(seed)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6).to(device)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.learning_rate)
     return TrainingArtifacts(
         model=model, optimizer=optimizer, ema=EMAModel(model, decay=cfg.ema_decay),
@@ -705,7 +712,8 @@ def il_episode_plan(cfg: IntentTrainingConfig) -> List[tuple]:
     episode -- no cycling. Fails closed if the budget exceeds the frozen
     block rather than silently wrapping around and re-imitating the same
     initial layouts."""
-    plan = [("standard", STANDARD_IL_SEED_BASE + i) for i in range(cfg.il_episodes_standard)]
+    plan = [("circle", CIRCLE_IL_SEED_BASE + i) for i in range(cfg.il_episodes_circle)]
+    plan += [("square", SQUARE_IL_SEED_BASE + i) for i in range(cfg.il_episodes_square)]
     crowd = list(JUNCTION_CROWD_IL_SEEDS)
     if cfg.il_episodes_junction_crowd > len(crowd):
         raise IntentCLIError(
@@ -721,11 +729,19 @@ def online_episode_at(cfg: IntentTrainingConfig, index: int) -> tuple:
 
     C4RF.1: junction seeds come from a block DISJOINT from the IL block --
     previously online reused the exact same 200 seeds IL had already
-    imitated, so the RL phase explored no new initial layouts at all."""
-    if index % 2 == 0:
-        return "standard", STANDARD_ONLINE_SEED_BASE + index // 2
+    imitated, so the RL phase explored no new initial layouts at all.
+
+    Order 12: a fixed THREE-cycle (circle, square, junction_crowd) replaces
+    the old 1:1 alternation, so the three scenarios enter replay as separate
+    labels in roughly equal numbers and the scenario-uniform sampler cannot
+    let one geometry crowd out another."""
+    phase = index % 3
+    if phase == 0:
+        return "circle", CIRCLE_ONLINE_SEED_BASE + index // 3
+    if phase == 1:
+        return "square", SQUARE_ONLINE_SEED_BASE + index // 3
     crowd = list(JUNCTION_CROWD_ONLINE_SEEDS)
-    j = index // 2
+    j = index // 3
     if j >= len(crowd):
         raise IntentCLIError(
             f"online episode {index} needs junction seed #{j} but the frozen "
@@ -753,17 +769,25 @@ def _assert_not_formal_seed(seed: int) -> None:
     # cannot catch them. The audit suite and the formal suite use different
     # base seeds and both must be refused.
     if seed in _test8_derived_seeds():
+        from crowd_nav.bayesian_dvl.evaluation_protocol import DOMAIN_V3_DEV_BASE_SEED
         raise IntentCLIError(
             f"training tried to use seed {seed}, which is a Test8 episode identity "
-            f"(base {PAPER_MAIN_BASE_SEED} or {TEST8_AUDIT_BASE_SEED})")
+            f"or a frozen development identity (bases {PAPER_MAIN_BASE_SEED}, "
+            f"{TEST8_AUDIT_BASE_SEED}, {DOMAIN_V3_DEV_BASE_SEED})")
 
 
 @lru_cache(maxsize=1)
 def _test8_derived_seeds() -> frozenset:
     from crowd_nav.bayesian_dvl.intent_train import paper_main_jobs
     seeds = set()
+    from crowd_nav.bayesian_dvl.evaluation_protocol import (
+        DOMAIN_V3_DEV_BASE_SEED, DOMAIN_V3_DEV_EPISODES_PER_SCENARIO)
     for base in (PAPER_MAIN_BASE_SEED, TEST8_AUDIT_BASE_SEED, TEST8_AUDIT_BASE_SEED_RETIRED):
         seeds.update(s for _sc, s, _hd in paper_main_jobs(episodes_per_scenario=500, base_seed=base))
+    # Order 12 section 7: the domain-randomised development block is derived
+    # the same way and must be refused by training just as firmly.
+    seeds.update(s for _sc, s, _hd in paper_main_jobs(
+        episodes_per_scenario=DOMAIN_V3_DEV_EPISODES_PER_SCENARIO, base_seed=DOMAIN_V3_DEV_BASE_SEED))
     return frozenset(seeds)
 
 
@@ -801,21 +825,34 @@ def seed_inventory(cfg: IntentTrainingConfig) -> Dict[str, object]:
     # enumerated block; they are proven disjoint from every block and from
     # each other below.
     test8_blocks = {}
-    for label, base in (("test8_formal", PAPER_MAIN_BASE_SEED),
-                        ("test8_audit", TEST8_AUDIT_BASE_SEED),
-                        ("test8_audit_retired", TEST8_AUDIT_BASE_SEED_RETIRED)):
+    from crowd_nav.bayesian_dvl.evaluation_protocol import (
+        DOMAIN_V3_DEV_BASE_SEED, DOMAIN_V3_DEV_EPISODES_PER_SCENARIO)
+    for label, base, n_ep in (("test8_formal", PAPER_MAIN_BASE_SEED, 500),
+                              ("test8_audit", TEST8_AUDIT_BASE_SEED, 500),
+                              ("test8_audit_retired", TEST8_AUDIT_BASE_SEED_RETIRED, 500),
+                              # Order 12 section 7: the domain-randomised
+                              # development block. It joins the mutual-
+                              # exclusion check so training refuses it the same
+                              # way it refuses a paper seed.
+                              ("domain_v3_dev", DOMAIN_V3_DEV_BASE_SEED,
+                               DOMAIN_V3_DEV_EPISODES_PER_SCENARIO)):
         from crowd_nav.bayesian_dvl.intent_train import paper_main_jobs as _pmj
-        test8_blocks[label] = tuple(sorted({s for _sc, s, _hd in _pmj(episodes_per_scenario=500, base_seed=base)}))
+        test8_blocks[label] = tuple(sorted({s for _sc, s, _hd in _pmj(episodes_per_scenario=n_ep, base_seed=base)}))
     blocks.update(test8_blocks)
 
     # scenarios whose seeds are DERIVED rather than enumerated
     # C4RF.1 / audit point 4: the online_standard upper bound was reported
     # one HIGHER than the schedule ever produces (the last standard episode
     # is index online_total-2, i.e. offset online_total//2 - 1).
+    n_on = cfg.online_episodes_total
     derived = {
-        "il_standard": [STANDARD_IL_SEED_BASE, STANDARD_IL_SEED_BASE + cfg.il_episodes_standard - 1],
-        "online_standard": [STANDARD_ONLINE_SEED_BASE,
-                             STANDARD_ONLINE_SEED_BASE + (cfg.online_episodes_total + 1) // 2 - 1],
+        "il_circle": [CIRCLE_IL_SEED_BASE, CIRCLE_IL_SEED_BASE + cfg.il_episodes_circle - 1],
+        "il_square": [SQUARE_IL_SEED_BASE, SQUARE_IL_SEED_BASE + cfg.il_episodes_square - 1],
+        # three-cycle: phase 0 runs ceil(n/3) times, phase 1 ceil((n-1)/3)
+        "online_circle": [CIRCLE_ONLINE_SEED_BASE,
+                          CIRCLE_ONLINE_SEED_BASE + (n_on + 2) // 3 - 1],
+        "online_square": [SQUARE_ONLINE_SEED_BASE,
+                          SQUARE_ONLINE_SEED_BASE + (n_on + 1) // 3 - 1],
     }
     inventory = {
         "blocks": {k: {"n": len(v), "min": min(v), "max": max(v)} for k, v in blocks.items()},
@@ -883,6 +920,8 @@ def require_candidate_audit(cfg, audit_path: Path) -> dict:
 
 def cmd_preflight(args) -> int:
     cfg = load_intent_training_config(args.config)
+    from crowd_nav.bayesian_dvl.intent_config import assert_robot_visible_matches
+    assert_robot_visible_matches(cfg, args.env_config)
     grid = ActionGridSpec.from_env_config(str(args.env_config))
     table = grid.build_action_table()
     scene_hash = scene_registry_sha256(cfg)
@@ -928,7 +967,7 @@ def cmd_preflight(args) -> int:
         print(f"  memory          : {free / 1e9:.1f} GB free / {total / 1e9:.1f} GB total")
     if args.device != "cpu":
         dev = resolve_device(args.device)
-        probe = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6).to(dev)
+        probe = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7).to(dev)
         p = next(probe.parameters())
         print(f"device probe      : parameters really on {p.device}")
         if p.device.type != dev.type:
@@ -1030,6 +1069,10 @@ def cmd_train(args, resume: bool = False) -> int:
     # The comparison this project exists to make is only valid if full/mean/cv
     # differ in the belief treatment and nothing else; without this, nothing
     # stops five seeds for `full` and one for a baseline.
+    # Order 12: the declared visibility must match the env config that will
+    # actually build the episodes, checked where the env config path is known.
+    from crowd_nav.bayesian_dvl.intent_config import assert_robot_visible_matches
+    assert_robot_visible_matches(cfg, args.env_config)
     if args.formal_plan is not None:
         plan = json.loads(Path(args.formal_plan).read_text())
         assert_in_formal_plan(plan, args.training_arm, seed, code_hash=code_sha256(),
@@ -1359,7 +1402,7 @@ def cmd_train(args, resume: bool = False) -> int:
     def _run_development_if_due(done: int) -> None:
         if not _development_due(done) or telemetry.has_validation(done):
             return
-        evaluation_model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6).to(device)
+        evaluation_model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7).to(device)
         art.ema.copy_to(evaluation_model)
         dev_rows = run_development_validation(
             args.env_config,
@@ -1558,7 +1601,7 @@ def cmd_train(args, resume: bool = False) -> int:
     # A4: verify the deployment artifact loads and matches the live EMA
     # BEFORE reclaiming the GB-scale resume. If this check fails the resume
     # is kept, because it is the only way to recover the run.
-    verify = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    verify = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     load_intent_checkpoint(str(final_path), verify,
                             expected_action_grid_hash=action_grid_hash,
                             expected_scene_registry_sha256=scene_hash)
@@ -1588,7 +1631,7 @@ def cmd_train(args, resume: bool = False) -> int:
 
 def _load_eval_model(checkpoint: Path, cfg: IntentTrainingConfig, device: torch.device,
                      action_grid_hash: str, scene_hash: str) -> DistributionalValueModel:
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     load_intent_checkpoint(str(checkpoint), model, expected_action_grid_hash=action_grid_hash,
                             expected_scene_registry_sha256=scene_hash)
     return model.to(device)

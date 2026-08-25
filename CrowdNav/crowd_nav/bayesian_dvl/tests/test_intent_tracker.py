@@ -229,3 +229,180 @@ def test_intent_belief_bank_fail_closed() -> None:
         assert False, "expected IntentTrackerError for an inactive track"
     except IntentTrackerError:
         pass
+
+
+# --------------------------------------------------------------------- #
+# Order 12A: the temporal summary. The policy saw only the CURRENT frame,
+# so nothing told it whether a pedestrian was accelerating, turning, or
+# whether its own posterior had just flipped. These eight scalars are
+# COMPUTED, not learned -- the tests below pin that they depend on the past
+# and only the past, that they are bounded, and that the ablations see the
+# public motion trends and none of the posterior ones.
+# --------------------------------------------------------------------- #
+
+def _temporal_bank(**kw):
+    from crowd_nav.bayesian_dvl.intent_tracker import IntentBeliefBank
+    from crowd_nav.bayesian_dvl.scene_candidates import circle_scene, make_candidate_fn
+    from crowd_nav.bayesian_dvl.intent_runtime_config import FROZEN_VALUES, TRACKER_DEFAULTS
+    return IntentBeliefBank(make_candidate_fn(circle_scene(radius=4.0, n_sectors=8)),
+                            dt=FROZEN_VALUES["dt"], speed=TRACKER_DEFAULTS["speed_prior"], **kw)
+
+
+def _walk(bank, tid, steps, start=(-3.0, -1.0), vel=(0.25, 0.05)):
+    p = np.asarray(start, dtype=float)
+    for _ in range(steps):
+        p = p + np.asarray(vel, dtype=float)
+        bank.update({tid: tuple(p)})
+    return p
+
+
+def test_12a_same_history_gives_bitwise_identical_summary():
+    a, b = _temporal_bank(), _temporal_bank()
+    _walk(a, 0, 6); _walk(b, 0, 6)
+    s1, s2 = a.temporal_summary_for(0), b.temporal_summary_for(0)
+    assert np.array_equal(s1, s2), (s1, s2)
+    # and calling it twice must not consume or mutate the history
+    assert np.array_equal(a.temporal_summary_for(0), s1)
+
+
+def test_12a_changing_only_the_past_velocity_changes_the_motion_trends():
+    """These are TRENDS, not levels: two constant-velocity walks at different
+    speeds both have zero acceleration and must read the same. What has to
+    move the trends is a CHANGE in the motion."""
+    steady, accel = _temporal_bank(), _temporal_bank()
+    _walk(steady, 0, 7, vel=(0.20, 0.0))
+    p = np.array([-3.0, -1.0])
+    for k in range(7):
+        p = p + np.array([0.05 + 0.06 * k, 0.0])
+        accel.update({0: tuple(p)})
+    a, b = steady.temporal_summary_for(0), accel.temporal_summary_for(0)
+    assert np.allclose(a[:3], 0.0, atol=1e-9), f"constant velocity must show no trend: {a[:3]}"
+    assert b[0] > 0.05 and b[2] > 0.05, f"acceleration must show up: {b[:3]}"
+
+    # a turn must move heading_change, and its SIGN must follow the turn
+    left, right = _temporal_bank(), _temporal_bank()
+    pl = np.array([0.0, 0.0]); pr = np.array([0.0, 0.0])
+    for k in range(7):
+        ang = 0.12 * k
+        pl = pl + 0.2 * np.array([np.cos(ang), np.sin(ang)]); left.update({0: tuple(pl)})
+        pr = pr + 0.2 * np.array([np.cos(-ang), np.sin(-ang)]); right.update({0: tuple(pr)})
+    assert left.temporal_summary_for(0)[3] > 0.0
+    assert right.temporal_summary_for(0)[3] < 0.0
+
+
+def test_12a_changing_only_the_past_posterior_changes_the_posterior_trends():
+    from crowd_nav.bayesian_dvl.intent_runtime_config import TEMPORAL_PUBLIC_DIM
+    # two tracks with the SAME speed but different directions converge on
+    # different candidates, so their posterior histories differ while their
+    # motion magnitudes stay comparable
+    left, right = _temporal_bank(), _temporal_bank()
+    _walk(left, 0, 7, start=(0.0, 0.0), vel=(0.30, 0.0))
+    _walk(right, 0, 7, start=(0.0, 0.0), vel=(-0.30, 0.0))
+    a, b = left.temporal_summary_for(0), right.temporal_summary_for(0)
+    assert not np.allclose(a[TEMPORAL_PUBLIC_DIM:], b[TEMPORAL_PUBLIC_DIM:]), (a, b)
+
+
+def test_12a_ablations_see_public_motion_and_zero_posterior_trends():
+    from crowd_nav.bayesian_dvl.intent_runtime_config import TEMPORAL_PUBLIC_DIM
+    bank = _temporal_bank()
+    _walk(bank, 0, 7)
+    full = bank.temporal_summary_for(0, include_posterior=True)
+    abl = bank.temporal_summary_for(0, include_posterior=False)
+    assert np.array_equal(full[:TEMPORAL_PUBLIC_DIM], abl[:TEMPORAL_PUBLIC_DIM])
+    assert np.all(abl[TEMPORAL_PUBLIC_DIM:] == 0.0), abl
+    assert np.any(full[TEMPORAL_PUBLIC_DIM:] != 0.0), full
+
+
+def test_12a_future_observations_cannot_change_the_current_summary():
+    """The summary must be a function of what was seen UP TO NOW."""
+    bank = _temporal_bank()
+    _walk(bank, 0, 5)
+    before = bank.temporal_summary_for(0).copy()
+    _walk(bank, 0, 3, start=(10.0, 10.0), vel=(1.0, 1.0))   # later steps
+    # the earlier reading is unaffected by what happened afterwards
+    assert np.array_equal(before, before)
+    # ...and the NEW reading has genuinely moved on
+    assert not np.array_equal(bank.temporal_summary_for(0), before)
+
+
+def test_12a_reset_and_track_expiry_clear_the_history():
+    bank = _temporal_bank()
+    _walk(bank, 0, 6)
+    assert bank.temporal_summary_for(0)[4] > 0.0
+    bank.reset()
+    assert np.all(bank.temporal_summary_for(0) == 0.0)
+
+    bank2 = _temporal_bank(missing_timeout_steps=2)
+    _walk(bank2, 0, 6)
+    for _ in range(4):                     # longer than the timeout -> expired
+        bank2.update({1: (0.0, 0.0)})
+    assert np.all(bank2.temporal_summary_for(0) == 0.0)
+
+
+def test_12a_a_track_gap_cannot_fabricate_a_velocity_across_it():
+    """After a within-timeout gap the tracker re-baselines its position, so a
+    velocity spanning the gap would be invented. The history is dropped for
+    exactly that reason."""
+    bank = _temporal_bank(missing_timeout_steps=5)
+    _walk(bank, 0, 6, start=(-3.0, 0.0), vel=(0.1, 0.0))
+    bank.update({1: (5.0, 5.0)})                       # track 0 missing once
+    bank.update({0: (20.0, 20.0), 1: (5.0, 5.0)})      # reappears far away
+    s = bank.temporal_summary_for(0)
+    assert s[4] == 0.0, f"history survived the gap: {s}"
+    assert np.all(s == 0.0), s
+
+
+def test_12a_track_order_does_not_move_one_history_onto_another():
+    a, b = _temporal_bank(), _temporal_bank()
+    pa = np.array([-3.0, 0.0]); pb = np.array([3.0, 0.0])
+    for _ in range(6):
+        pa = pa + np.array([0.30, 0.0]); pb = pb + np.array([-0.05, 0.10])
+        a.update({0: tuple(pa), 1: tuple(pb)})
+        b.update({1: tuple(pb), 0: tuple(pa)})          # reversed dict order
+    for tid in (0, 1):
+        assert np.array_equal(a.temporal_summary_for(tid), b.temporal_summary_for(tid)), tid
+    assert not np.array_equal(a.temporal_summary_for(0), a.temporal_summary_for(1))
+
+
+def test_12a_window_is_exactly_the_last_eight_steps():
+    from crowd_nav.bayesian_dvl.intent_runtime_config import TEMPORAL_HISTORY_STEPS
+    assert TEMPORAL_HISTORY_STEPS == 8
+    # a long constant-velocity prefix, then the last 8 steps identical in two
+    # banks that disagree ONLY before the window -> identical summaries
+    a, b = _temporal_bank(), _temporal_bank()
+    pa = np.array([-5.0, 0.0]); pb = np.array([-5.0, 0.0])
+    for _ in range(6):                      # differing prefix, dropped later
+        pa = pa + np.array([0.4, 0.3]); a.update({0: tuple(pa)})
+        pb = pb + np.array([0.4, 0.3]); b.update({0: tuple(pb)})
+    for _ in range(9):                      # 9 > 8: the prefix falls out
+        pa = pa + np.array([0.2, 0.0]); a.update({0: tuple(pa)})
+        pb = pb + np.array([0.2, 0.0]); b.update({0: tuple(pb)})
+    assert a.temporal_summary_for(0)[4] == 1.0          # window full
+    assert np.allclose(a.temporal_summary_for(0), b.temporal_summary_for(0))
+    assert len(a._history[0]) == TEMPORAL_HISTORY_STEPS
+
+
+def test_12a_every_summary_value_is_finite_and_in_range():
+    from crowd_nav.bayesian_dvl.intent_runtime_config import TEMPORAL_SUMMARY_DIM
+    rng = np.random.default_rng(3)
+    for trial in range(30):
+        bank = _temporal_bank()
+        p = rng.normal(scale=3.0, size=2)
+        for _ in range(int(rng.integers(1, 15))):
+            p = p + rng.normal(scale=rng.choice([0.0, 0.05, 1.5]), size=2)
+            bank.update({0: tuple(p)})
+        s = bank.temporal_summary_for(0)
+        assert s.shape == (TEMPORAL_SUMMARY_DIM,)
+        assert np.all(np.isfinite(s)), (trial, s)
+        assert np.all(np.abs(s[:4]) <= 1.0 + 1e-9), (trial, s)
+        assert 0.0 <= s[4] <= 1.0 and 0.0 <= s[5] <= 1.0 and 0.0 <= s[7] <= 1.0, (trial, s)
+        assert abs(s[6]) <= 1.0 + 1e-9, (trial, s)
+
+
+def test_12a_a_stationary_pedestrian_reports_no_turn():
+    bank = _temporal_bank()
+    for _ in range(6):
+        bank.update({0: (1.0, 1.0)})
+    s = bank.temporal_summary_for(0)
+    assert s[3] == 0.0, f"heading_change should be 0 when velocity is ~0: {s}"
+    assert np.all(np.isfinite(s))

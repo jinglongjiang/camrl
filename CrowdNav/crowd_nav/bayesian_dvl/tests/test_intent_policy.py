@@ -1,4 +1,4 @@
-"""Split from selftest.py (guide/review point 1): FEATURE_SCHEMA_V6 feature-batch, checkpoint, and score_candidates_v5 tests. Shares the
+"""Split from selftest.py (guide/review point 1): FEATURE_SCHEMA_V7 feature-batch, checkpoint, and score_candidates_v5 tests. Shares the
 FULL original test namespace via ``from ..tests._common import *`` so
 every test body is copied VERBATIM (byte-identical) from the original
 monolithic file -- zero risk of a name/import mismatch during the split.
@@ -41,7 +41,7 @@ def test_intent_policy_feature_batch_shape_and_finite() -> None:
     humans = [HumanObservation(0, -0.6, 4.5, -1.0, 1.0, 0.3)]
     rng = np.random.default_rng(0)
     feat, mask = build_intent_human_feature_batch(bank, robot, humans, mode="full", rng=rng)
-    assert feat.shape == (20, HUMAN_FEATURE_DIM_V6)
+    assert feat.shape == (20, HUMAN_FEATURE_DIM_V7)
     assert mask.shape == (20,) and mask.dtype == bool
     assert np.all(np.isfinite(feat))
     assert mask[0] and not mask[1:].any()
@@ -60,7 +60,7 @@ def test_intent_policy_full_vs_mean_differ_in_multimodal_state() -> None:
     humans = [HumanObservation(0, 0.0, 3.9, 0.0, 1.0, 0.3)]
     action_table = ActionGridSpec.from_env_config(str(ENV_CONFIG_PATH)).build_action_table()
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     rf = intent_remaining_time_fraction(3.0, 35.0)
 
     feat_full, mask_full = build_intent_human_feature_batch(bank, robot, humans, mode="full", rng=np.random.default_rng(42), n_samples=200)
@@ -81,11 +81,11 @@ def test_intent_policy_full_vs_mean_differ_in_multimodal_state() -> None:
     assert not np.allclose(q_full, q_mean_scores), "full and mean must produce different action scores in a multimodal state"
 
 def test_intent_policy_checkpoint_roundtrip_and_fail_closed() -> None:
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     with tempfile.TemporaryDirectory() as d:
         path = str(Path(d) / "ckpt.pth")
         save_intent_checkpoint(model, path, action_grid_hash="hash_a", scene_registry_sha256="scene_a")
-        model2 = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+        model2 = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
         manifest = load_intent_checkpoint(path, model2, expected_action_grid_hash="hash_a", expected_scene_registry_sha256="scene_a")
         assert manifest["action_grid_hash"] == "hash_a"
         for p1, p2 in zip(model.state_dict().values(), model2.state_dict().values()):
@@ -136,7 +136,7 @@ def test_score_candidates_v5_repeated_calls_are_bit_identical() -> None:
     env_config_path = _env_config_path()
     action_table = np.asarray(ActionGridSpec.from_env_config(str(env_config_path)).build_action_table())
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     scene = public_junction_scene()
     bank = IntentBeliefBank(make_candidate_fn(scene), dt=FROZEN_VALUES["dt"], speed=1.0)
     bank.update({0: (0.1, 3.9)})
@@ -179,7 +179,7 @@ def test_c0_frozen_four_arm_definitions() -> None:
     # validity mask. The per-goal probability is column 0 of each candidate
     # row rather than a standalone p0..p7 block.
     n_cand = len(real_belief)
-    G, F, S = MAX_CANDIDATE_GOALS, CANDIDATE_FEATURE_DIM, HUMAN_SCALAR_DIM_V6
+    G, F, S = MAX_CANDIDATE_GOALS, CANDIDATE_FEATURE_DIM, HUMAN_SCALAR_DIM_V7
     ENTROPY, MARGIN = 8, 9
     FUT_DX, FUT_DY, SPREAD = 10, 11, 12
     MASK = slice(S + G * F, S + G * F + G)

@@ -15,13 +15,14 @@ from crowd_nav.bayesian_dvl.intent_evaluate import (
     IntentEvaluateError, RESULT_KINDS, completed_identities, initial_state_hash,
     run_persistent_evaluation, summarize_csv,
 )
-from crowd_nav.bayesian_dvl.intent_train import FORMAL_SIX_SCENARIOS, _make_standard_env
+from crowd_nav.bayesian_dvl.intent_train import (
+    FORMAL_SIX_SCENARIOS, _make_crowd_env, sample_training_crowd_spec)
 from crowd_nav.bayesian_dvl.junction_scenario import JUNCTION_CROWD_HELDOUT_SEEDS
 
 
 def _tiny_checkpoint(d: Path) -> Path:
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     p = d / "final_ema.pth"
     save_intent_checkpoint(model, str(p), action_grid_hash="h", scene_registry_sha256="s",
                             extra={"artifact_role": "final_ema"})
@@ -130,14 +131,18 @@ def test_c3_intent_policy_runs_a_real_episode_through_robot_act() -> None:
         ck = _tiny_checkpoint(Path(d))
         pol = IntentBDVLPolicy()
         pol.configure(_policy_config(ck))
-        env, robot = _make_standard_env(_env_config_path())
+        # Order 12: the crowd size is SAMPLED, so the episode must be built
+        # from the same spec the policy will be scored under -- a hardcoded 5
+        # would only test one draw of a 5-20 range.
+        spec = sample_training_crowd_spec(2_600_000, "circle")
+        env, robot = _make_crowd_env(_env_config_path(), spec)
         env.case_counter["train"] = 700001
         env.reset()
         robot.set_policy(pol)
         pol.set_env(env)
         pol.set_time_step(FROZEN_VALUES["dt"])
         pol.reset_episode_stats(suite_seed=0, episode_seed=700001)
-        assert len(env.humans) == 5
+        assert len(env.humans) == int(spec["human_num"]) >= 5
 
         indices = []
         for _ in range(12):
@@ -171,7 +176,7 @@ def test_c3_intent_policy_reset_clears_belief_between_episodes() -> None:
         ck = _tiny_checkpoint(Path(d))
         pol = IntentBDVLPolicy()
         pol.configure(_policy_config(ck))
-        env, robot = _make_standard_env(_env_config_path())
+        env, robot = _make_crowd_env(_env_config_path(), sample_training_crowd_spec(2_600_000, 'circle'))
         env.case_counter["train"] = 700001
         env.reset()
         robot.set_policy(pol); pol.set_env(env)
@@ -205,7 +210,7 @@ def test_c3_evaluator_persists_every_episode_with_the_full_metric_set() -> None:
     with tempfile.TemporaryDirectory() as d:
         d = Path(d)
         ck = _tiny_checkpoint(d)
-        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
         load_intent_checkpoint(str(ck), model)
         action_table = np.asarray(
             ActionGridSpec.from_env_config(str(_env_config_path())).build_action_table(), dtype=np.float64)
@@ -236,7 +241,7 @@ def test_c3_evaluator_resumes_by_identity_without_duplicating_or_skipping() -> N
     with tempfile.TemporaryDirectory() as d:
         d = Path(d)
         ck = _tiny_checkpoint(d)
-        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
         load_intent_checkpoint(str(ck), model)
         action_table = np.asarray(
             ActionGridSpec.from_env_config(str(_env_config_path())).build_action_table(), dtype=np.float64)
@@ -261,7 +266,7 @@ def test_c3_evaluator_keeps_result_kinds_and_ablation_arms_separate() -> None:
     with tempfile.TemporaryDirectory() as d:
         d = Path(d)
         ck = _tiny_checkpoint(d)
-        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
         load_intent_checkpoint(str(ck), model)
         action_table = np.asarray(
             ActionGridSpec.from_env_config(str(_env_config_path())).build_action_table(), dtype=np.float64)
@@ -293,7 +298,7 @@ def test_c3_ablation_arms_share_the_initial_state_but_may_diverge_after() -> Non
     with tempfile.TemporaryDirectory() as d:
         d = Path(d)
         ck = _tiny_checkpoint(d)
-        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+        model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
         load_intent_checkpoint(str(ck), model)
         action_table = np.asarray(
             ActionGridSpec.from_env_config(str(_env_config_path())).build_action_table(), dtype=np.float64)
@@ -311,7 +316,7 @@ def test_c3_ablation_arms_share_the_initial_state_but_may_diverge_after() -> Non
 
 
 def test_c3_initial_state_hash_detects_a_changed_start() -> None:
-    env, robot = _make_standard_env(_env_config_path())
+    env, robot = _make_crowd_env(_env_config_path(), sample_training_crowd_spec(2_600_000, 'circle'))
     env.case_counter["train"] = 700001
     env.reset()
     h1 = initial_state_hash(robot, env.humans)
@@ -427,16 +432,16 @@ def test_order1r_clearance_uses_the_simulator_swept_dmin() -> None:
     """
     from crowd_nav.bayesian_dvl.intent_evaluate import _run_one_episode, IntentEvaluateError
     from crowd_nav.bayesian_dvl.intent_train import _ScenarioEpisode
-    from crowd_nav.bayesian_dvl.intent_policy import HUMAN_FEATURE_DIM_V6
+    from crowd_nav.bayesian_dvl.intent_policy import HUMAN_FEATURE_DIM_V7
 
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     model.eval()
     action_table = np.asarray(
         ActionGridSpec.from_env_config(str(_env_config_path())).build_action_table(), dtype=np.float64)
 
     def run(patch_step):
-        ep = _ScenarioEpisode(_env_config_path(), "standard", 2_600_000)
+        ep = _ScenarioEpisode(_env_config_path(), "circle", 2_600_000)
         env = ep.env
         # push every human far away so a PRE-ACTION snapshot is large
         for h in env.humans:
@@ -470,3 +475,107 @@ def test_order1r_clearance_uses_the_simulator_swept_dmin() -> None:
         assert False, "expected IntentEvaluateError when env.step() returns no dmin"
     except IntentEvaluateError:
         pass
+
+
+# --------------------------------------------------------------------- #
+# Order 12 section 1 / 12B section 3: the robot is INVISIBLE to pedestrians.
+# Asserting the boolean proves only that a field was assigned. What matters
+# is the SEMANTICS: an invisible robot must not enter the pedestrians' own
+# ORCA, so moving it cannot change what they do.
+# --------------------------------------------------------------------- #
+
+def _first_human_actions_with_robot_at(px, py):
+    """One env, one seed, pedestrians stepped once -- with the robot placed
+    at (px, py). Everything else is identical."""
+    from crowd_nav.bayesian_dvl.intent_train import _make_crowd_env, sample_training_crowd_spec
+    from crowd_sim.envs.utils.action import ActionXY
+    spec = sample_training_crowd_spec(2_600_000, "circle")
+    env, robot = _make_crowd_env(_env_config_path(), spec)
+    env.case_counter["train"] = 700_101
+    env.reset()
+    before = [(h.px, h.py, h.gx, h.gy) for h in env.humans]
+    env.robot.px, env.robot.py = float(px), float(py)
+    env.robot.vx = env.robot.vy = 0.0
+    env.step(ActionXY(0.0, 0.0))
+    after = [(round(h.px, 12), round(h.py, 12), round(h.vx, 12), round(h.vy, 12)) for h in env.humans]
+    return robot.visible, before, after
+
+
+def test_order12_invisible_robot_does_not_change_what_pedestrians_do() -> None:
+    vis_a, start_a, act_a = _first_human_actions_with_robot_at(0.0, -4.0)
+    vis_b, start_b, act_b = _first_human_actions_with_robot_at(0.0, 0.0)
+    assert vis_a is False and vis_b is False
+    # same episode, same pedestrian initial states
+    assert start_a == start_b, "the two runs did not start from the same crowd"
+    # the robot moved from the edge to the centre of the crowd; if the
+    # pedestrians could see it, at least one would have steered differently
+    assert act_a == act_b, (
+        "pedestrian motion changed when the robot moved, so the robot is "
+        "entering their avoidance -- it is not invisible in effect")
+
+
+def test_order12_every_production_path_builds_an_invisible_robot() -> None:
+    """Not one builder may quietly re-enable visibility: IL collection,
+    online RL, the circle/square and junction training scenarios, and the
+    formal evaluation arenas all share the one definition."""
+    from pathlib import Path as _P
+    from crowd_nav.bayesian_dvl.intent_train import (
+        _ScenarioEpisode, build_formal_scenario_env, FORMAL_SIX_SCENARIOS)
+    ec = _env_config_path()
+    for scenario, seed in (("circle", 2_600_000), ("square", 2_610_000),
+                           ("junction", 96_001), ("junction_crowd", 2_100_000)):
+        ep = _ScenarioEpisode(ec, scenario, seed)
+        assert ep.robot.visible is False, scenario
+    for name in sorted(FORMAL_SIX_SCENARIOS):
+        _env, robot, _shape, _size = build_formal_scenario_env(_P(ec), name)
+        assert robot.visible is False, name
+
+
+def test_order12_production_source_never_forces_the_robot_visible() -> None:
+    import re
+    from pathlib import Path as _P
+    root = _P(__file__).resolve().parents[1]
+    pattern = re.compile(r"robot\.visible\s*=\s*True")
+    offenders = [f"{f.name}:{n}" for f in sorted(root.glob("*.py"))
+                 for n, line in enumerate(f.read_text().splitlines(), 1)
+                 if pattern.search(line)]
+    assert not offenders, "production code forces the robot visible: " + ", ".join(offenders)
+
+
+def test_order12a_bank_update_reaches_the_seventy_dim_network_input() -> None:
+    """End to end, not a private helper: real observations go into
+    bank.update(), and what comes out is the packed [20, 70] row the network
+    actually consumes, with the trend block in the right place."""
+    import numpy as _np
+    from crowd_nav.bayesian_dvl.intent_policy import build_intent_human_feature_batch
+    from crowd_nav.bayesian_dvl.intent_tracker import IntentBeliefBank
+    from crowd_nav.bayesian_dvl.scene_candidates import circle_scene, make_candidate_fn
+    from crowd_nav.bayesian_dvl.contracts import HumanObservation, RobotObservation
+    from crowd_nav.bayesian_dvl.intent_runtime_config import (
+        FROZEN_VALUES, TRACKER_DEFAULTS, HUMAN_FEATURE_DIM_V7,
+        HUMAN_SCALAR_IDX_TEMPORAL, TEMPORAL_PUBLIC_DIM, TEMPORAL_SUMMARY_DIM)
+
+    out = {}
+    for mode in ("full", "mean", "cv"):
+        bank = IntentBeliefBank(make_candidate_fn(circle_scene(radius=4.0, n_sectors=8)),
+                                dt=FROZEN_VALUES["dt"], speed=TRACKER_DEFAULTS["speed_prior"])
+        rng = _np.random.default_rng(11)
+        robot = RobotObservation(0.0, 0.0, 0.3, 0.0, 0.3, 3.0, 0.0, 1.0, 0.0)
+        for t in range(7):
+            humans = [HumanObservation(0, -2.0 + 0.3 * t, -1.0 + 0.1 * t, 1.2, 0.4, 0.3),
+                      HumanObservation(1, 2.0 - 0.2 * t, 1.0 - 0.15 * t, -0.8, -0.6, 0.3)]
+            bank.update({h.track_id: (h.px, h.py) for h in humans})
+            feats, mask = build_intent_human_feature_batch(
+                bank, robot, humans, mode=mode, rng=rng, horizon=8, n_samples=20)
+        out[mode] = feats
+        assert feats.shape[1] == HUMAN_FEATURE_DIM_V7 == 70
+        assert _np.all(_np.isfinite(feats))
+        assert mask[:2].all() and not mask[2:].any()
+
+    lo = HUMAN_SCALAR_IDX_TEMPORAL
+    pub, post = slice(lo, lo + TEMPORAL_PUBLIC_DIM), slice(lo + TEMPORAL_PUBLIC_DIM,
+                                                          lo + TEMPORAL_SUMMARY_DIM)
+    for arm in ("mean", "cv"):
+        assert _np.array_equal(out["full"][:2, pub], out[arm][:2, pub]), arm
+        assert _np.all(out[arm][:2, post] == 0.0), arm
+    assert _np.any(out["full"][:2, post] != 0.0)

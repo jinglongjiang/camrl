@@ -322,7 +322,7 @@ def scene_registry_sha256(cfg: IntentTrainingConfig) -> str:
     from crowd_nav.bayesian_dvl.junction_scenario import (
         SCENARIO_REGISTRY_ID, public_junction_crowd_scene,
     )
-    from crowd_nav.bayesian_dvl.intent_runtime_config import FEATURE_SCHEMA_V6, TRACKER_DEFAULTS
+    from crowd_nav.bayesian_dvl.intent_runtime_config import FEATURE_SCHEMA_V7, TRACKER_DEFAULTS
 
     payload = {
         "scenario_registry_id": SCENARIO_REGISTRY_ID,
@@ -360,7 +360,7 @@ def scene_registry_sha256(cfg: IntentTrainingConfig) -> str:
             k: TRACKER_DEFAULTS[k]
             for k in ("speed_prior", "estimate_speed", "speed_ema_alpha", "speed_min", "speed_max")
         },
-        "feature_schema": FEATURE_SCHEMA_V6,
+        "feature_schema": FEATURE_SCHEMA_V7,
     }
     blob = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(blob).hexdigest()

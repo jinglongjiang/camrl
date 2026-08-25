@@ -126,10 +126,10 @@ def run_development_validation(
     model.eval()
     try:
         scenario_seeds = {
-            "standard": tuple(standard_validation_seeds),
+            "circle": tuple(standard_validation_seeds),
             "junction_crowd": tuple(junction_validation_seeds),
         }
-        if not scenario_seeds["standard"] or not scenario_seeds["junction_crowd"]:
+        if not scenario_seeds["circle"] or not scenario_seeds["junction_crowd"]:
             raise IntentMonitorError("both development scenarios require non-empty seed sets")
         for scenario_index, (scenario, seeds) in enumerate(scenario_seeds.items()):
             for seed in seeds:

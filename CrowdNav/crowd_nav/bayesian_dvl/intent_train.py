@@ -26,7 +26,9 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from crowd_nav.bayesian_dvl.intent_runtime_config import ActionGridSpec, FROZEN_VALUES, TRACKER_DEFAULTS
+from crowd_nav.bayesian_dvl.intent_runtime_config import (
+    ActionGridSpec, FROZEN_VALUES, TRACKER_DEFAULTS, robot_visible_from,
+)
 from crowd_nav.bayesian_dvl.contracts import HumanObservation, RobotObservation
 from crowd_nav.bayesian_dvl.geometry_features import _robot_feature_vector, compute_action_features_array
 from crowd_nav.bayesian_dvl.iqn import expert_ranking_loss, quantile_huber_loss
@@ -34,7 +36,7 @@ from crowd_nav.bayesian_dvl.ranking import (
     build_action_equivalence_class, derive_action_equivalence_tolerance, nearest_action_index,
 )
 from crowd_nav.bayesian_dvl.intent_policy import (
-    HUMAN_FEATURE_DIM_V6, IntentPolicyError, build_intent_human_feature_batch, remaining_time_fraction,
+    HUMAN_FEATURE_DIM_V7, IntentPolicyError, build_intent_human_feature_batch, remaining_time_fraction,
     score_candidates_v5,
 )
 from crowd_nav.bayesian_dvl.intent_tracker import IntentBeliefBank
@@ -145,15 +147,66 @@ class EpisodeCollectionResult:
     discomfort_frequency: float = 0.0
 
 
-def _make_standard_env(env_config_path: Path, n_humans: int = 5):
+# Order 12 section 2. The old training distribution was a single point:
+# circle_crossing, 5 pedestrians, radius 4. Every Test8 scenario except
+# baseline_circle therefore asked the policy to extrapolate -- to square
+# geometry, to 10/12/20 pedestrians, to 6m/14m arenas -- and it collapsed
+# there while scoring 0.985 on the junction it was trained on.
+#
+# Training now samples a CONTINUOUS range instead. The six Test8 points are
+# then particular draws from that range rather than memorised layouts: if
+# the frozen test combinations were listed here directly, the result would
+# be coverage training and could not be reported as generalisation.
+TRAINING_CROWD_SALT = "bdvl_domain_randomized_v1"
+TRAINING_CROWD_SAMPLER_VERSION = 1
+TRAINING_CROWD_RANGES = {
+    #        human_num (inclusive)   size (continuous)
+    "circle": {"n": (5, 20), "size": (4.0, 6.0)},
+    "square": {"n": (5, 20), "size": (10.0, 14.0)},
+}
+
+
+def sample_training_crowd_spec(episode_seed: int, shape: str) -> Dict[str, float]:
+    """The scenario parameters for ONE training episode: deterministic in
+    ``episode_seed`` alone.
+
+    The seed fully determines the layout, so the same seed always rebuilds
+    the same episode -- which is what lets the materialiser reconstruct the
+    candidate scene later from nothing but the seed, and what makes the
+    corpus reproducible. The RNG is seeded from the episode seed and a fixed
+    salt; the global RNG is never touched, because a shared global stream
+    would make an episode's layout depend on how many episodes ran before it.
+    """
+    if shape not in TRAINING_CROWD_RANGES:
+        raise IntentTrainError(f"unknown training shape {shape!r}, expected one of "
+                               f"{sorted(TRAINING_CROWD_RANGES)}")
+    r = TRAINING_CROWD_RANGES[shape]
+    digest = hashlib.sha256(f"{TRAINING_CROWD_SALT}|{shape}|{int(episode_seed)}".encode()).digest()
+    rng = np.random.default_rng(int.from_bytes(digest[:8], "big"))
+    return {
+        "shape": shape,
+        "human_num": int(rng.integers(r["n"][0], r["n"][1] + 1)),
+        "size": float(rng.uniform(r["size"][0], r["size"][1])),
+    }
+
+
+def _make_crowd_env(env_config_path: Path, spec: Dict[str, float]):
+    """Build a circle- or square-crossing env matching ``spec`` exactly."""
     import configparser
+    shape = str(spec["shape"])
+    n_humans = int(spec["human_num"])
+    size = float(spec["size"])
     cfg = configparser.RawConfigParser(inline_comment_prefixes=(";", "#"), strict=False)
     if not cfg.read(str(env_config_path)):
         raise IntentTrainError(f"env config not found: {env_config_path}")
     cfg.set("sim", "human_num", str(n_humans))
     cfg.set("robot", "policy", "orca")
-    cfg.set("sim", "train_val_sim", "circle_crossing")
-    cfg.set("sim", "test_sim", "circle_crossing")
+    cfg.set("sim", "train_val_sim", f"{shape}_crossing")
+    cfg.set("sim", "test_sim", f"{shape}_crossing")
+    if shape == "square":
+        cfg.set("sim", "square_width", str(size))
+    else:
+        cfg.set("sim", "circle_radius", str(size))
     env = CrowdSim(); env.configure(cfg)
     env.phase = "train"
     robot = Robot(cfg, "robot")
@@ -164,14 +217,23 @@ def _make_standard_env(env_config_path: Path, n_humans: int = 5):
     # measurement (AttentionPool received zero gradient; traced to every
     # "standard" episode having exactly 1 human despite human_num=5).
     robot_orca.multiagent_training = True
-    robot.set_policy(robot_orca); robot.visible = True; robot.time_step = FROZEN_VALUES["dt"]
+    robot.set_policy(robot_orca)
+    # Order 12: the config is the single definition of visibility.
+    robot.visible = robot_visible_from(cfg)
+    robot.time_step = FROZEN_VALUES["dt"]
     robot.env = env
     env.set_robot(robot)
     return env, robot
 
 
 
-SCENARIOS = ("standard", "junction", "junction_crowd")
+# Order 12 section 3: "circle" and "square" are INDEPENDENT labels, not one
+# "standard" bucket. The online replay samples scenario-uniformly, so a
+# single label covering both geometries would let one of them dominate the
+# other inside its own share and would make the two indistinguishable in
+# every per-scenario metric.
+SCENARIOS = ("circle", "square", "junction", "junction_crowd")
+TRAINING_CROWD_SHAPES = ("circle", "square")
 
 
 class _ScenarioEpisode:
@@ -189,11 +251,19 @@ class _ScenarioEpisode:
         self._true_exit = None
         self._waypoint_reached = False
         self._is_heldout = is_heldout
-        if scenario == "standard":
-            self.env, self.robot = _make_standard_env(env_config_path)
+        if scenario in TRAINING_CROWD_SHAPES:
+            spec = sample_training_crowd_spec(episode_seed, scenario)
+            self.env, self.robot = _make_crowd_env(env_config_path, spec)
             self.env.case_counter["train"] = episode_seed % (2**32 - 1)
             self.env.reset()
-            self.scene = circle_scene(radius=float(FROZEN_VALUES.get("circle_radius", 4.0)) or 4.0, n_sectors=8)
+            if len(self.env.humans) != int(spec["human_num"]):
+                raise IntentTrainError(
+                    f"{scenario} seed {episode_seed}: sampled {int(spec['human_num'])} humans but the "
+                    f"env built {len(self.env.humans)}")
+            # the candidate provider must describe the SAME arena the
+            # pedestrians walk in; a mismatch puts every candidate goal
+            # somewhere no one is heading.
+            self.scene = _scene_for_scenario(scenario, is_heldout, episode_seed)
         elif scenario == "junction":
             cfg = JunctionEpisodeConfig(episode_seed=episode_seed, is_heldout=is_heldout)
             self.env, self.robot, self._true_exit = build_junction_episode(env_config_path, cfg)
@@ -231,7 +301,7 @@ def collect_orca_episode(
     env_config_path: Path, scenario: str, episode_seed: int, is_heldout: bool = False, gamma: float = 0.95,
     belief_mode: str = "full", n_samples: int = 60, horizon: int = 8,
 ) -> EpisodeCollectionResult:
-    """scenario in {"standard", "junction"}. Both build a real CrowdSim
+    """scenario in SCENARIOS. Each builds a real CrowdSim
     episode driven by ORCA (IL demonstration), record V5 features for the
     'full' ablation mode at every step (the demonstration itself always
     uses the richest belief; mean/cv/uniform are compared at EVAL time,
@@ -370,7 +440,7 @@ def materialize_arm_transitions(
     by test_c5_shared_raw_corpus_reproduces_per_arm_transitions)."""
     if mode not in ("full", "mean", "cv", "uniform"):
         raise IntentTrainError(f"unknown belief mode {mode!r}")
-    scene = _scene_for_scenario(raw.scenario, raw.is_heldout)
+    scene = _scene_for_scenario(raw.scenario, raw.is_heldout, raw.episode_seed)
     bank = IntentBeliefBank(make_candidate_fn(scene), dt=FROZEN_VALUES["dt"], speed=TRACKER_DEFAULTS["speed_prior"])
     rng = np.random.default_rng(raw.episode_seed)
     out: List[IntentTransition] = []
@@ -390,9 +460,21 @@ def materialize_arm_transitions(
     return out
 
 
-def _scene_for_scenario(scenario: str, is_heldout: bool):
-    if scenario == "standard":
-        return circle_scene(radius=float(FROZEN_VALUES.get("circle_radius", 4.0)) or 4.0, n_sectors=8)
+def _scene_for_scenario(scenario: str, is_heldout: bool, episode_seed: Optional[int] = None):
+    """The public candidate scene for one episode.
+
+    circle/square need the episode seed: their arena size is sampled per
+    episode, and the candidate geometry has to match it. The materialiser
+    rebuilds the scene from the seed alone, which is exactly why the sampler
+    is a pure function of the seed.
+    """
+    if scenario in TRAINING_CROWD_SHAPES:
+        if episode_seed is None:
+            raise IntentTrainError(f"{scenario} needs an episode seed to rebuild its arena size")
+        spec = sample_training_crowd_spec(int(episode_seed), scenario)
+        size = float(spec["size"])
+        return (square_scene(width=size, n_rows=4) if scenario == "square"
+                else circle_scene(radius=size, n_sectors=8))
     if scenario == "junction":
         return public_junction_scene()
     if scenario == "junction_crowd":
@@ -1428,7 +1510,10 @@ def build_formal_scenario_env(env_config_path: Path, scenario_name: str):
     robot = Robot(cfg, "robot")
     robot_orca = ORCA(); robot_orca.configure(cfg)
     robot_orca.multiagent_training = True  # see _make_standard_env's comment
-    robot.set_policy(robot_orca); robot.visible = True; robot.time_step = FROZEN_VALUES["dt"]
+    robot.set_policy(robot_orca)
+    # Order 12: the config is the single definition of visibility.
+    robot.visible = robot_visible_from(cfg)
+    robot.time_step = FROZEN_VALUES["dt"]
     robot.env = env
     env.set_robot(robot)
     return env, robot, shape, float(size)

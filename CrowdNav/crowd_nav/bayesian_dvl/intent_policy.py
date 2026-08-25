@@ -1,4 +1,4 @@
-"""Goal-intent main chain: FEATURE_SCHEMA_V6 feature builder, candidate
+"""Goal-intent main chain: FEATURE_SCHEMA_V7 feature builder, candidate
 scoring, and checkpoint contract (consolidation plan Order 4 item 3/5).
 
 Import graph is deliberately self-contained: config, normalization,
@@ -8,7 +8,7 @@ iqn, model -- NONE of belief.py / rollout.py / world_model.py / counterfactual.p
 what "final train/inference entry must not import the old branches" means
 at the actual Python import-graph level, not just "doesn't call it".
 
-Human feature layout (FEATURE_SCHEMA_V6, HUMAN_FEATURE_DIM_V6 = 62 dims).
+Human feature layout (FEATURE_SCHEMA_V7, HUMAN_FEATURE_DIM_V7 = 62 dims).
 V5 handed the network a bare p0..p7 vector whose slots were POSITIONAL;
 measured on the held-out junction crowd, p0 meant "left exit" for 412
 humans and "right exit" for 68 others, and no coordinates were supplied to
@@ -45,17 +45,17 @@ import torch
 
 from crowd_nav.bayesian_dvl import normalization as norm
 from crowd_nav.bayesian_dvl.intent_runtime_config import (
-    CANDIDATE_FEATURE_DIM, FEATURE_SCHEMA_V6, HUMAN_FEATURE_DIM_V6,
-    HUMAN_SCALAR_DIM_V6, MAX_CANDIDATE_GOALS, NORMALIZATION_CONSTANTS, FROZEN_VALUES,
-    TRAINING_CONTRACT_V6_EPISODE_BALANCED_REPLAY,
+    CANDIDATE_FEATURE_DIM, FEATURE_SCHEMA_V7, HUMAN_FEATURE_DIM_V7,
+    HUMAN_SCALAR_DIM_V7, MAX_CANDIDATE_GOALS, NORMALIZATION_CONSTANTS, FROZEN_VALUES,
+    TEMPORAL_SUMMARY_DIM, TRAINING_CONTRACT_V8_TEMPORAL_SUMMARY,
 )
 from crowd_nav.bayesian_dvl.contracts import HumanObservation, RobotObservation
 from crowd_nav.bayesian_dvl.geometry_features import _robot_feature_vector, compute_action_features_array
 from crowd_nav.bayesian_dvl.intent_tracker import IntentBeliefBank, IntentTrackerError
 from crowd_nav.bayesian_dvl.model import DistributionalValueModel
 
-# MAX_CANDIDATE_GOALS / CANDIDATE_FEATURE_DIM / HUMAN_SCALAR_DIM_V6 /
-# HUMAN_FEATURE_DIM_V6 live in intent_runtime_config so the packed layout has
+# MAX_CANDIDATE_GOALS / CANDIDATE_FEATURE_DIM / HUMAN_SCALAR_DIM_V7 /
+# HUMAN_FEATURE_DIM_V7 live in intent_runtime_config so the packed layout has
 # ONE definition shared by the feature builder and the encoder that unpacks it.
 MAX_HUMANS = 20
 
@@ -81,7 +81,7 @@ def _candidate_block(
 
     Every candidate carries its OWN geometry, so the network identifies a
     candidate by where it goes rather than by which slot it landed in. See
-    FEATURE_SCHEMA_V6 for why the slot index was not identifying.
+    FEATURE_SCHEMA_V7 for why the slot index was not identifying.
 
     ``show_candidates`` is False for the mean/cv arms, whose frozen
     definition is that they receive NO per-goal information. Their block is
@@ -125,6 +125,7 @@ def _intent_human_feature_vector(
     candidate_routes: Sequence[np.ndarray],
     waypoint_index: Sequence[int],
     show_candidates: bool,
+    temporal_summary: np.ndarray,
 ) -> np.ndarray:
     raw_dx, raw_dy = human.px - robot.px, human.py - robot.py
     raw_speed = float(np.hypot(human.vx, human.vy))
@@ -161,16 +162,27 @@ def _intent_human_feature_vector(
     # Candidate CARDINALITY as an explicit scalar. It is public scene
     # geometry (how many destinations exist), identical across all four arms,
     # and it cannot be recovered from the pooled candidate embedding when the
-    # block is all zeros -- see HUMAN_SCALAR_DIM_V6.
+    # block is all zeros -- see HUMAN_SCALAR_DIM_V7.
     norm_count = float(n) / float(MAX_CANDIDATE_GOALS)
 
-    # V6 packed row: scalars, then the candidate block, then its mask.
+    # Order 12A: the trend block is already bounded and finite by
+    # construction; it is asserted rather than re-clipped here so a bug in
+    # the summary surfaces instead of being silently squashed into range.
+    trend = np.asarray(temporal_summary, dtype=np.float32)
+    if trend.shape != (TEMPORAL_SUMMARY_DIM,):
+        raise IntentPolicyError(
+            f"temporal summary must be {TEMPORAL_SUMMARY_DIM} scalars, got {trend.shape}")
+    if not np.all(np.isfinite(trend)):
+        raise IntentPolicyError(f"temporal summary is not finite: {trend}")
+
+    # V7 packed row: scalars (incl. the trend block), candidate block, mask.
     return np.concatenate([
         np.array([dx, dy, rel_vx, rel_vy, radius, speed, ttc], dtype=np.float32),
         np.array([norm_age], dtype=np.float32),
         np.array([norm_entropy, top1_margin], dtype=np.float32),
         np.array([fdx, fdy, norm_spread], dtype=np.float32),
         np.array([norm_count], dtype=np.float32),
+        trend,
         cand_feats.reshape(-1), cand_mask,
     ])
 
@@ -219,7 +231,7 @@ def build_intent_human_feature_batch(
     horizon: int = 8,
     n_samples: int = 60,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Padded [MAX_HUMANS, HUMAN_FEATURE_DIM_V6] feature array + mask for
+    """Padded [MAX_HUMANS, HUMAN_FEATURE_DIM_V7] feature array + mask for
     ONE decision. ``mode`` in {full, mean, cv, uniform} -- this is the ONE
     place the ablation enters the network features, so all four arms share
     identical env trajectories/seeds and differ ONLY in what belief
@@ -261,7 +273,7 @@ def build_intent_human_feature_batch(
     """
     if mode not in ("full", "mean", "cv", "uniform"):
         raise IntentPolicyError(f"unknown mode {mode!r}")
-    features = np.zeros((MAX_HUMANS, HUMAN_FEATURE_DIM_V6), dtype=np.float32)
+    features = np.zeros((MAX_HUMANS, HUMAN_FEATURE_DIM_V7), dtype=np.float32)
     mask = np.zeros(MAX_HUMANS, dtype=bool)
     for i, human in enumerate(humans[:MAX_HUMANS]):
         try:
@@ -289,10 +301,17 @@ def build_intent_human_feature_batch(
             future_trajs = tracker.sample_futures(pos, vel, horizon=horizon, mode=mode, rng=rng, n_samples=n_samples)
         mean_delta, spread = _future_summary(future_trajs, cv_future)
         track_age = bank.track_age_for(human.track_id)
+        # mean/cv get the PUBLIC motion trends and no posterior trends: those
+        # three are functions of the full posterior, which is exactly what the
+        # ablation denies. Zeroing them there keeps the arms differing in the
+        # belief treatment and in nothing else.
+        summary = bank.temporal_summary_for(
+            human.track_id, include_posterior=(mode in ("full", "uniform")))
         features[i] = _intent_human_feature_vector(
             robot, human, network_belief, track_age=track_age, future_mean_delta=mean_delta,
             future_spread=spread, candidate_routes=tracker._routes,
-            waypoint_index=tracker._wp_idx, show_candidates=(mode in ("full", "uniform")))
+            waypoint_index=tracker._wp_idx, show_candidates=(mode in ("full", "uniform")),
+            temporal_summary=summary)
         mask[i] = True
     return features, mask
 
@@ -352,7 +371,7 @@ def score_candidates_v5(
 # with identical tensor shapes but was fit under the buggy
 # online-samples-get-ranking objective, so it MUST fail closed here rather
 # than be silently accepted.
-CHECKPOINT_SCHEMA_V7 = "bdvl_intent_checkpoint_v7_candidate_set"
+CHECKPOINT_SCHEMA_V8 = "bdvl_intent_checkpoint_v8_temporal_summary"
 
 
 def save_intent_checkpoint(
@@ -367,9 +386,9 @@ def save_intent_checkpoint(
     from ``feature_schema``: it pins the data/loss semantics the weights
     were fit under, which tensor shapes cannot distinguish."""
     payload = {
-        "checkpoint_schema": CHECKPOINT_SCHEMA_V7,
-        "feature_schema": FEATURE_SCHEMA_V6,
-        "training_contract_schema": TRAINING_CONTRACT_V6_EPISODE_BALANCED_REPLAY,
+        "checkpoint_schema": CHECKPOINT_SCHEMA_V8,
+        "feature_schema": FEATURE_SCHEMA_V7,
+        "training_contract_schema": TRAINING_CONTRACT_V8_TEMPORAL_SUMMARY,
         "model_state_dict": model.state_dict(),
         "action_grid_hash": action_grid_hash,
         "scene_registry_sha256": scene_registry_sha256,
@@ -397,14 +416,14 @@ def load_intent_checkpoint(
     # Retired schemas are refused by the equality check below. There is no
     # per-version branch any more: anything that is not the current schema
     # fails closed, which is what "no compat loading" has always meant.
-    if checkpoint["checkpoint_schema"] != CHECKPOINT_SCHEMA_V7:
-        raise IntentPolicyError(f"checkpoint schema {checkpoint['checkpoint_schema']!r} != {CHECKPOINT_SCHEMA_V7!r}, fail closed, no compat loading")
-    if checkpoint["feature_schema"] != FEATURE_SCHEMA_V6:
-        raise IntentPolicyError(f"feature schema {checkpoint['feature_schema']!r} != {FEATURE_SCHEMA_V6!r}, fail closed")
-    if checkpoint["training_contract_schema"] != TRAINING_CONTRACT_V6_EPISODE_BALANCED_REPLAY:
+    if checkpoint["checkpoint_schema"] != CHECKPOINT_SCHEMA_V8:
+        raise IntentPolicyError(f"checkpoint schema {checkpoint['checkpoint_schema']!r} != {CHECKPOINT_SCHEMA_V8!r}, fail closed, no compat loading")
+    if checkpoint["feature_schema"] != FEATURE_SCHEMA_V7:
+        raise IntentPolicyError(f"feature schema {checkpoint['feature_schema']!r} != {FEATURE_SCHEMA_V7!r}, fail closed")
+    if checkpoint["training_contract_schema"] != TRAINING_CONTRACT_V8_TEMPORAL_SUMMARY:
         raise IntentPolicyError(
             f"training contract {checkpoint['training_contract_schema']!r} != "
-            f"{TRAINING_CONTRACT_V6_EPISODE_BALANCED_REPLAY!r}, fail closed -- the loss semantics these "
+            f"{TRAINING_CONTRACT_V8_TEMPORAL_SUMMARY!r}, fail closed -- the loss semantics these "
             f"weights were fit under differ from what this code implements, and no shape check can "
             f"detect that")
     if expected_action_grid_hash is not None and checkpoint["action_grid_hash"] != expected_action_grid_hash:

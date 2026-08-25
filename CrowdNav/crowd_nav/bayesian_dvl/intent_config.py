@@ -38,7 +38,12 @@ class IntentTrainingConfig:
     scenario_registry_id: str
     # [il]
     il_episodes_total: int
-    il_episodes_standard: int
+    il_episodes_circle: int
+    il_episodes_square: int
+    robot_visible: bool
+    training_crowd_salt: str
+    training_crowd_sampler_version: int
+    training_crowd_ranges: str
     il_episodes_junction_crowd: int
     il_passes: int
     # [online]
@@ -121,7 +126,9 @@ class IntentTrainingConfig:
     #: getting this wrong: a config edit renamed the corpus file AND the
     #: in-file guard rejected the old one, making reuse impossible.
     CORPUS_IDENTITY_FIELDS = (
-        "il_episodes_total", "il_episodes_standard", "il_episodes_junction_crowd",
+        "il_episodes_total", "il_episodes_circle", "il_episodes_square",
+        "il_episodes_junction_crowd", "robot_visible", "training_crowd_salt",
+        "training_crowd_ranges",
         "gamma", "future_horizon", "future_n_samples",
         "feature_schema", "checkpoint_schema", "max_candidate_goals",
     )
@@ -158,6 +165,81 @@ def _positive_int_tuple(raw: str, field_name: str) -> Tuple[int, ...]:
     return values
 
 
+def _assert_domain_randomization_matches_code(cfg) -> None:
+    """The hashed declaration and the running behaviour must agree.
+
+    Order 12 exists partly because they did not: the env config said the
+    robot was invisible while every scenario builder assigned it visible, so
+    the provenance record described an experiment nobody ran. Declaring the
+    distribution in the config only helps if a mismatch is an error, so the
+    salt, the sampler version and the ranges are checked against the code that
+    actually draws the episodes.
+
+    The robot_visible cross-check lives in assert_robot_visible_matches(),
+    called from the CLI: the env config path is a CLI argument, and a loader
+    that assumed the two files sit in one directory would fail on every
+    legitimate config written to a temp dir.
+    """
+    from crowd_nav.bayesian_dvl.intent_train import (
+        TRAINING_CROWD_SALT, TRAINING_CROWD_RANGES, TRAINING_CROWD_SAMPLER_VERSION)
+    if cfg.training_crowd_salt != TRAINING_CROWD_SALT:
+        raise IntentConfigError(
+            f"config training_crowd_salt {cfg.training_crowd_salt!r} != code's {TRAINING_CROWD_SALT!r}")
+    if cfg.training_crowd_sampler_version != TRAINING_CROWD_SAMPLER_VERSION:
+        raise IntentConfigError(
+            f"config training_crowd_sampler_version {cfg.training_crowd_sampler_version} != "
+            f"code's {TRAINING_CROWD_SAMPLER_VERSION}")
+    code_ranges = "|".join(
+        f"{shape}:n[{r['n'][0]},{r['n'][1]}]:size[{r['size'][0]!r},{r['size'][1]!r}]"
+        for shape, r in sorted(TRAINING_CROWD_RANGES.items()))
+    if cfg.training_crowd_ranges != code_ranges:
+        raise IntentConfigError(
+            f"config training_crowd_ranges {cfg.training_crowd_ranges!r} != code's {code_ranges!r}")
+
+
+
+def assert_robot_visible_matches(cfg, env_config_path) -> None:
+    """The hashed declaration and the env config that builds the episodes
+    must agree on robot visibility.
+
+    Order 12 exists partly because they did not: the env config said one
+    thing while every scenario builder assigned the opposite, so the
+    provenance record described an experiment nobody ran.
+    """
+    import configparser
+    from crowd_nav.bayesian_dvl.intent_runtime_config import robot_visible_from
+    env = configparser.RawConfigParser(inline_comment_prefixes=(";", "#"), strict=False)
+    if not env.read(str(env_config_path)):
+        raise IntentConfigError(f"env config not found: {env_config_path}")
+    actual = robot_visible_from(env)
+    if actual != cfg.robot_visible:
+        raise IntentConfigError(
+            f"training config declares robot_visible={cfg.robot_visible} but "
+            f"{Path(env_config_path).name} says {actual}; the hashed record and the built "
+            f"episodes would disagree")
+
+
+def _canonical_crowd_ranges(parser) -> str:
+    """One order-independent string for the sampled distribution.
+
+    It goes into the corpus identity, so a widened human-count range or a
+    resized arena produces a DIFFERENT corpus rather than silently reusing
+    episodes drawn from the old distribution.
+    """
+    gf = parser.getfloat
+    gi = parser.getint
+    parts = []
+    for shape in ("circle", "square"):
+        n_lo, n_hi = gi("domain_randomization", f"{shape}_human_num_min"), gi("domain_randomization", f"{shape}_human_num_max")
+        s_lo, s_hi = gf("domain_randomization", f"{shape}_size_min"), gf("domain_randomization", f"{shape}_size_max")
+        if n_lo < 1 or n_hi < n_lo:
+            raise IntentConfigError(f"{shape} human_num range [{n_lo}, {n_hi}] is empty or non-positive")
+        if not (s_hi > s_lo > 0):
+            raise IntentConfigError(f"{shape} size range [{s_lo}, {s_hi}] is empty or non-positive")
+        parts.append(f"{shape}:n[{n_lo},{n_hi}]:size[{s_lo!r},{s_hi!r}]")
+    return "|".join(parts)
+
+
 def load_intent_training_config(path: Path = DEFAULT_TRAINING_CONFIG) -> IntentTrainingConfig:
     """Read + HARD-VALIDATE the formal config. Fails closed on anything
     inconsistent rather than silently training under a broken budget."""
@@ -183,8 +265,8 @@ def load_intent_training_config(path: Path = DEFAULT_TRAINING_CONFIG) -> IntentT
         if parser.has_option(section, key):
             raise IntentConfigError(f"config declares [{section}] {key}, which is {why}; remove it")
 
-    for section in ("schema", "il", "online", "optim", "exploration", "ranking", "iqn", "belief", "ema",
-                    "checkpoint", "monitoring", "seeds"):
+    for section in ("schema", "il", "domain_randomization", "online", "optim", "exploration",
+                    "ranking", "iqn", "belief", "ema", "checkpoint", "monitoring", "seeds"):
         if not parser.has_section(section):
             raise IntentConfigError(f"training config {path} is missing required section [{section}]")
 
@@ -195,7 +277,12 @@ def load_intent_training_config(path: Path = DEFAULT_TRAINING_CONFIG) -> IntentT
         checkpoint_schema=g("schema", "checkpoint_schema").strip(),
         scenario_registry_id=g("schema", "scenario_registry_id").strip(),
         il_episodes_total=gi("il", "il_episodes_total"),
-        il_episodes_standard=gi("il", "il_episodes_standard"),
+        il_episodes_circle=gi("il", "il_episodes_circle"),
+        il_episodes_square=gi("il", "il_episodes_square"),
+        robot_visible=parser.getboolean("domain_randomization", "robot_visible"),
+        training_crowd_salt=g("domain_randomization", "training_crowd_salt").strip(),
+        training_crowd_sampler_version=gi("domain_randomization", "training_crowd_sampler_version"),
+        training_crowd_ranges=_canonical_crowd_ranges(parser),
         il_episodes_junction_crowd=gi("il", "il_episodes_junction_crowd"),
         il_passes=gi("il", "il_passes"),
         online_episodes_total=gi("online", "online_episodes_total"),
@@ -255,17 +342,18 @@ def load_intent_training_config(path: Path = DEFAULT_TRAINING_CONFIG) -> IntentT
 def _validate(cfg: IntentTrainingConfig) -> None:
     # schema must match the CODE, not just be internally consistent
     from crowd_nav.bayesian_dvl.intent_runtime_config import (
-        FEATURE_SCHEMA_V6, TRAINING_CONTRACT_V6_EPISODE_BALANCED_REPLAY,
+        FEATURE_SCHEMA_V7, TRAINING_CONTRACT_V8_TEMPORAL_SUMMARY,
     )
-    from crowd_nav.bayesian_dvl.intent_policy import CHECKPOINT_SCHEMA_V7
-    if cfg.feature_schema != FEATURE_SCHEMA_V6:
-        raise IntentConfigError(f"config feature_schema {cfg.feature_schema!r} != code's {FEATURE_SCHEMA_V6!r}")
-    if cfg.training_contract_schema != TRAINING_CONTRACT_V6_EPISODE_BALANCED_REPLAY:
+    from crowd_nav.bayesian_dvl.intent_policy import CHECKPOINT_SCHEMA_V8
+    if cfg.feature_schema != FEATURE_SCHEMA_V7:
+        raise IntentConfigError(f"config feature_schema {cfg.feature_schema!r} != code's {FEATURE_SCHEMA_V7!r}")
+    _assert_domain_randomization_matches_code(cfg)
+    if cfg.training_contract_schema != TRAINING_CONTRACT_V8_TEMPORAL_SUMMARY:
         raise IntentConfigError(
             f"config training_contract_schema {cfg.training_contract_schema!r} != "
-            f"code's {TRAINING_CONTRACT_V6_EPISODE_BALANCED_REPLAY!r}")
-    if cfg.checkpoint_schema != CHECKPOINT_SCHEMA_V7:
-        raise IntentConfigError(f"config checkpoint_schema {cfg.checkpoint_schema!r} != code's {CHECKPOINT_SCHEMA_V7!r}")
+            f"code's {TRAINING_CONTRACT_V8_TEMPORAL_SUMMARY!r}")
+    if cfg.checkpoint_schema != CHECKPOINT_SCHEMA_V8:
+        raise IntentConfigError(f"config checkpoint_schema {cfg.checkpoint_schema!r} != code's {CHECKPOINT_SCHEMA_V8!r}")
 
     # Every tracker knob the config declares must be one the code actually
     # uses. These were previously hashed into provenance and then ignored,
@@ -296,9 +384,11 @@ def _validate(cfg: IntentTrainingConfig) -> None:
                 f"config {cfg_name}={declared!r} but the code uses TRACKER_DEFAULTS[{code_name!r}]={used!r}; "
                 "a declared value the code does not use is a provenance lie")
 
-    if cfg.il_episodes_standard + cfg.il_episodes_junction_crowd != cfg.il_episodes_total:
+    if (cfg.il_episodes_circle + cfg.il_episodes_square
+            + cfg.il_episodes_junction_crowd != cfg.il_episodes_total):
         raise IntentConfigError(
-            f"IL split {cfg.il_episodes_standard}+{cfg.il_episodes_junction_crowd} != total {cfg.il_episodes_total}")
+            f"IL split {cfg.il_episodes_circle}+{cfg.il_episodes_square}+"
+            f"{cfg.il_episodes_junction_crowd} != total {cfg.il_episodes_total}")
     if abs(cfg.mix_standard + cfg.mix_junction_crowd - 1.0) > 1e-9:
         raise IntentConfigError(f"online mix must sum to 1.0, got {cfg.mix_standard}+{cfg.mix_junction_crowd}")
     for name, v in (

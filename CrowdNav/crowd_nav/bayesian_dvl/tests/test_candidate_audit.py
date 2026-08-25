@@ -15,7 +15,7 @@ from crowd_nav.bayesian_dvl.candidate_audit import (
     MAX_UNEXPECTED_SINGLE_CANDIDATE_RATE, MAX_WORST_COVERAGE_ERROR_M, AuditResult,
     CandidateAuditError, audit_permutation_invariance, audit_scenario, run_pretraining_audit,
 )
-from crowd_nav.bayesian_dvl.intent_policy import HUMAN_FEATURE_DIM_V6
+from crowd_nav.bayesian_dvl.intent_policy import HUMAN_FEATURE_DIM_V7
 from crowd_nav.bayesian_dvl.junction_scenario import (
     junction_crowd_role_of_seed,
     AMBIGUOUS_TRACK_INDEX, JUNCTION_CROWD_HELDOUT_SEEDS, JUNCTION_CROWD_TRAIN_SEEDS,
@@ -131,7 +131,7 @@ def test_a_clean_audit_passes_and_records_its_budgets(tmp_path):
 
 def test_permutation_check_is_zero_for_the_pooled_encoder():
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     assert audit_permutation_invariance(model) == pytest.approx(0.0, abs=1e-7)
 
 

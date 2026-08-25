@@ -23,10 +23,15 @@ hidden goals produce the IDENTICAL belief.
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Sequence, Tuple
+from typing import Callable, Deque, Dict, List, Sequence, Tuple
 
 import numpy as np
+
+from crowd_nav.bayesian_dvl.intent_runtime_config import (
+    NORMALIZATION_CONSTANTS, TEMPORAL_HISTORY_STEPS, TEMPORAL_SUMMARY_DIM,
+)
 
 
 class IntentTrackerError(ValueError):
@@ -253,6 +258,22 @@ class GoalIntentTracker:
         return [self.roll_candidate_future(int(rng.choice(len(self.candidates), p=p)), pos, horizon) for _ in range(n_samples)]
 
 
+def _normalized_entropy(p: np.ndarray, log_k: float) -> float:
+    q = np.clip(np.asarray(p, dtype=np.float64), 1e-12, None)
+    q = q / q.sum()
+    return float(-(q * np.log(q)).sum() / log_k) if log_k > 0 else 0.0
+
+
+def _jensen_shannon_divergence(p: np.ndarray, q: np.ndarray) -> float:
+    """JSD(p, q) / log(2) -- in [0, 1], symmetric, and finite even when a
+    candidate has zero probability (KL alone is not)."""
+    a = np.clip(np.asarray(p, dtype=np.float64), 1e-12, None); a = a / a.sum()
+    b = np.clip(np.asarray(q, dtype=np.float64), 1e-12, None); b = b / b.sum()
+    m = 0.5 * (a + b)
+    kl = lambda x, y: float((x * np.log(x / y)).sum())
+    return float(np.clip(0.5 * (kl(a, m) + kl(b, m)) / np.log(2.0), 0.0, 1.0))
+
+
 class IntentBeliefBank:
     """Per-pedestrian intent trackers keyed by STABLE track_id (consolidation
     plan Order 4, item 5). Identity is bound to track_id, NEVER to list
@@ -288,11 +309,17 @@ class IntentBeliefBank:
         self._trackers: Dict[int, GoalIntentTracker] = {}
         self._missing: Dict[int, int] = {}
         self._age: Dict[int, int] = {}
+        # Order 12A: the last TEMPORAL_HISTORY_STEPS public observations and
+        # posteriors per track, keyed by track_id -- NEVER by list position,
+        # for the same reason the trackers are: reordering the observation
+        # dict must not move one pedestrian's history onto another.
+        self._history: Dict[int, Deque[Tuple[np.ndarray, np.ndarray]]] = {}
 
     def reset(self) -> None:
         self._trackers.clear()
         self._missing.clear()
         self._age.clear()
+        self._history.clear()
 
     def update(self, observations: Dict[int, Sequence[float]]) -> None:
         """``observations``: {track_id: observed_position[2]}. Order-invariant
@@ -305,11 +332,16 @@ class IntentBeliefBank:
                     del self._trackers[tid]
                     del self._missing[tid]
                     del self._age[tid]
+                    self._history.pop(tid, None)
                 else:
                     # within the timeout: keep the tracker but mark its stored
                     # position stale so reappearance re-baselines (no fake
                     # cross-gap velocity)
+                    # the tracker re-baselines its position on reappearance, so
+                    # a velocity spanning the gap would be fabricated; the
+                    # temporal history is dropped for exactly that reason.
                     self._trackers[tid].note_missing()
+                    self._history.pop(tid, None)
         for tid, pos in observations.items():
             position = np.asarray(pos, dtype=np.float64)
             if tid not in self._trackers:
@@ -318,9 +350,80 @@ class IntentBeliefBank:
                     candidates, dt=self._dt, speed=self._speed, **self._tracker_kwargs
                 )
                 self._age[tid] = 0
+                self._history.pop(tid, None)
             self._trackers[tid].update(position)
             self._missing[tid] = 0
             self._age[tid] += 1
+            hist = self._history.setdefault(tid, deque(maxlen=TEMPORAL_HISTORY_STEPS))
+            # push AFTER the tracker update so the stored posterior is the one
+            # that was current at this step; only past and present ever enter.
+            hist.append((position.copy(), np.asarray(self._trackers[tid].belief(), dtype=np.float64).copy()))
+
+    def temporal_summary_for(self, track_id: int, *, include_posterior: bool = True) -> np.ndarray:
+        """The Order 12A trend summary for one track: TEMPORAL_SUMMARY_DIM
+        scalars, every one bounded and finite.
+
+        Reads ONLY the stored history, which is appended after each update --
+        so a value here can never depend on data the policy would not have had
+        at that step. With fewer than two observations every trend is 0 and
+        only ``history_fill`` is informative, which is the honest encoding of
+        "nothing has been seen yet" rather than a fabricated zero-velocity.
+
+        ``include_posterior=False`` zeroes the three posterior trends for the
+        mean/cv ablations. They are computed from the FULL posterior, so an
+        ablation that saw them would be reading exactly the quantity it is
+        supposed to be denied -- the public motion trends are untouched, so
+        the arms still differ in the belief treatment and nothing else.
+        """
+        out = np.zeros(TEMPORAL_SUMMARY_DIM, dtype=np.float64)
+        hist = self._history.get(track_id)
+        if not hist:
+            return out
+        n = len(hist)
+        out[4] = float(n - 1) / float(TEMPORAL_HISTORY_STEPS - 1)   # history_fill
+        if n < 2:
+            return out
+
+        max_speed = float(NORMALIZATION_CONSTANTS["max_human_speed"]) or 1.0
+        (p_old, b_old), (p_prev, _), (p_now, b_now) = hist[0], hist[-2], hist[-1]
+        # velocity from consecutive PUBLIC positions -- the bank is never given
+        # a velocity, and deriving it keeps the summary a function of what the
+        # bank actually observed.
+        v_now = (np.asarray(p_now) - np.asarray(p_prev)) / self._dt
+        if n >= 3:
+            v_old = (np.asarray(hist[1][0]) - np.asarray(p_old)) / self._dt
+        else:
+            v_old = v_now
+
+        dv = (v_now - v_old) / max_speed
+        out[0] = float(np.clip(dv[0], -1.0, 1.0))
+        out[1] = float(np.clip(dv[1], -1.0, 1.0))
+        out[2] = float(np.clip(
+            (float(np.linalg.norm(v_now)) - float(np.linalg.norm(v_old))) / max_speed, -1.0, 1.0))
+
+        # heading is undefined for a stationary pedestrian; report no turn
+        # rather than the arbitrary angle of a numerical-noise velocity.
+        if float(np.linalg.norm(v_now)) > 1e-6 and float(np.linalg.norm(v_old)) > 1e-6:
+            d = float(np.arctan2(v_now[1], v_now[0]) - np.arctan2(v_old[1], v_old[0]))
+            d = (d + np.pi) % (2.0 * np.pi) - np.pi
+            out[3] = float(np.clip(d / np.pi, -1.0, 1.0))
+
+        if not include_posterior:
+            return out
+
+        b_old = np.asarray(b_old, dtype=np.float64)
+        b_now = np.asarray(b_now, dtype=np.float64)
+        if b_old.shape == b_now.shape and b_old.size > 0:
+            out[5] = _jensen_shannon_divergence(b_old, b_now)
+            k = int(b_now.size)
+            if k > 1:
+                log_k = float(np.log(k))
+                out[6] = float(np.clip(
+                    (_normalized_entropy(b_now, log_k) - _normalized_entropy(b_old, log_k)), -1.0, 1.0))
+            top1 = int(np.argmax(b_now))
+            same = sum(1 for _, b in hist if b.shape == b_now.shape and int(np.argmax(b)) == top1)
+            out[7] = float(same) / float(n)
+        return out
 
     def belief_for(self, track_id: int) -> np.ndarray:
         if track_id not in self._trackers:

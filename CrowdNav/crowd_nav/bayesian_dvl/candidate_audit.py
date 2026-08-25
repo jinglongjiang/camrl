@@ -40,7 +40,7 @@ import numpy as np
 import torch
 
 from crowd_nav.bayesian_dvl.intent_runtime_config import (
-    CANDIDATE_FEATURE_DIM, FEATURE_SCHEMA_V6, FROZEN_VALUES, HUMAN_SCALAR_DIM_V6,
+    CANDIDATE_FEATURE_DIM, FEATURE_SCHEMA_V7, FROZEN_VALUES, HUMAN_SCALAR_DIM_V7,
     MAX_CANDIDATE_GOALS, TRACKER_DEFAULTS,
 )
 from crowd_nav.bayesian_dvl.intent_tracker import IntentBeliefBank
@@ -283,7 +283,7 @@ def audit_permutation_invariance(model, n_candidates: int = 5, n_perms: int = 8,
     the encoder pools, non-zero the moment anything reads a slot index."""
     import torch
     rng = np.random.default_rng(seed)
-    S, G, F = HUMAN_SCALAR_DIM_V6, MAX_CANDIDATE_GOALS, CANDIDATE_FEATURE_DIM
+    S, G, F = HUMAN_SCALAR_DIM_V7, MAX_CANDIDATE_GOALS, CANDIDATE_FEATURE_DIM
     row = np.zeros(S + G * F + G, dtype=np.float32)
     row[:S] = rng.normal(scale=0.3, size=S)
     cands = rng.normal(size=(n_candidates, F))
@@ -403,7 +403,7 @@ def run_candidate_audit(cfg, env_config: Path, out_path: Path, n_episodes: int =
               f"flat {r.persistently_flat_rate:.1%} | {'PASS' if r.passed else 'FAIL'}", flush=True)
 
     torch.manual_seed(0)
-    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
     delta = audit_permutation_invariance(model)
     print(f"  permutation invariance   max delta {delta:.2e}", flush=True)
 
@@ -489,7 +489,7 @@ def run_test8_candidate_audit(cfg, env_config: Path, out_path: Path, base_seed: 
     from crowd_nav.bayesian_dvl.candidate_audit import audit_permutation_invariance
     from crowd_nav.bayesian_dvl.model import DistributionalValueModel
     torch.manual_seed(0)
-    delta = audit_permutation_invariance(DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V6))
+    delta = audit_permutation_invariance(DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7))
     print(f"  permutation invariance   max delta {delta:.2e}", flush=True)
 
     payload = run_pretraining_audit(results, delta)      # raises on any failure
@@ -527,7 +527,7 @@ from crowd_nav.bayesian_dvl.junction_scenario import (  # noqa: E402
     JUNCTION_CROWD_HELDOUT_SEEDS, JUNCTION_CROWD_TRAIN_SEEDS,
 )
 from crowd_nav.bayesian_dvl.model import DistributionalValueModel  # noqa: E402
-from crowd_nav.bayesian_dvl.intent_policy import HUMAN_FEATURE_DIM_V6  # noqa: E402
+from crowd_nav.bayesian_dvl.intent_policy import HUMAN_FEATURE_DIM_V7  # noqa: E402
 from crowd_nav.bayesian_dvl.intent_config import (  # noqa: E402
     IntentConfigError, load_intent_training_config,
 )
@@ -560,7 +560,7 @@ def audit_identity(cfg) -> dict:
     return {
         "scene_registry_sha256": scene_registry_sha256(cfg),
         "scenario_registry_id": SCENARIO_REGISTRY_ID,
-        "feature_schema": FEATURE_SCHEMA_V6,
+        "feature_schema": FEATURE_SCHEMA_V7,
         "materialization_code_sha256": h.hexdigest(),
     }
 
