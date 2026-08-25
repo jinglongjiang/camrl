@@ -589,15 +589,22 @@ def test_c4rf_il_corpus_is_immutable_shared_and_identity_checked() -> None:
                 (done, total, scenario, seed, raw.outcome, len(raw.steps))),
         )
         assert path.exists() and path.with_suffix(".manifest.json").exists()
-        assert [row[:2] for row in progress] == [(1, 2), (2, 2)]
-        assert all(row[2] in ("circle", "junction_crowd") and row[5] > 0 for row in progress)
+        # Order 14: one episode per planned scenario, so the pilot total follows
+        # the scenario count instead of a hardcoded 2.
+        planned = {sc for sc, _ in il_episode_plan(cfg)}
+        n_sc = len(planned)
+        assert [row[:2] for row in progress] == [(i, n_sc) for i in range(1, n_sc + 1)]
+        assert {row[2] for row in progress} == planned, (
+            "a pilot must exercise every planned scenario -- it used to draw circle-only "
+            "because circle and square shared one bucket")
+        assert all(row[5] > 0 for row in progress)
         assert meta["training_arm"] is None, "A3: the corpus records no arm"
         assert meta["n_transitions"] > 0
         assert len(meta["corpus_sha256"]) == 64
         manifest = json.loads(path.with_suffix(".manifest.json").read_text())
         assert len(manifest["episode_identities"]) == meta["n_episodes"]
         for scenario, seed, n_trans, outcome in manifest["episode_identities"]:
-            assert scenario in ("circle", "junction_crowd") and n_trans > 0
+            assert scenario in planned and n_trans > 0
             assert outcome in ("success", "collision", "timeout")
 
         # a second load is byte-identical -> the 5 seeds really share it
@@ -608,7 +615,7 @@ def test_c4rf_il_corpus_is_immutable_shared_and_identity_checked() -> None:
                 (done, total, n_transitions)),
         )
         t2, m2 = load_il_corpus(path, cfg, "full")
-        assert [row[:2] for row in materialize_progress] == [(1, 2), (2, 2)]
+        assert [row[:2] for row in materialize_progress] == [(i, n_sc) for i in range(1, n_sc + 1)]
         assert materialize_progress[-1][2] == meta["n_transitions"]
         assert m1["corpus_sha256"] == m2["corpus_sha256"] == meta["corpus_sha256"]
         assert len(t1) == len(t2) == meta["n_transitions"]
@@ -1193,31 +1200,6 @@ def test_order2w_audit_episodes_are_held_out_of_replay_entirely() -> None:
             assert il_audit_identity(audit_rows) != il_audit_identity(train_rows[:len(audit_rows)])
 
 
-def test_order4_production_audit_selector_is_fixed_512_and_balanced() -> None:
-    """The production selector must not silently score every held-out row.
-
-    The previous wiring passed all 4k+ held-out rows directly to the health
-    gate even though the frozen contract is 256 rows per scenario.
-    """
-    rows = [object() for _ in range(700)]
-    labels = ["circle"] * 350 + ["junction_crowd"] * 350
-    selected = _select_il_audit_rows(rows, labels, is_pilot=False)
-    assert len(selected) == 512
-    assert len({id(x) for x in selected}) == 512
-    assert set(selected) <= set(rows)
-
-    # A tiny pilot remains usable, but a formal run must fail closed when the
-    # frozen per-scenario minimum cannot be formed.
-    tiny_rows = [object() for _ in range(10)]
-    tiny_labels = ["circle"] * 5 + ["junction_crowd"] * 5
-    assert _select_il_audit_rows(tiny_rows, tiny_labels, is_pilot=True) == tiny_rows
-    try:
-        _select_il_audit_rows(tiny_rows, tiny_labels, is_pilot=False)
-        assert False, "formal run must reject an undersized fixed audit set"
-    except IntentCLIError:
-        pass
-
-
 def test_order5w_formal_plan_pairs_the_three_arms_on_the_same_seeds() -> None:
     """Order 5W: the pairing guard must be wired into the CLI, not merely
     exist as a helper."""
@@ -1716,3 +1698,75 @@ def test_order12_env_and_candidate_geometry_agree_for_both_shapes() -> None:
             assert not np.allclose(
                 np.asarray([d.position for d in got.destinations]),
                 np.asarray([d.position for d in wrong.destinations])), (shape, seed)
+
+
+def _mk_demo_row(seed: int = 0):
+    """One minimal demo transition -- content is irrelevant to audit SIZING."""
+    from crowd_nav.bayesian_dvl.intent_train import IntentTransition
+    from crowd_nav.bayesian_dvl.intent_policy import MAX_HUMANS
+    from crowd_nav.bayesian_dvl.intent_runtime_config import HUMAN_FEATURE_DIM_V7
+    from crowd_nav.bayesian_dvl.set_encoder import ACTION_FEATURE_DIM, ROBOT_FEATURE_DIM
+    rng = np.random.default_rng(seed)
+    a = rng.normal(size=(80, ACTION_FEATURE_DIM))
+    hf = np.zeros((MAX_HUMANS, HUMAN_FEATURE_DIM_V7)); hm = np.zeros(MAX_HUMANS, dtype=bool)
+    hf[0] = rng.normal(size=HUMAN_FEATURE_DIM_V7); hm[0] = True
+    return IntentTransition(
+        robot_features=rng.normal(size=ROBOT_FEATURE_DIM), human_features=hf, human_mask=hm,
+        action_index=0, action_features=a[0], all_action_features=a,
+        remaining_fraction=0.5, source_role="demo", expert_action_indices=(0,),
+        reward=0.0, mc_return=0.0)
+
+
+def test_il_audit_contract_is_checked_against_the_training_plan() -> None:
+    """The audit is N rows PER SCENARIO, over exactly the scenarios the
+    training plan declares.
+
+    Two bugs meet here. A hardcoded 512 (written for two scenarios) survived
+    Order 12 adding a third, and the run died with "produced 768 rows,
+    expected 512" -- after a 6.7-hour materialisation, because this check
+    runs immediately after it. Deriving the total from whatever scenarios
+    happen to appear would have fixed the crash and hidden the worse case: a
+    formal run that lost a scenario would still pass, on a smaller audit set.
+    So the SET is validated, not counted.
+    """
+    from crowd_nav.bayesian_dvl.intent_train_cli import _select_il_audit_rows, il_episode_plan
+    from crowd_nav.bayesian_dvl.intent_train import IL_AUDIT_PER_SCENARIO
+
+    PLAN = {"circle", "square", "junction_crowd"}
+    cfg = load_intent_training_config(DEFAULT_TRAINING_CONFIG)
+    assert {sc for sc, _ in il_episode_plan(cfg)} == PLAN, "the formal plan is no longer three scenarios"
+
+    def rows_for(scenarios, per):
+        rows, labels = [], []
+        for sc in scenarios:
+            for k in range(per):
+                rows.append(_mk_demo_row(seed=abs(hash((sc, k))) % 10_000))
+                labels.append(sc)
+        return rows, labels
+
+    # exactly the planned scenarios, enough rows -> exactly 256 x 3
+    rows, labels = rows_for(sorted(PLAN), IL_AUDIT_PER_SCENARIO + 7)
+    picked = _select_il_audit_rows(rows, labels, is_pilot=False, expected_scenarios=PLAN)
+    assert len(picked) == IL_AUDIT_PER_SCENARIO * 3 == 768
+
+    # a MISSING scenario must fail, not silently audit on a smaller set
+    rows, labels = rows_for(["circle", "square"], IL_AUDIT_PER_SCENARIO + 7)
+    with pytest.raises(Exception) as exc:
+        _select_il_audit_rows(rows, labels, is_pilot=False, expected_scenarios=PLAN)
+    assert "scenario mismatch" in str(exc.value) and "junction_crowd" in str(exc.value)
+
+    # an EXTRA scenario must fail too
+    rows, labels = rows_for(sorted(PLAN) + ["extra"], IL_AUDIT_PER_SCENARIO + 7)
+    with pytest.raises(Exception) as exc:
+        _select_il_audit_rows(rows, labels, is_pilot=False, expected_scenarios=PLAN)
+    assert "scenario mismatch" in str(exc.value) and "extra" in str(exc.value)
+
+    # right scenarios, too few rows in one of them -> a formal run fails closed
+    rows, labels = rows_for(sorted(PLAN), IL_AUDIT_PER_SCENARIO)
+    with pytest.raises(Exception) as exc:
+        _select_il_audit_rows(rows[:-5], labels[:-5], is_pilot=False, expected_scenarios=PLAN)
+    assert "768" in str(exc.value), str(exc.value)
+
+    # ...while a pilot keeps its small-set behaviour
+    picked = _select_il_audit_rows(rows[:-5], labels[:-5], is_pilot=True, expected_scenarios=PLAN)
+    assert len(picked) == len(rows) - 5

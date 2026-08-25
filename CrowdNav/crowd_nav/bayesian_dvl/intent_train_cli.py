@@ -62,7 +62,7 @@ from crowd_nav.bayesian_dvl.intent_train import (
     FORMAL_EVAL_HELDOUT_SEEDS, FORMAL_SIX_SCENARIOS, PAPER_MAIN_BASE_SEED,
     STANDARD_DEV_DIAGNOSTIC_SEEDS, STANDARD_SELECTION_DEV_SEEDS, JUNCTION_SELECTION_DEV_SEEDS,
     PAPER_MAIN_EPISODES_PER_SCENARIO, EMAModel,
-    IntentReplay, paper_main_jobs, IL_AUDIT_SET_SIZE, IL_AUDIT_PER_SCENARIO,
+    IntentReplay, paper_main_jobs, IL_AUDIT_PER_SCENARIO,
     build_il_audit_set,
     il_audit_identity, evaluate_il_audit, AuditRecorder, run_ranking_warmup,
     expert_rank_diagnostics, build_formal_plan, assert_in_formal_plan,
@@ -92,35 +92,53 @@ class IntentCLIError(RuntimeError):
     pass
 
 
-def _select_il_audit_rows(audit_rows, scenario_labels, *, is_pilot: bool):
+def _select_il_audit_rows(audit_rows, scenario_labels, *, is_pilot: bool,
+                          expected_scenarios):
     """Select the fixed, balanced IL audit rows used by the health gate.
 
     The episode split establishes independence from replay. This second,
     deterministic selection establishes the fixed-size audit contract:
-    256 rows per scenario, 512 total. Tiny engineering pilots may have too
-    few held-out rows; they retain the small-pilot behavior, while a formal
-    run fails closed instead of silently changing the audit definition.
+    IL_AUDIT_PER_SCENARIO rows per scenario, balanced across every scenario
+    the corpus contains. Tiny engineering pilots may have too few held-out
+    rows; they retain the small-pilot behavior, while a formal run fails
+    closed instead of silently changing the audit definition.
+
+    ``expected_scenarios`` comes from the training plan and is REQUIRED. The
+    total used to be a literal 512, written when there were exactly two
+    training scenarios; Order 12 added a third and the run died right after a
+    6.7-hour materialisation with "produced 768 rows, expected 512".
+
+    Deriving the total from whatever scenarios happen to appear would fix
+    that crash and introduce a quieter bug: a formal run that silently lost a
+    scenario would still "pass", just with a smaller audit set. The scenario
+    SET is therefore checked against the plan, not counted.
     """
     if len(audit_rows) != len(scenario_labels):
         raise IntentCLIError(
             f"IL audit row/label length mismatch: {len(audit_rows)} != {len(scenario_labels)}")
     counts = Counter(str(sc) for sc in scenario_labels)
-    if len(counts) < 2:
-        raise IntentCLIError(f"IL audit set needs both scenarios, got {sorted(counts)}")
-    if any(n < IL_AUDIT_PER_SCENARIO for n in counts.values()):
+    actual = frozenset(counts)
+    expected_set = frozenset(str(sc) for sc in expected_scenarios)
+    if not expected_set:
+        raise IntentCLIError("expected_scenarios must be non-empty")
+    if actual != expected_set:
+        raise IntentCLIError(
+            f"IL audit scenario mismatch: actual={sorted(actual)}, expected={sorted(expected_set)}")
+    expected_rows = IL_AUDIT_PER_SCENARIO * len(expected_set)
+
+    if any(counts[sc] < IL_AUDIT_PER_SCENARIO for sc in expected_set):
         if not is_pilot:
             raise IntentCLIError(
-                "formal run cannot build the frozen 512-row IL audit set: "
-                f"rows per scenario are {dict(sorted(counts.items()))}, "
-                f"need at least {IL_AUDIT_PER_SCENARIO} each")
+                f"formal run cannot build the frozen {expected_rows}-row IL audit set: "
+                f"rows per scenario={dict(sorted(counts.items()))}")
         return list(audit_rows)
 
     labels_by_id = {id(t): str(sc) for t, sc in zip(audit_rows, scenario_labels)}
     selected = build_il_audit_set(
         audit_rows, lambda t: labels_by_id[id(t)], n_per_scenario=IL_AUDIT_PER_SCENARIO)
-    if len(selected) != IL_AUDIT_SET_SIZE:
+    if len(selected) != expected_rows:
         raise IntentCLIError(
-            f"IL audit selector produced {len(selected)} rows, expected {IL_AUDIT_SET_SIZE}")
+            f"IL audit selector produced {len(selected)} rows, expected {expected_rows}")
     return selected
 
 
@@ -392,15 +410,27 @@ def il_corpus_path(corpus_dir: Path, arm: str, cfg: IntentTrainingConfig) -> Pat
     return Path(corpus_dir) / f"il_corpus_raw_{cfg.corpus_identity_hash()[:12]}.pth"
 
 
+def _pilot_plan_length(cfg: IntentTrainingConfig, n_episodes: int):
+    """The episodes a pilot will actually collect -- same rule as
+    build_il_corpus, so the log cannot disagree with the collection."""
+    plan = il_episode_plan(cfg)
+    scenarios = sorted({sc for sc, _ in plan})
+    per = max(1, int(n_episodes) // len(scenarios))
+    return [p for sc in scenarios for p in [q for q in plan if q[0] == sc][:per]]
+
+
 def build_il_corpus(env_config_path: Path, cfg: IntentTrainingConfig, arm: str, out_path: Path,
                     n_episodes: Optional[int] = None,
                     progress_callback: Optional[Callable[[int, int, str, int, object], None]] = None) -> dict:
     """Collect the arm's IL corpus ONCE and write it with full identity."""
     plan = il_episode_plan(cfg)
     if n_episodes is not None:
-        per = max(1, n_episodes // 2)
-        plan = ([p for p in plan if p[0] in ("circle", "square")][:per]
-                + [p for p in plan if p[0] == "junction_crowd"][:per])
+        # Order 14: split across the scenarios the plan actually declares.
+        # This used to take n//2 from a combined ("circle", "square") list and
+        # n//2 from junction -- written when circle and square were one
+        # "standard" bucket. The plan is ordered circle-first, so a 12-episode
+        # pilot drew 6 circle, 0 square, and never exercised square at all.
+        plan = _pilot_plan_length(cfg, n_episodes)
     episodes, identities = [], []
     for done, (scenario, ep_seed) in enumerate(plan, 1):
         _assert_not_formal_seed(ep_seed)
@@ -1178,7 +1208,13 @@ def cmd_train(args, resume: bool = False) -> int:
         if resume:
             raise IntentCLIError(
                 f"resume must never collect a corpus; {corpus_file} is missing")
-        append_durable_log(run_dir, f"IL-DATA START total={args.il_episodes or cfg.il_episodes_total} "
+        # report the plan length actually about to be collected. A pilot draws
+        # at least one episode per planned scenario, so the requested number
+        # and the collected number can legitimately differ.
+        _planned = il_episode_plan(cfg) if args.il_episodes is None else None
+        _n_plan = (len(_planned) if _planned is not None
+                   else len(_pilot_plan_length(cfg, args.il_episodes)))
+        append_durable_log(run_dir, f"IL-DATA START total={_n_plan} "
                            f"destination={corpus_file}")
         collection_started = time.monotonic()
         outcomes: Counter = Counter()
@@ -1327,8 +1363,13 @@ def cmd_train(args, resume: bool = False) -> int:
             train_ids = {id(t) for t in train_rows}
             assert not any(id(t) in train_ids for t in audit_rows)
             art.buffer.add_demo(train_rows, art.reservoir_rng)
+            # Order 14: the audit contract is checked against the TRAINING
+            # PLAN, so a formal run that lost a scenario fails instead of
+            # quietly auditing on a smaller set.
+            expected_audit_scenarios = {scenario for scenario, _ in il_episode_plan(cfg)}
             audit_set = _select_il_audit_rows(
-                audit_rows, audit_labels, is_pilot=art.state.is_pilot)
+                audit_rows, audit_labels, is_pilot=art.state.is_pilot,
+                expected_scenarios=expected_audit_scenarios)
             # A fixed slice of the rows that ARE in replay, selected the same
             # balanced way. Evaluated beside the held-out set so "training fit
             # continues while generalisation degrades" is readable directly
@@ -1337,14 +1378,17 @@ def cmd_train(args, resume: bool = False) -> int:
             train_labels = [str(sc) for t, ep, sc in
                             zip(demo_transitions, episode_of_row, scenario_rows) if ep not in audit_eps]
             train_diag_set = _select_il_audit_rows(
-                train_rows, train_labels, is_pilot=art.state.is_pilot)
+                train_rows, train_labels, is_pilot=art.state.is_pilot,
+                expected_scenarios=expected_audit_scenarios)
             train_diag_labels = _labels_for(train_diag_set, train_rows, train_labels)
             audit_labels_sel = _labels_for(audit_set, audit_rows, audit_labels)
             art.state.il_audit_identity = il_audit_identity(audit_set)
             art.state.il_audit_episodes = len(audit_eps)
+            n_audit_scenarios = len(set(audit_labels_sel))
             audit_scope = (
-                f"fixed {len(audit_set)} rows (256/scenario)"
-                if len(audit_set) == IL_AUDIT_SET_SIZE
+                f"fixed {len(audit_set)} rows ({IL_AUDIT_PER_SCENARIO}/scenario x "
+                f"{n_audit_scenarios} scenarios)"
+                if len(audit_set) == IL_AUDIT_PER_SCENARIO * n_audit_scenarios
                 else f"pilot-small {len(audit_set)} rows")
             print(f"IL corpus split BY EPISODE: {len(train_rows)} training rows in replay, "
                   f"{len(audit_rows)} held-out rows -> {audit_scope} from {len(audit_eps)} episodes "

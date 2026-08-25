@@ -1686,7 +1686,11 @@ def summarize_scenario_results(results: Sequence[AblationEpisodeResult]) -> Dict
 # Order 4: a FIXED IL audit set.
 # --------------------------------------------------------------------- #
 
-IL_AUDIT_SET_SIZE = 512
+# The audit is defined as N rows PER SCENARIO. A hardcoded total was written
+# when there were exactly two training scenarios and went stale the moment
+# Order 12 added a third: the selector produced 768 rows and the check still
+# expected 512, killing a run right after a 6.7-hour materialisation. Callers
+# derive the total from the scenarios they actually have.
 IL_AUDIT_PER_SCENARIO = 256
 #: Rows per forward pass when scoring the audit set. The audit is scored over
 #: ALL 80 actions, so a one-shot pass is n_rows * 80 network rows: at the
