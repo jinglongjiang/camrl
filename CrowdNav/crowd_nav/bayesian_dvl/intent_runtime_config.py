@@ -225,8 +225,13 @@ HUMAN_FEATURE_DIM_V7 = (HUMAN_SCALAR_DIM_V7 + MAX_CANDIDATE_GOALS * CANDIDATE_FE
 # distribution is randomised over circle/square geometry, 5-20 pedestrians
 # and a range of arena sizes. Both change what the data IS, not merely how
 # it is fitted, so weights trained under v6 are not loadable here.
-TRAINING_CONTRACT_V8_TEMPORAL_SUMMARY = (
-    "bdvl_intent_training_contract_temporal_summary_domain_randomized_v8")
+# Order 13: failed ORCA episodes are MC-only; only successful ORCA episodes
+# are rank-supervised. Under the invisible-robot protocol ORCA collides on
+# roughly a quarter of episodes, and using those actions as ranking labels
+# taught the network to prefer the move that caused the collision while L_MC
+# was regressing the same move towards a collision return.
+TRAINING_CONTRACT_V9_FAILED_DEMOS_MC_ONLY = (
+    "bdvl_intent_training_contract_failed_demos_mc_only_v9")
 
 
 FROZEN_VALUES: Dict[str, object] = {

@@ -342,16 +342,16 @@ def load_intent_training_config(path: Path = DEFAULT_TRAINING_CONFIG) -> IntentT
 def _validate(cfg: IntentTrainingConfig) -> None:
     # schema must match the CODE, not just be internally consistent
     from crowd_nav.bayesian_dvl.intent_runtime_config import (
-        FEATURE_SCHEMA_V7, TRAINING_CONTRACT_V8_TEMPORAL_SUMMARY,
+        FEATURE_SCHEMA_V7, TRAINING_CONTRACT_V9_FAILED_DEMOS_MC_ONLY,
     )
     from crowd_nav.bayesian_dvl.intent_policy import CHECKPOINT_SCHEMA_V8
     if cfg.feature_schema != FEATURE_SCHEMA_V7:
         raise IntentConfigError(f"config feature_schema {cfg.feature_schema!r} != code's {FEATURE_SCHEMA_V7!r}")
     _assert_domain_randomization_matches_code(cfg)
-    if cfg.training_contract_schema != TRAINING_CONTRACT_V8_TEMPORAL_SUMMARY:
+    if cfg.training_contract_schema != TRAINING_CONTRACT_V9_FAILED_DEMOS_MC_ONLY:
         raise IntentConfigError(
             f"config training_contract_schema {cfg.training_contract_schema!r} != "
-            f"code's {TRAINING_CONTRACT_V8_TEMPORAL_SUMMARY!r}")
+            f"code's {TRAINING_CONTRACT_V9_FAILED_DEMOS_MC_ONLY!r}")
     if cfg.checkpoint_schema != CHECKPOINT_SCHEMA_V8:
         raise IntentConfigError(f"config checkpoint_schema {cfg.checkpoint_schema!r} != code's {CHECKPOINT_SCHEMA_V8!r}")
 

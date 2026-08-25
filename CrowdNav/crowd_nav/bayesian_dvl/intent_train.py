@@ -130,8 +130,18 @@ class IntentTransition:
                 "online samples must have an EMPTY expert_action_indices -- the agent's own "
                 "(possibly epsilon-random) action is never an expert demonstration"
             )
-        if self.source_role == "demo" and not self.expert_action_indices:
-            raise IntentTrainError("demo samples must carry a non-empty expert_action_indices equivalence set")
+        # Order 13: a DEMO row may legitimately carry an EMPTY expert set.
+        # ORCA is not a perfect teacher under the invisible-robot protocol --
+        # it collides on roughly a quarter of episodes -- and a demo drawn
+        # from a collision was being supervised two contradictory ways at
+        # once: MC said "this action ended in a collision, lower its value"
+        # while the ranking term said "this action is the expert's, it must
+        # outrank the other 79". An empty expert set is how a failed
+        # demonstration says "learn my value, not my preference".
+        #
+        #   successful demo : MC + ranking
+        #   failed demo     : MC only        (expert_action_indices == ())
+        #   online          : MC only        (never an expert demonstration)
 
 
 @dataclass
@@ -377,6 +387,10 @@ def collect_orca_episode(
     returns = compute_mc_returns([t.reward for t in transitions], gamma)
     for t, g in zip(transitions, returns):
         t.mc_return = g
+    # Order 13: the outcome is only known once the episode ends, so the
+    # ranking eligibility of its rows is decided here rather than per step.
+    # Same rule as the raw -> materialize path, so the two cannot diverge.
+    _apply_rank_eligibility(transitions, outcome)
     return EpisodeCollectionResult(transitions=transitions, outcome=outcome)
 
 
@@ -454,10 +468,39 @@ def materialize_arm_transitions(
             human_features=human_feats, human_mask=human_mask,
             action_index=st.action_index, action_features=all_action_feats[st.action_index],
             all_action_features=all_action_feats, remaining_fraction=st.remaining_fraction,
-            source_role="demo", expert_action_indices=tuple(st.expert_action_indices),
+            # Order 13: only a SUCCESSFUL episode's actions are expert
+            # demonstrations for ranking. RawStep keeps the original ORCA
+            # action either way -- the raw corpus records what happened, and
+            # the ranking decision is made here, at materialisation.
+            source_role="demo",
+            expert_action_indices=(tuple(st.expert_action_indices)
+                                   if raw.outcome in RANKABLE_OUTCOMES else ()),
             reward=st.reward, mc_return=st.mc_return,
         ))
     return out
+
+
+RANKABLE_OUTCOMES = ("success",)
+
+
+def _apply_rank_eligibility(transitions, outcome: str) -> None:
+    """Clear the expert set on every row of a FAILED demonstration.
+
+    ORCA collides on roughly a quarter of episodes once the robot is
+    invisible. Keeping its actions as ranking labels there tells the network
+    that the action which caused a collision must outrank the other 79, while
+    L_MC simultaneously regresses that same action towards a collision
+    return. The two supervisions contradict each other, and the ranking one
+    is simply wrong: a failed trajectory is evidence about VALUE, not about
+    preference.
+
+    The rows are kept -- they are exactly the negative-value examples the
+    value head needs -- they just stop being expert demonstrations.
+    """
+    if outcome in RANKABLE_OUTCOMES:
+        return
+    for t in transitions:
+        t.expert_action_indices = ()
 
 
 def _scene_for_scenario(scenario: str, is_heldout: bool, episode_seed: Optional[int] = None):
@@ -651,19 +694,23 @@ def train_step(
     if ranking_batch_size is not None and ranking_batch_size <= 0:
         raise IntentTrainError(f"ranking_batch_size must be positive, got {ranking_batch_size}")
 
-    demo_positions = [i for i in range(B) if bool(batch.demo_mask[i])]
+    # Order 13: ranking supervises only demo rows that still CARRY an expert
+    # set. A failed ORCA demonstration keeps its MC target -- it is a genuine
+    # negative-value example -- but its action is not a preference label, so
+    # it is excluded here rather than teaching the network to prefer the move
+    # that caused the collision.
+    rank_positions = [i for i in range(B)
+                      if bool(batch.demo_mask[i]) and bool(batch.expert_indices[i])]
     if ranking_batch_size is not None:
-        demo_positions = demo_positions[:ranking_batch_size]
+        rank_positions = rank_positions[:ranking_batch_size]
 
     n_actions = batch.all_action_feats.shape[1]
     fixed_tau = (torch.arange(n_taus, dtype=torch.float32, device=device) + 0.5) / n_taus
 
     rank_losses = []
-    if demo_positions:
-        for i in demo_positions:
+    if rank_positions:
+        for i in rank_positions:
             experts = batch.expert_indices[i]
-            if not experts:
-                raise IntentTrainError(f"demo sample at batch position {i} has an empty expert set")
             if len(experts) >= n_actions:
                 # expert_ranking_loss rejects an expert set covering
                 # everything (no negatives to rank against). A grid-spacing-
@@ -680,16 +727,16 @@ def train_step(
         # the network 80x redundantly per sample. At the formal batch size
         # (256) that is the difference between 256 and 20480 encoder passes
         # per update.
-        idx = torch.as_tensor(demo_positions, dtype=torch.long, device=device)
-        n_demo = len(demo_positions)
-        state_emb = model.encode(robot_feats[idx], human_feats[idx], human_mask[idx])   # [n_demo, E]
-        state_rep = state_emb.repeat_interleave(n_actions, dim=0)                        # [n_demo*A, E]
-        action_rep = batch.all_action_feats[idx].reshape(n_demo * n_actions, -1)         # [n_demo*A, Fa]
+        idx = torch.as_tensor(rank_positions, dtype=torch.long, device=device)
+        n_rank = len(rank_positions)
+        state_emb = model.encode(robot_feats[idx], human_feats[idx], human_mask[idx])   # [n_rank, E]
+        state_rep = state_emb.repeat_interleave(n_actions, dim=0)                        # [n_rank*A, E]
+        action_rep = batch.all_action_feats[idx].reshape(n_rank * n_actions, -1)         # [n_rank*A, Fa]
         action_emb = model.action_encoder(action_rep)
-        tau_rep = fixed_tau.unsqueeze(0).expand(n_demo * n_actions, n_taus)
-        scores = model.value_network(state_rep, action_emb, tau_rep).mean(dim=1)         # [n_demo*A]
-        scores = scores.view(n_demo, n_actions)
-        for row, i in enumerate(demo_positions):
+        tau_rep = fixed_tau.unsqueeze(0).expand(n_rank * n_actions, n_taus)
+        scores = model.value_network(state_rep, action_emb, tau_rep).mean(dim=1)         # [n_rank*A]
+        scores = scores.view(n_rank, n_actions)
+        for row, i in enumerate(rank_positions):
             rank_losses.append(expert_ranking_loss(scores[row], batch.expert_indices[i], ranking_margin))
 
     if rank_losses:
@@ -1080,6 +1127,7 @@ class IntentReplay:
         self.demo_capacity = int(demo_capacity)
         self.online_capacity = int(online_capacity)
         self._demo: List[IntentTransition] = []
+        self._rankable_cache: Optional[List[int]] = None
         self._online_episodes: Deque[Tuple[str, Tuple[IntentTransition, ...]]] = deque()
         self._online_by_scenario: Dict[str, Deque[Tuple[IntentTransition, ...]]] = {}
         self._online_transition_count = 0
@@ -1106,6 +1154,9 @@ class IntentReplay:
         """Reservoir sampling: after N offers each retained item is a
         uniform draw from all N. ``rng`` must be the caller's explicit,
         checkpointed generator -- never the global RNG."""
+        # Order 13: the rankable index is derived from the reservoir contents,
+        # so anything that can change them must invalidate it.
+        self._rankable_cache = None
         for t in transitions:
             if t.source_role != "demo":
                 raise IntentTrainError(f"add_demo got a {t.source_role!r} transition")
@@ -1144,14 +1195,47 @@ class IntentReplay:
 
     # ---- reads ----
     def sample_demo_only(self, batch_size: int, rng: np.random.Generator) -> List[IntentTransition]:
-        """Demo rows only -- the ranking warm-up has no use for online rows
-        (they carry no expert set, so they contribute nothing to L_rank)."""
+        """Demo rows only -- online rows carry no expert set, so they
+        contribute nothing to L_rank. May include FAILED demonstrations."""
         if batch_size <= 0:
             raise IntentTrainError(f"batch_size must be positive, got {batch_size}")
         if not self._demo:
             raise IntentTrainError("ranking warm-up needs a populated demo reservoir")
         idx = rng.integers(0, len(self._demo), size=min(batch_size, len(self._demo)))
         return [self._demo[i] for i in idx]
+
+    def _rankable_demo_positions(self) -> List[int]:
+        """Indices of demo rows that still carry an expert set.
+
+        Cached because the reservoir holds ~200k rows and the warm-up runs
+        hundreds of steps; a full scan per step would dominate its cost. The
+        cache is invalidated by add_demo(), which is the only thing that can
+        change the set.
+        """
+        if self._rankable_cache is None:
+            self._rankable_cache = [i for i, t in enumerate(self._demo)
+                                    if t.expert_action_indices]
+        return self._rankable_cache
+
+    def sample_rankable_demo_only(self, batch_size: int,
+                                  rng: np.random.Generator) -> List[IntentTransition]:
+        """Order 13: the ranking warm-up samples ONLY successful
+        demonstrations.
+
+        Its whole purpose is to teach the expert's preference before joint
+        training starts, and a failed ORCA episode has no preference worth
+        teaching -- feeding it here would spend the warm-up learning to rank
+        collisions first.
+        """
+        if batch_size <= 0:
+            raise IntentTrainError(f"batch_size must be positive, got {batch_size}")
+        rankable = self._rankable_demo_positions()
+        if not rankable:
+            raise IntentTrainError(
+                "ranking warm-up needs at least one SUCCESSFUL demonstration, but every demo row "
+                "in the reservoir came from a failed ORCA episode")
+        idx = rng.integers(0, len(rankable), size=min(batch_size, len(rankable)))
+        return [self._demo[rankable[i]] for i in idx]
 
     def sample(self, batch_size: int, rng: np.random.Generator, demo_ratio: float) -> List[IntentTransition]:
         """Mixed batch. ``demo_ratio`` is the TARGET demo share; if one
@@ -2006,12 +2090,15 @@ def expert_rank_diagnostics(model, audit: Sequence[IntentTransition], n_taus: in
             for lo in range(0, n_rows, chunk_rows):
                 hi = min(lo + chunk_rows, n_rows)
                 scores = _audit_scores_chunked(model, batch, n_taus, lo, hi)
-                range_sum += float((scores.max(dim=1).values - scores.min(dim=1).values).sum())
                 for r in range(hi - lo):
                     ex = audit[lo + r].expert_action_indices
                     if not ex:
                         continue
                     srow = scores[r]
+                    # Order 13: averaged over RANKABLE rows only. Including
+                    # failed demonstrations here would mix the spread of rows
+                    # the ranking term never touches into a ranking metric.
+                    range_sum += float(srow.max() - srow.min())
                     mask = torch.zeros_like(srow, dtype=torch.bool)
                     mask[list(ex)] = True
                     margin_sum += float(srow[mask].max() - srow[~mask].max())
@@ -2022,8 +2109,14 @@ def expert_rank_diagnostics(model, audit: Sequence[IntentTransition], n_taus: in
             return {
                 "expert_top1_rate": top1 / max(scored, 1),
                 "expert_margin_mean": margin_sum / max(scored, 1),
-                "score_range_mean": range_sum / max(n_rows, 1),
+                "score_range_mean": range_sum / max(scored, 1),
                 "audit_rank_loss": loss_sum / max(scored, 1),
+                # how many audit rows the ranking metrics were actually
+                # computed on -- with failed demos excluded this is no longer
+                # the size of the audit set, and a collapse in it would
+                # otherwise be invisible behind unchanged averages.
+                "n_rankable": float(scored),
+                "n_audit_rows": float(n_rows),
             }
     finally:
         model.train(was_training)
@@ -2077,7 +2170,7 @@ def run_ranking_warmup(model, optimizer, buffer: IntentReplay, batch_size: int,
                 break
         if step == max_steps:
             break
-        batch_rows = buffer.sample_demo_only(batch_size, sample_rng)
+        batch_rows = buffer.sample_rankable_demo_only(batch_size, sample_rng)
         batch = batch_to_tensors(batch_rows, device=device)
         demo_positions = list(range(len(batch_rows)))
         if ranking_batch_size is not None:

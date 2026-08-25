@@ -612,7 +612,13 @@ def test_c4rf_il_corpus_is_immutable_shared_and_identity_checked() -> None:
         assert materialize_progress[-1][2] == meta["n_transitions"]
         assert m1["corpus_sha256"] == m2["corpus_sha256"] == meta["corpus_sha256"]
         assert len(t1) == len(t2) == meta["n_transitions"]
-        assert all(t.source_role == "demo" and t.expert_action_indices for t in t1)
+        # Order 13: every corpus row is a demo row, but only rows from
+        # SUCCESSFUL episodes carry an expert set. This test is about the
+        # corpus being immutable, shared and identity-checked, so it asserts
+        # the role, and that SOME rows stay rankable rather than that all do.
+        assert all(t.source_role == "demo" for t in t1)
+        assert any(t.expert_action_indices for t in t1), (
+            "no rankable rows at all: the ranking term would have nothing to learn from")
 
         # A3: the corpus is arm-INDEPENDENT -- every arm loads the SAME file
         # and materializes its own features, so this must now SUCCEED and

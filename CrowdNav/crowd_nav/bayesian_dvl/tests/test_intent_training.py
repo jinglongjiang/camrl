@@ -7,10 +7,12 @@ monolithic file -- zero risk of a name/import mismatch during the split.
 import pytest
 
 from crowd_nav.bayesian_dvl.tests._common import *  # noqa: F401,F403
+import dataclasses
 import hashlib
 import math
 
-from crowd_nav.bayesian_dvl.intent_train import IntentTransition, sample_training_crowd_spec
+from crowd_nav.bayesian_dvl.intent_train import (
+    IntentTransition, expert_rank_diagnostics, sample_training_crowd_spec)
 from crowd_nav.bayesian_dvl.intent_policy import MAX_HUMANS
 from crowd_nav.bayesian_dvl.set_encoder import ACTION_FEATURE_DIM, ROBOT_FEATURE_DIM
 
@@ -1022,11 +1024,21 @@ def test_c0_sample_roles_fail_closed() -> None:
     # demo samples must always carry one. Enforced at construction so a
     # mislabeled sample can never reach the trainer.
     env_config_path = _env_config_path()
-    demo = collect_orca_episode(env_config_path, "circle", 700001).transitions[0]
+    # a SUCCESSFUL demonstration -- Order 13: only those are rank-supervised
+    ep = collect_orca_episode(env_config_path, "circle", 700001)
+    assert ep.outcome == "success", ep.outcome
+    demo = ep.transitions[0]
     assert demo.source_role == "demo"
     assert len(demo.expert_action_indices) >= 1
     assert demo.action_index in demo.expert_action_indices, (
         "the executed (single nearest) action must itself be inside the tolerance-widened expert set")
+
+    # a FAILED demonstration is still a demo row and still carries its MC
+    # target -- it just stops being a preference label
+    failed = collect_orca_episode(env_config_path, "circle", 700002)
+    assert failed.outcome != "success", failed.outcome
+    assert all(t.source_role == "demo" and t.expert_action_indices == ()
+               for t in failed.transitions)
 
     import dataclasses
     try:
@@ -1034,11 +1046,11 @@ def test_c0_sample_roles_fail_closed() -> None:
         assert False, "expected IntentTrainError: online sample with a non-empty expert set"
     except IntentTrainError:
         pass
-    try:
-        dataclasses.replace(demo, expert_action_indices=())  # demo with an empty set
-        assert False, "expected IntentTrainError: demo sample with an empty expert set"
-    except IntentTrainError:
-        pass
+    # Order 13: a demo row with an EMPTY expert set is now legal -- it is how
+    # a failed demonstration says "learn my value, not my preference". It must
+    # be ACCEPTED here, while the online rule stays as strict as before.
+    mc_only = dataclasses.replace(demo, expert_action_indices=())
+    assert mc_only.source_role == "demo" and mc_only.expert_action_indices == ()
     try:
         dataclasses.replace(demo, source_role="teacher")
         assert False, "expected IntentTrainError on an unknown source_role"
@@ -1128,18 +1140,33 @@ def test_c0_rank_loss_uses_equivalence_set_not_single_nearest_action() -> None:
     tol = derive_action_equivalence_tolerance(action_table)
     assert tol > 0
 
-    transitions = []
+    # Order 13 clears the expert set on FAILED episodes, so this claim -- which
+    # is about how ORCA's continuous velocity is quantised, not about whether
+    # the episode succeeded -- is checked on the RAW steps. The raw corpus
+    # always records what ORCA did; rank eligibility is decided later, at
+    # materialisation.
+    from crowd_nav.bayesian_dvl.intent_train import collect_raw_orca_episode
+    raw_steps = []
     for seed in (700001, 700002, 700003):
-        transitions.extend(collect_orca_episode(env_config_path, "circle", seed).transitions)
-    sizes = [len(t.expert_action_indices) for t in transitions]
+        raw_steps.extend(collect_raw_orca_episode(env_config_path, "circle", seed).steps)
+    sizes = [len(st.expert_action_indices) for st in raw_steps]
     assert all(s >= 1 for s in sizes)
+    # and the materialised rows follow the outcome rule
+    for seed in (700001, 700002, 700003):
+        ep = collect_orca_episode(env_config_path, "circle", seed)
+        rankable = [bool(t.expert_action_indices) for t in ep.transitions]
+        assert all(rankable) if ep.outcome == "success" else not any(rankable), (seed, ep.outcome)
     assert max(sizes) > 1, (
         f"the tolerance-widened expert set must be strictly larger than the single nearest action for at "
         f"least some real ORCA decisions, else C0.2 changes nothing (sizes seen: {sorted(set(sizes))})")
     # every recorded expert set must be reproducible from the public
     # geometry alone (no hidden state): rebuilding it must be a subset of
     # the grid and must contain the executed action.
-    for t in transitions[:20]:
+    rankable_rows = [t for seed in (700001, 700003)
+                     for t in collect_orca_episode(env_config_path, "circle", seed).transitions
+                     if t.expert_action_indices]
+    assert rankable_rows
+    for t in rankable_rows[:20]:
         assert t.action_index in t.expert_action_indices
         assert all(0 <= i < len(action_table) for i in t.expert_action_indices)
 
@@ -1154,7 +1181,7 @@ def test_c0_checkpoint_schema_v6_rejects_retired_v5_and_wrong_training_contract(
         save_intent_checkpoint(model, path, action_grid_hash="h", scene_registry_sha256="s")
         raw = torch.load(path, weights_only=False)
         assert raw["checkpoint_schema"] == CHECKPOINT_SCHEMA_V8
-        assert raw["training_contract_schema"] == TRAINING_CONTRACT_V8_TEMPORAL_SUMMARY
+        assert raw["training_contract_schema"] == TRAINING_CONTRACT_V9_FAILED_DEMOS_MC_ONLY
 
         # Order 4: a V2 checkpoint (fixed rho=380) must be refused
         # BY NAME, not with a generic schema message. Its optimizer state,
@@ -1947,3 +1974,166 @@ def test_v7_old_schema_artifacts_are_refused(tmp_path) -> None:
         load_intent_checkpoint(str(stale), DistributionalValueModel(
             human_feature_dim=HUMAN_FEATURE_DIM_V7))
     assert "schema" in str(exc.value).lower()
+
+
+# --------------------------------------------------------------------- #
+# Order 13: a FAILED ORCA demonstration teaches value, not preference.
+#
+# ORCA collides on roughly a quarter of episodes once the robot is invisible.
+# Its actions there were still used as ranking labels, so the network was
+# told "this action must outrank the other 79" about the very move that
+# caused the collision, while L_MC was regressing that same move towards a
+# collision return. The rows stay -- they are the negative-value examples the
+# value head needs -- but they stop being expert demonstrations.
+# --------------------------------------------------------------------- #
+
+def _raw_episode_with_outcome(outcome: str, n_steps: int = 6):
+    """A RawEpisode carrying real ORCA expert sets on every step."""
+    from crowd_nav.bayesian_dvl.intent_train import collect_raw_orca_episode
+    raw = collect_raw_orca_episode(_env_config_path(), "circle", 2_600_000)
+    steps = list(raw.steps)[:n_steps]
+    assert steps and all(s.expert_action_indices for s in steps), "fixture has no expert sets"
+    return dataclasses.replace(raw, steps=steps, outcome=outcome)
+
+
+def _action_table():
+    from crowd_nav.bayesian_dvl.intent_runtime_config import ActionGridSpec
+    return np.asarray(ActionGridSpec.from_env_config(str(_env_config_path())).build_action_table(),
+                      dtype=np.float64)
+
+
+def test_order13_successful_episode_keeps_its_expert_sets() -> None:
+    raw = _raw_episode_with_outcome("success")
+    rows = materialize_arm_transitions(raw, "full", _action_table())
+    assert rows and all(r.expert_action_indices for r in rows)
+    assert all(r.source_role == "demo" for r in rows)
+
+
+@pytest.mark.parametrize("outcome", ["collision", "timeout"])
+def test_order13_failed_episode_has_every_expert_set_cleared(outcome) -> None:
+    raw = _raw_episode_with_outcome(outcome)
+    rows = materialize_arm_transitions(raw, "full", _action_table())
+    assert rows
+    assert all(r.expert_action_indices == () for r in rows), outcome
+    # the rows themselves are KEPT -- they are the negative-value examples
+    assert all(r.source_role == "demo" for r in rows)
+    # and the raw corpus still records what ORCA actually did
+    assert all(s.expert_action_indices for s in raw.steps)
+
+
+def test_order13_direct_collection_and_materialize_agree() -> None:
+    """The two paths that build demo rows must apply the SAME rule, or the
+    corpus and a direct collection would disagree about what is rankable."""
+    from crowd_nav.bayesian_dvl.intent_train import _apply_rank_eligibility
+    for outcome, expect_expert in (("success", True), ("collision", False), ("timeout", False)):
+        raw = _raw_episode_with_outcome(outcome)
+        mat = materialize_arm_transitions(raw, "full", _action_table())
+        direct = materialize_arm_transitions(
+            dataclasses.replace(raw, outcome="success"), "full", _action_table())
+        _apply_rank_eligibility(direct, outcome)          # the collect path's rule
+        assert [bool(r.expert_action_indices) for r in mat] == \
+               [bool(r.expert_action_indices) for r in direct], outcome
+        assert all(bool(r.expert_action_indices) is expect_expert for r in mat), outcome
+
+
+def _mixed_batch(n_success: int, n_failed: int, n_online: int = 0, seed: int = 5):
+    rng = np.random.default_rng(seed)
+    rows = []
+    for kind, count in (("success", n_success), ("failed", n_failed), ("online", n_online)):
+        for _ in range(count):
+            a = rng.normal(size=(80, ACTION_FEATURE_DIM))
+            e = int(rng.integers(0, 80))
+            hf = np.zeros((MAX_HUMANS, HUMAN_FEATURE_DIM_V7))
+            hm = np.zeros(MAX_HUMANS, dtype=bool)
+            hf[:2] = rng.normal(size=(2, HUMAN_FEATURE_DIM_V7)); hm[:2] = True
+            rows.append(IntentTransition(
+                robot_features=rng.normal(size=ROBOT_FEATURE_DIM),
+                human_features=hf, human_mask=hm, action_index=e,
+                action_features=a[e], all_action_features=a,
+                remaining_fraction=0.5,
+                source_role=("online" if kind == "online" else "demo"),
+                expert_action_indices=((e,) if kind == "success" else ()),
+                reward=0.0, mc_return=float(rng.normal())))
+    return rows
+
+
+def _rank_grad_norm(rows, seed: int = 0):
+    torch.manual_seed(seed)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
+    batch = batch_to_tensors(rows)
+    gen = torch.Generator().manual_seed(seed)
+    res = intent_train_step(model, torch.optim.SGD(
+        [p for p in model.parameters() if p.requires_grad], lr=0.0), batch, gen, rho=1.0)
+    return res, model
+
+
+def test_order13_failed_demos_still_produce_a_real_mc_gradient() -> None:
+    res, _ = _rank_grad_norm(_mixed_batch(n_success=0, n_failed=8))
+    assert math.isfinite(res.mc_loss) and res.mc_loss > 0.0
+    assert math.isfinite(res.mc_grad_norm) and res.mc_grad_norm > 0.0
+
+
+def test_order13_an_all_failed_batch_has_exactly_zero_rank_loss_and_gradient() -> None:
+    res, _ = _rank_grad_norm(_mixed_batch(n_success=0, n_failed=8))
+    assert res.rank_loss == 0.0, res.rank_loss
+    assert res.rank_grad_norm == 0.0, res.rank_grad_norm
+
+
+def test_order13_mixing_in_failed_demos_does_not_change_the_rank_loss() -> None:
+    """The rank loss over a mixed batch must equal the rank loss over its
+    successful subset alone -- failed rows contribute nothing, not a diluted
+    average."""
+    success_rows = _mixed_batch(n_success=6, n_failed=0)
+    mixed_rows = success_rows + _mixed_batch(n_success=0, n_failed=6, seed=99)
+    a, _ = _rank_grad_norm(success_rows, seed=3)
+    b, _ = _rank_grad_norm(mixed_rows, seed=3)
+    assert a.rank_loss == pytest.approx(b.rank_loss, rel=1e-6, abs=1e-9), (a.rank_loss, b.rank_loss)
+
+
+def test_order13_online_rows_are_unaffected() -> None:
+    rows = _mixed_batch(n_success=4, n_failed=0, n_online=4)
+    for r in rows:
+        if r.source_role == "online":
+            assert r.expert_action_indices == ()
+    res, _ = _rank_grad_norm(rows, seed=7)
+    only_demo, _ = _rank_grad_norm(_mixed_batch(n_success=4, n_failed=0), seed=7)
+    assert res.rank_loss == pytest.approx(only_demo.rank_loss, rel=1e-6, abs=1e-9)
+    with pytest.raises(IntentTrainError):
+        IntentTransition(
+            robot_features=np.zeros(ROBOT_FEATURE_DIM),
+            human_features=np.zeros((MAX_HUMANS, HUMAN_FEATURE_DIM_V7)),
+            human_mask=np.zeros(MAX_HUMANS, dtype=bool), action_index=0,
+            action_features=np.zeros(ACTION_FEATURE_DIM),
+            all_action_features=np.zeros((80, ACTION_FEATURE_DIM)),
+            remaining_fraction=0.5, source_role="online",
+            expert_action_indices=(0,), reward=0.0, mc_return=0.0)
+
+
+def test_order13_warmup_never_draws_a_failed_demonstration() -> None:
+    from crowd_nav.bayesian_dvl.intent_train import IntentReplay
+    buf = IntentReplay(demo_capacity=1000, online_capacity=1000)
+    rng = np.random.default_rng(0)
+    buf.add_demo(_mixed_batch(n_success=5, n_failed=45), rng)
+    for step in range(40):
+        rows = buf.sample_rankable_demo_only(8, rng)
+        assert rows, step
+        assert all(r.expert_action_indices for r in rows), step
+    # the cache must not outlive a change to the reservoir
+    buf.add_demo(_mixed_batch(n_success=20, n_failed=0, seed=21), rng)
+    assert len(buf._rankable_demo_positions()) == 25
+    # and a reservoir with no successes must say so instead of looping
+    empty = IntentReplay(demo_capacity=100, online_capacity=100)
+    empty.add_demo(_mixed_batch(n_success=0, n_failed=10), rng)
+    with pytest.raises(IntentTrainError) as exc:
+        empty.sample_rankable_demo_only(4, rng)
+    assert "SUCCESSFUL" in str(exc.value)
+
+
+def test_order13_rank_audit_counts_only_rankable_rows() -> None:
+    rows = _mixed_batch(n_success=7, n_failed=13)
+    torch.manual_seed(0)
+    model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
+    d = expert_rank_diagnostics(model, rows, n_taus=8)
+    assert d["n_rankable"] == 7.0, d
+    assert d["n_audit_rows"] == 20.0, d
+    assert math.isfinite(d["audit_rank_loss"]) and math.isfinite(d["score_range_mean"])
