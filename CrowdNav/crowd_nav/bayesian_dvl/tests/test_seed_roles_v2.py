@@ -25,11 +25,14 @@ from crowd_nav.bayesian_dvl.junction_scenario import (
 
 ENV = Path(__file__).resolve().parents[2] / "configs" / "env_bayesian_dvl.config"
 
+# stage_accept (Order 14 s7) is the first role that is BOTH training-forbidden
+# and nominal geometry: a stage gate asks "can this policy finish an episode",
+# which must not be entangled with "does it generalise to a shifted scene".
 ALL_ROLES = ("mechanism_train", "mechanism_heldout", "il", "online", "validation",
-             "selection_dev", "paper_test")
+             "selection_dev", "paper_test", "stage_accept")
 
 
-def test_the_seven_roles_exist_and_partition_the_seed_space():
+def test_every_role_exists_and_partitions_the_seed_space():
     assert set(JUNCTION_CROWD_SEED_ROLES) == set(ALL_ROLES)
     seen = {}
     for role, seeds in JUNCTION_CROWD_SEED_ROLES.items():

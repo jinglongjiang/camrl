@@ -1,0 +1,265 @@
+ D crowd_nav/TEST_OPTIMIZATION_README.md
+ M crowd_nav/configs/env.config
+ M crowd_nav/configs/policy.config
+ M crowd_nav/configs/train.config
+ D crowd_nav/crowd_sim_latex.md
+ D crowd_nav/crowdnav_sim_log_20250224_174323.csv
+ D crowd_nav/crowdnav_sim_log_20250225_215250.csv
+ D crowd_nav/crowdnav_sim_log_20250225_215505.csv
+ D crowd_nav/crowdnav_sim_log_20250225_220402.csv
+ D crowd_nav/crowdnav_sim_log_20250226_233710.csv
+ D crowd_nav/crowdnav_sim_log_20250227_001839.csv
+ D crowd_nav/crowdnav_sim_log_20250227_010659.csv
+ D crowd_nav/crowdnav_testlike_20250313_022338.csv
+ D crowd_nav/crowdnav_testlike_20250313_023159.csv
+ D crowd_nav/crowdnav_testlike_20250313_023228.csv
+ D crowd_nav/crowdnav_testlike_20250313_023302.csv
+ D crowd_nav/crowdnav_testlike_20250313_144417.csv
+ M crowd_nav/policy/mamba.py
+ M crowd_nav/policy/mamba_rl.py
+ M crowd_nav/policy/orca_wrapper.py
+ M crowd_nav/policy/policy_factory.py
+ M crowd_nav/policy/sarl.py
+MM crowd_nav/test.py
+ M crowd_nav/train.py
+ D crowd_nav/train_optimized.py
+ M crowd_nav/utils/explorer.py
+ M crowd_nav/utils/memory.py
+ D crowd_nav/utils/parallel_sampler.py
+ D crowd_nav/utils/trainer.py
+ M crowd_sim/envs/crowd_sim.py
+ M crowd_sim/envs/policy/orca.py
+ M crowd_sim/envs/utils/agent.py
+ M crowd_sim/envs/utils/human.py
+ M crowd_sim/envs/utils/robot.py
+ D ../__pycache__/matplotlib.cpython-310.pyc
+ M ../config/default.yaml
+ D ../env/__pycache__/__init__.cpython-310.pyc
+ D ../env/__pycache__/crowd_env.cpython-310.pyc
+ D ../env/__pycache__/orca_expert.cpython-310.pyc
+ M ../env/crowd_env.py
+ M ../env/orca.py
+ M ../generate_orca_demo.py
+ D ../models/__pycache__/__init__.cpython-310.pyc
+ D ../models/__pycache__/camrl_agent.cpython-310.pyc
+ D ../models/__pycache__/state_encoder.cpython-310.pyc
+ D ../models/__pycache__/value_net.cpython-310.pyc
+ D ../models/camrl_agent.py
+ D ../models/value_net.py
+ D ../orca_demos_seq.npz
+?? ../20250930.zip
+?? ../4090/
+?? ../4090_server_backup/
+?? ../Bayesian_log/
+?? ../CrowdNav(100%).zip
+?? ../CrowdNav(20%).zip
+?? ../CrowdNav(200250926IL60%).zip
+?? ../CrowdNav(2023_new_version3).zip
+?? ../CrowdNav(20250210_forAblation_forseqlen=1).zip
+?? ../CrowdNav(20250923).zip
+?? ../CrowdNav(20250924).zip
+?? ../CrowdNav(20250928).zip
+?? ../CrowdNav(20251001_60%+).zip
+?? ../CrowdNav(20251003_80%+).zip
+?? ../CrowdNav(20251004_80%+steady).zip
+?? ../CrowdNav(20251006_80%+_baseline).zip
+?? ../CrowdNav(20251006_81%_rprog_mt).zip
+?? ../CrowdNav(20251006_84.1%_r_prog).zip
+?? ../CrowdNav(20251007_81%_rprog_mt).zip
+?? ../CrowdNav(20251007_84.5%_rprog_mt_newparameters).zip
+?? ../CrowdNav(20251008_phase1_84.7%).zip
+?? ../CrowdNav(20251009_89.4%_1~4+IL+rprog+elit).zip
+?? ../CrowdNav(20251009_89.9%_1~4).zip
+?? ../CrowdNav(20251011_89.3%_best).zip
+?? ../CrowdNav(20251022_new_version).zip
+?? ../CrowdNav(20251022_new_version2).zip
+?? ../CrowdNav(20251024_new_version4_74.4%).zip
+?? ../CrowdNav(20251024_new_version5_checkpoint).zip
+?? ../CrowdNav(20251026_for_new_model_checkpoint).zip
+?? ../CrowdNav(20251027_fast_version).zip
+?? ../CrowdNav(20251028_new_IL).zip
+?? ../CrowdNav(20251029_almost).zip
+?? ../CrowdNav(20251029_new_checkpoint).zip
+?? ../CrowdNav(20251103_addsomething_fromcheckpoint3).zip
+?? ../CrowdNav(20251107_RNG).zip
+?? ../CrowdNav(20251107_same_as_1105).zip
+?? ../CrowdNav(20251110_2_reduce_version_fast).zip
+?? ../CrowdNav(20251110_reduce_checkpoint).zip
+?? ../CrowdNav(20251112_sarl_light).zip
+?? ../CrowdNav(20251115_ssh_version).zip
+?? ../CrowdNav(20251124_ppo).zip
+?? ../CrowdNav(20251125_ppo_91.8).zip
+?? ../CrowdNav(20260120_sac_paper_randomize_attributes=true).zip
+?? ../CrowdNav(20260405_for_GRU_backup).zip
+?? ../CrowdNav(20260511_last_version_mamba_vl).zip
+?? ../CrowdNav(20260727_checkpoint).zip
+?? ../CrowdNav(20270731_backup2).zip
+?? ../CrowdNav(30%).zip
+?? ../CrowdNav(40%).zip
+?? ../CrowdNav(D2).zip
+?? ../CrowdNav(DAI-delate).zip
+?? ../CrowdNav(Dai).zip
+?? ../CrowdNav(V-learning2).zip
+?? ../CrowdNav(V-up).zip
+?? ../CrowdNav(newV).zip
+?? ../CrowdNav(v-learning).zip
+?? BC_WORKFLOW.md
+?? FIX_SUMMARY.md
+?? backup/
+?? crowd_nav/4090log.md
+?? crowd_nav/CHANGES_SUMMARY.md
+?? crowd_nav/FINAL_SOLUTION.md
+?? crowd_nav/FIXES_ANALYSIS.md
+?? crowd_nav/FIXES_SUMMARY.md
+?? crowd_nav/FIXES_SUMMARY.txt
+?? crowd_nav/PG_MIGRATION.md
+?? crowd_nav/TENSOR_DIM_FIX.md
+?? crowd_nav/TEST_README.md
+?? crowd_nav/TEST_USAGE.md
+?? crowd_nav/analyze_lr_results.py
+?? crowd_nav/analyze_pathology.py
+?? crowd_nav/analyze_trajectory.py
+?? crowd_nav/bayesian_brne/
+?? crowd_nav/bayesian_decision_gate/
+?? crowd_nav/bayesian_pilot/
+?? crowd_nav/belief_mdp/
+?? crowd_nav/belief_space_rl/
+?? crowd_nav/check_il_meta.py
+?? crowd_nav/check_mc_returns.py
+?? crowd_nav/clean_aggressive.py
+?? crowd_nav/compare_oscillation.py
+?? crowd_nav/comprehensive_seed_search.sh
+?? crowd_nav/configs/env_belief_mdp.config
+?? crowd_nav/configs/env_gdbn.config
+?? crowd_nav/configs/policy_bayesian_distributional.config
+?? crowd_nav/configs/policy_bayesian_fullcrowd_compact.config
+?? crowd_nav/configs/policy_bayesian_fullcrowd_tail.config
+?? crowd_nav/configs/policy_bayesian_model_average.config
+?? crowd_nav/configs/policy_fixed_model_average.config
+?? crowd_nav/configs/policy_gdbn.config
+?? crowd_nav/configs/policy_ppo.config
+?? crowd_nav/contracts.py
+?? crowd_nav/contracts_gdbn.py
+?? crowd_nav/contracts_latex.md
+?? crowd_nav/convert_ckpt.py
+?? crowd_nav/debug.md
+?? crowd_nav/debug_buffer_state.py
+?? crowd_nav/deploy/
+?? crowd_nav/diagnose_bc.py
+?? crowd_nav/diagnostic_post_fix.json
+?? crowd_nav/diagnostic_results.json
+?? crowd_nav/diagnostic_results_v2.json
+?? crowd_nav/docker_seed_test.sh
+?? crowd_nav/empty_field_smoke_test.py
+?? crowd_nav/final_clean.py
+?? crowd_nav/final_cleanup.py
+?? crowd_nav/final_trim.py
+?? crowd_nav/find_best_seed.py
+?? crowd_nav/find_best_seed.sh
+?? crowd_nav/gdbn.py
+?? crowd_nav/layer0_output.log
+?? crowd_nav/layer1_diagnostics.py
+?? crowd_nav/layer1_fix_collision_detection.py
+?? crowd_nav/layer2_quantization_test.py
+?? crowd_nav/lr_search.sh
+?? crowd_nav/lr_search_console.log
+?? crowd_nav/main.txt
+?? crowd_nav/monitor_convergence.sh
+?? crowd_nav/monitor_session/
+?? crowd_nav/optimize_train.py
+?? crowd_nav/paper_results_20251014_232538/
+?? crowd_nav/pipeline.py
+?? crowd_nav/policy/attngraph_policy.py
+?? crowd_nav/policy/bayesian_fullcrowd_risk_value.py
+?? crowd_nav/policy/bayesian_model_average_risk_value.py
+?? crowd_nav/policy/cv_fullcrowd_risk_value.py
+?? crowd_nav/policy/dsrnn_configs/
+?? crowd_nav/policy/dsrnn_policy.py
+?? crowd_nav/policy/mamba_rl_gdbn.py
+?? crowd_nav/policy/mamba_rl_ppo.py
+?? crowd_nav/policy/pytorchBaselines/
+?? crowd_nav/quick_find_best.sh
+?? crowd_nav/quick_seed_test.py
+?? crowd_nav/report.md
+?? crowd_nav/risk_models.py
+?? crowd_nav/run_seed_search.sh
+?? crowd_nav/runs/
+?? crowd_nav/runs_user/
+?? crowd_nav/safe_clean.py
+?? crowd_nav/seed_list_20251107_042518.txt
+?? crowd_nav/seed_list_20251107_130751.txt
+?? crowd_nav/seed_search_20251107_034613.json
+?? crowd_nav/seed_search_20251107_040002.json
+?? crowd_nav/seed_search_20251107_041823.json
+?? crowd_nav/seed_search_20251107_042518.json
+?? crowd_nav/seed_search_20251107_124149.json
+?? crowd_nav/seed_search_20251107_130751.json
+?? crowd_nav/seed_search_8seeds.log
+?? crowd_nav/seed_search_full_results.txt
+?? crowd_nav/seed_test_orca_20251107_032324.json
+?? crowd_nav/seed_test_orca_20251107_033059.json
+?? crowd_nav/seed_test_orca_20251107_120401.json
+?? crowd_nav/seed_test_orca_20251107_120438.json
+?? crowd_nav/seed_test_orca_20251107_121642.json
+?? crowd_nav/simple_layer0_probe.py
+?? crowd_nav/simple_seed_test.py
+?? crowd_nav/test2.py
+?? crowd_nav/test3.py
+?? crowd_nav/test4.py
+?? crowd_nav/test5.py
+?? crowd_nav/test5_backup.py
+?? crowd_nav/test6.py
+?? crowd_nav/test7.py
+?? crowd_nav/test8.py
+?? crowd_nav/test_4d_flow.py
+?? crowd_nav/test_adaptive.py
+?? crowd_nav/test_buffer_sampling.py
+?? crowd_nav/test_buffer_shape.py
+?? crowd_nav/test_diffdrive_consistency.py
+?? crowd_nav/test_fixes.py
+?? crowd_nav/test_gdbn.py
+?? crowd_nav/test_il_seeds.sh
+?? crowd_nav/test_ppo.py
+?? crowd_nav/test_render.py
+?? crowd_nav/test_shape.py
+?? crowd_nav/test_ttc_simple.py
+?? crowd_nav/todo.md
+?? crowd_nav/tools/
+?? crowd_nav/train_verification.log
+?? crowd_nav/training_output.log
+?? crowd_nav/trim_more.py
+?? crowd_nav/ultra_compact.py
+?? crowd_nav/utils/data_utils.py
+?? crowd_nav/utils/log_formatter.py
+?? crowd_nav/utils/memory_simple_sample.py
+?? crowd_nav/utils/metrics.py
+?? crowd_nav/utils/ppo_buffer.py
+?? crowd_nav/utils/vectorized_sampler.py
+?? crowd_nav/value_converter.py
+?? crowd_nav/value_first_il.py
+?? "crowd_nav/\345\233\276\347\211\2071.png"
+?? "crowd_nav/\345\233\276\347\211\2072.png"
+?? crowd_sim/envs/crowd_sim.py.backup_20251020_114146
+?? crowd_sim/envs/crowd_sim_backup.py
+?? crowd_sim/envs/policy/orca.py.p1_backup
+?? crowd_sim/envs/policy/orca_gpu.py
+?? crowd_sim/envs/policy/orca_pure.py
+?? crowd_sim/envs/policy/sf.py
+?? crowd_sim/envs/policy/socialforce/
+?? orca_demos_seq.npz
+?? runs/
+?? scripts/
+?? start_training.sh
+?? test_n_step.py
+?? train_bc.py
+?? verify_n_step_config.py
+?? ../CrowdNav_bayesian_replaced_20260622_111041/
+?? "../CrowdNav\357\274\21020260622_Bayesian_for_reviewpaper\357\274\211.zip"
+?? ../FIXES_APPLIED.txt
+?? ../__pycache__/generate_orca_demo.cpython-38.pyc
+?? ../env/__pycache__/__init__.cpython-38.pyc
+?? ../env/__pycache__/orca.cpython-38.pyc
+?? ../experiment_backups/
+?? ../mamba_log/
+?? ../old-soc-nav-training-videos/
+?? ../soc-nav-training/

@@ -1,0 +1,35 @@
+{
+  "experiment_id": "s1_causal_response_smoke",
+  "schema_version": 1,
+  "brne_commit": "633a5cdcb39ab27f18b596cb8cb1968644f82391",
+  "brne_sha256": "420d1ef383c9a80448d3c714bf22d0d6280c055488269d624c060d98cff54836",
+  "dt": 0.25,
+  "horizon_steps": 6,
+  "scenario": "baseline_circle",
+  "roles": {
+    "train": {"split": "train", "suite_seeds": [9611, 9612], "episodes_per_seed": 4},
+    "selection": {"split": "validation", "suite_seeds": [9621, 9622], "episodes_per_seed": 4},
+    "necessity": {"split": "test_heldout_interactive", "suite_seeds": [9631, 9632], "episodes_per_seed": 4},
+    "audit_interactive": {"split": "test_heldout_interactive", "suite_seeds": [9641, 9642], "episodes_per_seed": 4},
+    "audit_nominal": {"split": "test_nominal", "suite_seeds": [9651, 9652], "episodes_per_seed": 4}
+  },
+  "fit": {
+    "em_max_iters": 8,
+    "em_tol": 0.001,
+    "restarts": 1,
+    "sticky_kappa": 4.0,
+    "dirichlet_alpha": 1.1,
+    "base_ridge": 0.00001,
+    "response_ridge": 0.05,
+    "covariance_floor": 0.0001,
+    "seed": 9611
+  },
+  "gate": {
+    "bootstrap_replicates": 100,
+    "bootstrap_seed": 9681,
+    "min_response_mse_improvement": 0.05,
+    "nominal_nll_equivalence": 0.01,
+    "nominal_response_upper": 0.02,
+    "min_mode_occupancy": 0.03
+  }
+}

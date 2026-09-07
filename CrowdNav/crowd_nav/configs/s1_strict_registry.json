@@ -1,0 +1,118 @@
+{
+  "audit_interactive": {
+    "environment_split": "test_heldout_interactive",
+    "episodes_per_seed": 100,
+    "output_root": "runs/bayesian_brne/s1_strict_20260804/data/audit_interactive",
+    "profile_name": "s1_strict_audit_interactive",
+    "suite_seeds": [
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50
+    ]
+  },
+  "audit_nominal_negative_control": {
+    "environment_split": "test_nominal",
+    "episodes_per_seed": 100,
+    "output_root": "runs/bayesian_brne/s1_strict_20260804/data/audit_nominal",
+    "profile_name": "s1_strict_audit_nominal",
+    "suite_seeds": [
+      51,
+      52,
+      53,
+      54,
+      55,
+      56,
+      57,
+      58,
+      59,
+      60
+    ]
+  },
+  "bootstrap_resamples": 10000,
+  "bootstrap_seed": 72407,
+  "boundary_extension_k_candidates": [
+    5,
+    6
+  ],
+  "confidence_level": 0.95,
+  "controllers": [
+    "goal_directed",
+    "orca",
+    "original_brne",
+    "scripted_probe"
+  ],
+  "dirichlet_alpha": 2.0,
+  "dt": 0.25,
+  "em_max_iters": 200,
+  "em_tol": 0.0001,
+  "experiment_id": "s1_strict_20260804",
+  "horizon_steps": 40,
+  "inverse_wishart_dof": 6.0,
+  "inverse_wishart_scale": 0.01,
+  "max_predictive_similarity": 0.98,
+  "min_mode_fraction": 0.03,
+  "n_humans": 5,
+  "necessity_id": {
+    "environment_split": "validation",
+    "episodes_per_seed": 100,
+    "output_root": "runs/bayesian_brne/s1_strict_20260804/data/necessity_id",
+    "profile_name": "s1_strict_necessity",
+    "suite_seeds": [
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40
+    ]
+  },
+  "nominal_equivalence_margin_nats_per_row": 0.01,
+  "primary_k_candidates": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "restart_seeds": [
+    2407,
+    3407,
+    4407
+  ],
+  "scenario": "baseline_circle",
+  "schema_version": 1,
+  "selection": {
+    "episodes_per_seed": 100,
+    "path": "runs/bayesian_brne/data_formal/validation/baseline_circle",
+    "suite_seeds": [
+      21,
+      22,
+      23,
+      24,
+      25
+    ]
+  },
+  "shrinkage_scale": 1.0,
+  "sticky_kappa": 10.0,
+  "train": {
+    "episodes_per_seed": 400,
+    "path": "runs/bayesian_brne/data_formal/train/baseline_circle",
+    "suite_seeds": [
+      11,
+      12,
+      13,
+      14,
+      15
+    ]
+  }
+}

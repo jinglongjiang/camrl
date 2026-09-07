@@ -61,7 +61,7 @@ class SARL(MultiHumanRL):
     def configure(self, config):
         self.set_common_parameters(config)
         mlp1_dims = [int(x) for x in config.get('sarl', 'mlp1_dims').split(', ')]
-        print(f"调试输出：实际读取的 mlp1_dims = {mlp1_dims}")  # 增加这一行调试信息
+        print(f"")
         mlp2_dims = [int(x) for x in config.get('sarl', 'mlp2_dims').split(', ')]
         mlp3_dims = [int(x) for x in config.get('sarl', 'mlp3_dims').split(', ')]
         attention_dims = [int(x) for x in config.get('sarl', 'attention_dims').split(', ')]

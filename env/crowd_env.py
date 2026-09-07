@@ -40,6 +40,8 @@ class CrowdNavEnv(gym.Env):
         self.discomfort_penalty_factor = reward_cfg.get('discomfort_penalty_factor', 0.1)
         self.step_penalty = reward_cfg.get('step_penalty', -0.01)
         self.dist_reward_factor = reward_cfg.get('dist_reward_factor', 0.05)
+        self.reward_config = reward_cfg
+        self.progress_reward_weight = 0.0  # Dynamically updated by train.py
 
         self.time_limit = self.max_steps
 
@@ -160,10 +162,10 @@ class CrowdNavEnv(gym.Env):
         progress_reward = 0
         if hasattr(self, 'initial_dist_to_goal'):
             progress = (self.initial_dist_to_goal - dist_to_goal) / self.initial_dist_to_goal
-            progress_reward = progress * self.reward.get('progress_reward_factor', 0.1)
+            progress_reward = progress * self.progress_reward_weight
         else:
             self.initial_dist_to_goal = dist_to_goal
-        
+
         # 碰撞检测和安全奖励
         collision_penalty = 0
         min_dist_to_ped = float('inf')
@@ -181,9 +183,9 @@ class CrowdNavEnv(gym.Env):
                 # 渐进式不适惩罚
                 discomfort_factor = (self.discomfort_dist - dist_to_ped) / self.discomfort_dist
                 collision_penalty += self.discomfort_penalty_factor * discomfort_factor ** 2
-            elif dist_to_ped < self.discomfort_dist + self.reward.get('safety_margin', 0.2):
+            elif dist_to_ped < self.discomfort_dist + self.reward_config.get('safety_margin', 0.2):
                 # 安全奖励：鼓励保持安全距离
-                safety_factor = (dist_to_ped - self.discomfort_dist) / self.reward.get('safety_margin', 0.2)
+                safety_factor = (dist_to_ped - self.discomfort_dist) / self.reward_config.get('safety_margin', 0.2)
                 safety_reward += 0.1 * safety_factor
         
         # 成功奖励

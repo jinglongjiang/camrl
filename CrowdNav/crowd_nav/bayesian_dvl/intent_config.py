@@ -68,8 +68,13 @@ class IntentTrainingConfig:
     ranking_batch_size: int
     gradient_diagnostic_interval: int
     # [iqn]
-    iqn_train_quantiles: int
-    iqn_eval_quantiles: int
+    # Order 14C: iqn_mc_quantiles is the RANDOM tau count for MC value
+    # regression; iqn_action_quantiles is the single FIXED midpoint grid
+    # shared by ranking, warm-up, audit and deployment. The retired names
+    # iqn_train_quantiles / iqn_eval_quantiles are NOT accepted -- a config
+    # still carrying them fails closed at load.
+    iqn_mc_quantiles: int
+    iqn_action_quantiles: int
     # [belief]
     future_horizon: int
     future_n_samples: int
@@ -302,8 +307,8 @@ def load_intent_training_config(path: Path = DEFAULT_TRAINING_CONFIG) -> IntentT
         ranking_margin=gf("ranking", "ranking_margin"),
         ranking_batch_size=gi("ranking", "ranking_batch_size"),
         gradient_diagnostic_interval=gi("ranking", "gradient_diagnostic_interval"),
-        iqn_train_quantiles=gi("iqn", "iqn_train_quantiles"),
-        iqn_eval_quantiles=gi("iqn", "iqn_eval_quantiles"),
+        iqn_mc_quantiles=gi("iqn", "iqn_mc_quantiles"),
+        iqn_action_quantiles=gi("iqn", "iqn_action_quantiles"),
         future_horizon=gi("belief", "future_horizon"),
         future_n_samples=gi("belief", "future_n_samples"),
         tracker_sigma=gf("belief", "tracker_sigma"),
@@ -342,16 +347,24 @@ def load_intent_training_config(path: Path = DEFAULT_TRAINING_CONFIG) -> IntentT
 def _validate(cfg: IntentTrainingConfig) -> None:
     # schema must match the CODE, not just be internally consistent
     from crowd_nav.bayesian_dvl.intent_runtime_config import (
-        FEATURE_SCHEMA_V7, TRAINING_CONTRACT_V9_FAILED_DEMOS_MC_ONLY,
+        ACTION_QUANTILES, FEATURE_SCHEMA_V7,
+        TRAINING_CONTRACT_V10_UNIFIED_ACTION_QUANTILES,
     )
     from crowd_nav.bayesian_dvl.intent_policy import CHECKPOINT_SCHEMA_V8
     if cfg.feature_schema != FEATURE_SCHEMA_V7:
         raise IntentConfigError(f"config feature_schema {cfg.feature_schema!r} != code's {FEATURE_SCHEMA_V7!r}")
     _assert_domain_randomization_matches_code(cfg)
-    if cfg.training_contract_schema != TRAINING_CONTRACT_V9_FAILED_DEMOS_MC_ONLY:
+    if cfg.training_contract_schema != TRAINING_CONTRACT_V10_UNIFIED_ACTION_QUANTILES:
         raise IntentConfigError(
             f"config training_contract_schema {cfg.training_contract_schema!r} != "
-            f"code's {TRAINING_CONTRACT_V9_FAILED_DEMOS_MC_ONLY!r}")
+            f"code's {TRAINING_CONTRACT_V10_UNIFIED_ACTION_QUANTILES!r}")
+    # Order 14C: the action-quantile grid is a CODE constant. Declaring a
+    # different one in the config is the same provenance lie as the tracker
+    # knobs that were hashed but never passed -- fail closed.
+    if cfg.iqn_action_quantiles != ACTION_QUANTILES:
+        raise IntentConfigError(
+            f"config iqn_action_quantiles {cfg.iqn_action_quantiles} != code's {ACTION_QUANTILES}. "
+            "Ranking, warm-up, audit and deployment must all score actions on ONE grid.")
     if cfg.checkpoint_schema != CHECKPOINT_SCHEMA_V8:
         raise IntentConfigError(f"config checkpoint_schema {cfg.checkpoint_schema!r} != code's {CHECKPOINT_SCHEMA_V8!r}")
 
@@ -395,7 +408,7 @@ def _validate(cfg: IntentTrainingConfig) -> None:
         ("il_passes", cfg.il_passes), ("online_episodes_total", cfg.online_episodes_total),
         ("batch_size", cfg.batch_size), ("replay_capacity", cfg.replay_capacity),
         ("updates_per_episode", cfg.updates_per_episode),
-        ("iqn_train_quantiles", cfg.iqn_train_quantiles), ("iqn_eval_quantiles", cfg.iqn_eval_quantiles),
+        ("iqn_mc_quantiles", cfg.iqn_mc_quantiles), ("iqn_action_quantiles", cfg.iqn_action_quantiles),
         ("future_horizon", cfg.future_horizon), ("future_n_samples", cfg.future_n_samples),
         ("missing_timeout_steps", cfg.missing_timeout_steps), ("max_candidate_goals", cfg.max_candidate_goals),
         ("checkpoint_interval_episodes", cfg.checkpoint_interval_episodes),
@@ -452,26 +465,34 @@ def _validate(cfg: IntentTrainingConfig) -> None:
     # seed roles must be mutually exclusive AND disjoint from every frozen
     # scenario/eval block (plan section 4.2: no reusing an eval seed for training)
     from crowd_nav.bayesian_dvl.junction_scenario import (
-        JUNCTION_CROWD_HELDOUT_SEEDS, JUNCTION_CROWD_TRAIN_SEEDS, JUNCTION_CROWD_VALIDATION_SEEDS,
-        JUNCTION_HELDOUT_SEEDS, JUNCTION_TRAIN_SEEDS,
+        JUNCTION_CROWD_SEED_ROLES, JUNCTION_HELDOUT_SEEDS, JUNCTION_TRAIN_SEEDS,
     )
     from crowd_nav.bayesian_dvl.intent_train import (
         FORMAL_EVAL_HELDOUT_SEEDS, STANDARD_DEV_DIAGNOSTIC_SEEDS,
-        STANDARD_SELECTION_DEV_SEEDS, JUNCTION_SELECTION_DEV_SEEDS,
+        STANDARD_SELECTION_DEV_SEEDS,
+        STAGE_ACCEPT_CIRCLE_SEEDS, STAGE_ACCEPT_SQUARE_SEEDS,
     )
+    # Order 14 section 7: every junction_crowd role is enumerated FROM the role
+    # registry, not hand-listed here. The hand-listed version silently omitted
+    # crowd_il, crowd_online and crowd_paper_test, and would have omitted every
+    # role added later -- which is exactly how the stage block came to exist in
+    # the evaluation module while the scenario module had never heard of it.
     blocks = {
         "training_seeds": set(cfg.training_seeds),
         "validation_seeds": set(cfg.validation_seeds),
         "junction_train": set(JUNCTION_TRAIN_SEEDS),
         "junction_heldout": set(JUNCTION_HELDOUT_SEEDS),
-        "crowd_train": set(JUNCTION_CROWD_TRAIN_SEEDS),
-        "crowd_heldout": set(JUNCTION_CROWD_HELDOUT_SEEDS),
-        "crowd_validation": set(JUNCTION_CROWD_VALIDATION_SEEDS),
         "formal_eval": set(FORMAL_EVAL_HELDOUT_SEEDS),
         "standard_dev_diagnostic": set(STANDARD_DEV_DIAGNOSTIC_SEEDS),
         "standard_selection_dev": set(STANDARD_SELECTION_DEV_SEEDS),
-        "junction_selection_dev": set(JUNCTION_SELECTION_DEV_SEEDS),
+        # circle/square only: the junction third of the stage block is listed
+        # by the role loop below as crowd_stage_accept, and a block must not
+        # be counted twice or it overlaps itself.
+        "stage_accept_circle": set(STAGE_ACCEPT_CIRCLE_SEEDS),
+        "stage_accept_square": set(STAGE_ACCEPT_SQUARE_SEEDS),
     }
+    for role, seeds in JUNCTION_CROWD_SEED_ROLES.items():
+        blocks[f"crowd_{role}"] = set(seeds)
     names = sorted(blocks)
     for i, a in enumerate(names):
         for b in names[i + 1:]:

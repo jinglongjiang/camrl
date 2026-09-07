@@ -1,0 +1,80 @@
+{
+  "experiment_id": "mm_s1_multimodal_brne_20260805",
+  "schema_version": 1,
+  "brne_commit": "633a5cdcb39ab27f18b596cb8cb1968644f82391",
+  "brne_sha256": "420d1ef383c9a80448d3c714bf22d0d6280c055488269d624c060d98cff54836",
+  "dt": 0.25,
+  "horizon_steps": 24,
+  "scenario": "baseline_circle",
+  "roles": {
+    "train": {"split": "train", "suite_seeds": [8711, 8712, 8713, 8714, 8715], "episodes_per_seed": 40},
+    "selection": {"split": "validation", "suite_seeds": [8721, 8722, 8723, 8724, 8725], "episodes_per_seed": 20},
+    "predictive_audit": {"split": "test_heldout_interactive", "suite_seeds": [8731, 8732, 8733, 8734, 8735, 8736, 8737, 8738, 8739, 8740], "episodes_per_seed": 20}
+  },
+  "fit": {
+    "em_max_iters": 30,
+    "em_tol": 0.0001,
+    "restarts": 2,
+    "sticky_kappa": 4.0,
+    "dirichlet_alpha": 1.1,
+    "base_ridge": 0.00001,
+    "response_ridge": 0.05,
+    "covariance_floor": 0.0001,
+    "seed": 8711
+  },
+  "gate": {
+    "bootstrap_replicates": 2000,
+    "bootstrap_seed": 8761,
+    "min_mode_occupancy": 0.03
+  },
+  "planner": {
+    "horizon_steps": 6,
+    "num_samples": 16,
+    "max_speed": 2.0,
+    "max_acceleration": 2.0,
+    "max_outer_iterations": 3,
+    "outer_tolerance": 0.001,
+    "outer_damping": 1.0,
+    "oscillation_tolerance": 0.000001,
+    "equilibrium_iterations": 3,
+    "solver_mode": "stable_clearance",
+    "safe_distance": 0.20,
+    "cost_sigma": 0.10,
+    "cost_scale": 100.0,
+    "sparse_enabled": false,
+    "pruning_margin": 0.0,
+    "max_missed_steps": 5,
+    "belief_seed": 2407,
+    "sampling_mode": "full_posterior",
+    "seed": 2407
+  },
+  "evaluation": {
+    "latency": {
+      "scenarios": ["baseline_circle", "dense_square"],
+      "splits": ["test_heldout_interactive"],
+      "suite_seeds": [8762],
+      "episodes_per_seed": 1,
+      "methods": ["full_posterior_selected"],
+      "max_steps": 10,
+      "smoke": true
+    },
+    "smoke": {
+      "scenarios": ["baseline_circle", "baseline_square", "dense_circle", "dense_square", "large_circle", "large_square"],
+      "splits": ["test_nominal", "test_heldout_interactive"],
+      "suite_seeds": [8763],
+      "episodes_per_seed": 1,
+      "methods": ["full_posterior_selected", "posterior_mean_selected", "full_posterior_k1", "orca"],
+      "max_steps": 8,
+      "smoke": true
+    },
+    "pilot": {
+      "scenarios": ["baseline_circle"],
+      "splits": ["test_nominal", "test_heldout_interactive"],
+      "suite_seeds": [8771, 8772, 8773, 8774, 8775],
+      "episodes_per_seed": 10,
+      "methods": ["full_posterior_selected", "posterior_mean_selected", "full_posterior_k1", "original_brne", "orca"],
+      "max_steps": 140,
+      "smoke": false
+    }
+  }
+}

@@ -1,0 +1,79 @@
+{
+  "experiment_id": "decision_oracle_sm_brne_20260805",
+  "schema_version": 1,
+  "parent_experiment_id": "mm_s1_repaired_evaluation_20260805",
+  "scope": "D0-D4 frozen-model decision oracle audit; no refit and no deployment policy",
+  "frozen_artifacts": {
+    "selected_path": "runs/bayesian_brne/mm_s1_multimodal_brne_20260805/production/base_motion_selected.npz",
+    "selected_sha256": "ef4ef52caa86484b261a515147b8faa19ee3bd96b428273089a030b70b75df22",
+    "selected_K": 4,
+    "k1_path": "runs/bayesian_brne/mm_s1_multimodal_brne_20260805/production/base_motion_k1.npz",
+    "k1_sha256": "b3232a2dd77b6dbcfd69cc205a2739f1c43511193223f4080d7530135e192713",
+    "k1_K": 1
+  },
+  "source_files": [
+    "crowd_nav/bayesian_brne/decision_oracle.py",
+    "crowd_nav/tools/audit_candidate_decision_oracle.py",
+    "crowd_nav/tools/evaluate_decision_oracle_gate.py",
+    "crowd_nav/bayesian_brne/decision_oracle_selftest.py",
+    "crowd_nav/tools/merge_decision_oracle_shards.py",
+    "crowd_nav/bayesian_brne/causal_runtime.py",
+    "crowd_nav/bayesian_brne/causal_response_arhmm.py",
+    "crowd_nav/bayesian_brne/interaction_protocol.py",
+    "crowd_nav/bayesian_brne/robot_sampler.py",
+    "crowd_nav/bayesian_brne/trajectory_sampler.py",
+    "crowd_nav/bayesian_brne/nonreciprocal_policy.py"
+  ],
+  "source_sha256": {
+    "crowd_nav/bayesian_brne/decision_oracle.py": "d72a5af95bedaa8d7f3a5856f3a822b88ac2788d41d4cb4bff6241aa5362c99f",
+    "crowd_nav/tools/audit_candidate_decision_oracle.py": "9c99e2be61960fdd87aa2e1f776bdd39a9842903fbf63c343b0ca09668c1c3eb",
+    "crowd_nav/tools/evaluate_decision_oracle_gate.py": "46a41848fa998f8d027f0f6c0a03ea222e565162f671e0fcad604ede4c7e84d5",
+    "crowd_nav/bayesian_brne/decision_oracle_selftest.py": "aeb9e3312d064ac237323cf39aa07b90697c54d8ba7c8a23a94349cfacb1f623",
+    "crowd_nav/tools/merge_decision_oracle_shards.py": "c07202286f436328da1035915febcb891fb587ada09a9ec365a7f732b17c7538",
+    "crowd_nav/bayesian_brne/causal_runtime.py": "098c2c62ad0c555a8331ff5a0b97c013e323efd5c147c7e1b9634967fed51673",
+    "crowd_nav/bayesian_brne/causal_response_arhmm.py": "645a094fa839a349bf3843bd282b7ee1badfb6d59b2465dca575a5552a9b5569",
+    "crowd_nav/bayesian_brne/interaction_protocol.py": "b0086093cf2806f5349a75c1eaed55f51cb6e6c5320a1b3bf2095edd8f6fd427",
+    "crowd_nav/bayesian_brne/robot_sampler.py": "4c8b0ddfd93887c81e5c0e99bd99dcce9df7ea1f502f57c5a1c10571945ecc2a",
+    "crowd_nav/bayesian_brne/trajectory_sampler.py": "8d9d2531357675eef8e78459bbb07f82a1fa29f4400d1d96d2eead94b97a7900",
+    "crowd_nav/bayesian_brne/nonreciprocal_policy.py": "7c3069dcca2b617f3458e9c07ad5b6580713a43b6f6857e45a6409b012ded469"
+  },
+  "data_protocol": {
+    "scenario": "baseline_circle",
+    "splits": ["test_nominal", "test_heldout_interactive"],
+    "suite_seeds": [8911, 8912, 8913, 8914, 8915],
+    "episodes_per_seed": 20,
+    "max_steps": 140,
+    "max_audit_states_per_episode": 20,
+    "audit_subset": "fsm_conflict",
+    "horizon_steps": 8,
+    "legacy_candidates": 16,
+    "prediction_samples": 16,
+    "bootstrap_replicates": 2000,
+    "bootstrap_seed": 8921
+  },
+  "physics": {
+    "safe_distance": 0.2,
+    "collision_clearance": 0.0,
+    "comfort_clearance": 0.2
+  },
+  "gates": {
+    "min_states": 300,
+    "candidate_safe_exists_point": 0.80,
+    "candidate_safe_exists_ci_low": 0.70,
+    "dense_gap_max_percentage_points": 10.0,
+    "oracle_sr_min": 0.60,
+    "oracle_cr_max": 0.20,
+    "k4_mean_clearance_regret_improvement_ci_low": 0.0,
+    "k4_safe_hit_improvement_percentage_points": 5.0,
+    "k4_collision_regret_harm_percentage_points": 1.0,
+    "weighted_action_collision_min_percentage_points": 10.0
+  },
+  "execution_contract": {
+    "responsibility_mode": "robot_only",
+    "response_enabled": false,
+    "true_branch_only_for_oracle": true,
+    "common_random_numbers": true,
+    "deployment_policy_allowed_before_d4_pass": false,
+    "six_scenario_formal_allowed_before_d7_pass": false
+  }
+}

@@ -47,7 +47,8 @@ from crowd_nav.bayesian_dvl import normalization as norm
 from crowd_nav.bayesian_dvl.intent_runtime_config import (
     CANDIDATE_FEATURE_DIM, FEATURE_SCHEMA_V7, HUMAN_FEATURE_DIM_V7,
     HUMAN_SCALAR_DIM_V7, MAX_CANDIDATE_GOALS, NORMALIZATION_CONSTANTS, FROZEN_VALUES,
-    TEMPORAL_SUMMARY_DIM, TRAINING_CONTRACT_V9_FAILED_DEMOS_MC_ONLY,
+    ACTION_QUANTILES, TEMPORAL_SUMMARY_DIM,
+    TRAINING_CONTRACT_V10_UNIFIED_ACTION_QUANTILES,
 )
 from crowd_nav.bayesian_dvl.contracts import HumanObservation, RobotObservation
 from crowd_nav.bayesian_dvl.geometry_features import _robot_feature_vector, compute_action_features_array
@@ -329,7 +330,7 @@ def score_candidates_v5(
     human_mask: np.ndarray,
     action_table: np.ndarray,
     remaining_fraction: float,
-    n_taus: int = 32,
+    n_taus: int = ACTION_QUANTILES,
     device: str = "cpu",
 ) -> Tuple[IntentCandidateResult, ...]:
     """Score all 80 candidates with the SAME state embedding (batched over
@@ -371,6 +372,15 @@ def score_candidates_v5(
 # with identical tensor shapes but was fit under the buggy
 # online-samples-get-ranking objective, so it MUST fail closed here rather
 # than be silently accepted.
+# Order 14C deliberately does NOT bump this. The checkpoint schema names the
+# PAYLOAD FORMAT, and no field, dtype or shape changed. What 14C changed is
+# the LOSS SEMANTICS -- action ranking moved from 16 taus to the deployed 32
+# -- and that is exactly what training_contract_schema is for; it went V9 ->
+# V10 and load_intent_checkpoint refuses on it, so a pre-14C checkpoint is
+# still rejected. Bumping this constant as well would have been redundant
+# AND wrong: checkpoint_schema is one of CORPUS_IDENTITY_FIELDS, so changing
+# it invalidates the raw ORCA corpus -- 5000 episodes whose contents cannot
+# possibly depend on how many quantiles a ranking loss reads.
 CHECKPOINT_SCHEMA_V8 = "bdvl_intent_checkpoint_v8_temporal_summary"
 
 
@@ -388,7 +398,7 @@ def save_intent_checkpoint(
     payload = {
         "checkpoint_schema": CHECKPOINT_SCHEMA_V8,
         "feature_schema": FEATURE_SCHEMA_V7,
-        "training_contract_schema": TRAINING_CONTRACT_V9_FAILED_DEMOS_MC_ONLY,
+        "training_contract_schema": TRAINING_CONTRACT_V10_UNIFIED_ACTION_QUANTILES,
         "model_state_dict": model.state_dict(),
         "action_grid_hash": action_grid_hash,
         "scene_registry_sha256": scene_registry_sha256,
@@ -420,10 +430,10 @@ def load_intent_checkpoint(
         raise IntentPolicyError(f"checkpoint schema {checkpoint['checkpoint_schema']!r} != {CHECKPOINT_SCHEMA_V8!r}, fail closed, no compat loading")
     if checkpoint["feature_schema"] != FEATURE_SCHEMA_V7:
         raise IntentPolicyError(f"feature schema {checkpoint['feature_schema']!r} != {FEATURE_SCHEMA_V7!r}, fail closed")
-    if checkpoint["training_contract_schema"] != TRAINING_CONTRACT_V9_FAILED_DEMOS_MC_ONLY:
+    if checkpoint["training_contract_schema"] != TRAINING_CONTRACT_V10_UNIFIED_ACTION_QUANTILES:
         raise IntentPolicyError(
             f"training contract {checkpoint['training_contract_schema']!r} != "
-            f"{TRAINING_CONTRACT_V9_FAILED_DEMOS_MC_ONLY!r}, fail closed -- the loss semantics these "
+            f"{TRAINING_CONTRACT_V10_UNIFIED_ACTION_QUANTILES!r}, fail closed -- the loss semantics these "
             f"weights were fit under differ from what this code implements, and no shape check can "
             f"detect that")
     if expected_action_grid_hash is not None and checkpoint["action_grid_hash"] != expected_action_grid_hash:

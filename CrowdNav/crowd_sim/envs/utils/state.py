@@ -56,6 +56,35 @@ class JointState(object):
             assert isinstance(human_state, ObservableState)
         self.self_state = self_state
         self.human_states = human_states
+        # Order 17 item 8: optional occlusion payload. These default to None so
+        # every existing construction site and every pickled state stays valid;
+        # to_array() below is untouched and keeps producing the legacy 34-D
+        # vector. The ground-truth grid is deliberately NOT carried here -- it
+        # is debug output and must never reach a training buffer.
+        self.policy_entities = None
+        self.visible_ids = None
+        self.occluded_ids = None
+        self.provenance = None
+        self.belief_features = "full"
+        self.token_contract = "legacy_top5"
+        self.visible_slots = 5
+        self.hidden_slots = 10
+
+    def to_policy_tokens(self):
+        """Policy tokens including the occlusion columns 9-12. Returns None
+        when there is no occlusion payload, so callers fall back to the legacy
+        34-D path rather than silently receiving zeros."""
+        if self.policy_entities is None:
+            return None
+        from crowd_nav.contracts import entities_to_tokens
+        return entities_to_tokens(
+            self.self_state,
+            self.policy_entities,
+            belief_features=self.belief_features,
+            token_contract=self.token_contract,
+            visible_slots=self.visible_slots,
+            hidden_slots=self.hidden_slots,
+        )
 
     def to_array(self):
         """

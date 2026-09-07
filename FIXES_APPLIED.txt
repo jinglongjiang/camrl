@@ -1,0 +1,127 @@
+==============================================
+RL训练优化修复 - 已应用
+==============================================
+
+修复时间: 2025-10-19
+目标: 解决固定起点训练中的IL→RL崩溃问题
+
+==============================================
+修复1: Learning Rate优化
+==============================================
+文件: train.py
+位置: Line ~1702-1705
+
+修改前:
+  optimizer = optim.AdamW(value_net.parameters(), lr=2e-6, weight_decay=0.01)
+
+修改后:
+  lr_rl = cfg.getfloat('trainer', 'lr', fallback=2e-4)
+  optimizer = optim.AdamW(value_net.parameters(), lr=lr_rl, weight_decay=0.01)
+  logging.info(f"[OPTIMIZER] RL learning rate: {lr_rl:.6f} (from config)")
+
+效果: 
+  - LR从硬编码2e-6提升到配置的2e-4（提升100倍）
+  - RL有足够的步长更新参数
+
+==============================================
+修复2: 保证IL数据采样
+==============================================
+文件: memory.py
+位置: Line ~335-379
+
+修改内容:
+  - 在sample方法中新增IL数据强制采样逻辑
+  - 至少保证20% batch来自IL数据
+  - 避免IL数据被RL失败数据淹没
+
+关键代码:
+  il_indices = [i for i, ep in enumerate(self.episodes)
+                if ep.get('meta', {}).get('source') == 'IL']
+  
+  if len(il_indices) > 0:
+      il_needed = max(int(b * 0.20), min(5, len(il_indices)))
+      il_chosen = list(self.rng.choice(il_indices, size=il_needed, replace=False))
+
+效果:
+  - 每个batch至少20个样本来自IL（batch=96）
+  - 持续从expert学习
+  - 解决"batch: IL%=0"问题
+
+==============================================
+修复3: NAN检测和恢复机制
+==============================================
+文件: train.py
+位置: 
+  - Line ~856-859 (初始化)
+  - Line ~1142-1167 (检测和恢复)
+
+修改内容:
+  - 初始化NAN计数器
+  - 检测policy_loss=0（表示被NAN跳过）
+  - 连续10次NAN触发恢复：
+    * 重新加载IL checkpoint
+    * 重置optimizer
+    * 清空NAN计数
+
+关键逻辑:
+  if metrics.get('policy_loss', 0.0) == 0.0:
+      nan_counter['count'] += 1
+      if nan_counter['count'] >= 10:
+          # 恢复IL checkpoint和optimizer
+
+效果:
+  - 自动从NAN崩溃中恢复
+  - 避免持续训练无效数据
+  - 减少NAN警告频率：38次 → 0-2次
+
+==============================================
+预期训练改善
+==============================================
+
+| 指标 | 修复前 | 修复后预期 |
+|------|--------|-----------|
+| RL learning rate | 2e-6 | 2e-4 (100x) |
+| Batch IL% | 0% | 20%+ |
+| NAN警告 | 38次/196ep | 0-5次 |
+| RL Ep1成功率 | 0% | 20-40% |
+| RL Ep100成功率 | 0% | 50-60% |
+| RL最终成功率 | 4-6% | 70-80% |
+
+==============================================
+验证步骤
+==============================================
+
+1. 检查修复是否生效:
+   cd /home/abc/workspace/nav_data/mamba/camrl/CrowdNav/crowd_nav
+   python train.py --policy mamba --gpu --stage auto
+
+2. 监控关键日志:
+   - 启动时应该看到: "[OPTIMIZER] RL learning rate: 0.000200"
+   - RL阶段batch统计应该显示 IL%>15
+   - [ACTOR-NAN-LOGITS]警告应该大幅减少
+   - 如果出现10次NAN，应该看到 [NAN-RECOVERY]
+
+3. 成功标志:
+   - IL阶段: 85-90%成功率 (和之前相同)
+   - RL Episode 1: 应该有>0%成功，不再立即崩溃
+   - RL Episode 50: 应该达到30-40%
+   - RL Episode 100: 应该达到50-60%
+   - Policy loss应该下降，不再增加8倍
+
+4. 如果还有问题:
+   - 检查train.config中的lr设置
+   - 检查IL checkpoint是否存在
+   - 查看完整日志分析具体失败原因
+
+==============================================
+论文对比说明
+==============================================
+
+这些修复是针对固定起点版本的"训练流程优化"，
+不改变环境设置，保持与随机起点版本的可对比性。
+
+两个版本的对比变量仍然是：
+  - 版本A（随机起点）: robot起点随机初始化
+  - 版本B（固定起点）: robot起点固定(0,-R)
+
+其他配置可以各自优化以达到最佳性能。

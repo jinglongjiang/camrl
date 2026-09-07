@@ -20,6 +20,7 @@ from crowd_nav.bayesian_dvl.intent_runtime_config import FORMAL_SCENARIOS as _FO
 from crowd_nav.bayesian_dvl.junction_scenario import (  # noqa: F401
     JUNCTION_CROWD_PAPER_TEST_SEEDS,
     JUNCTION_CROWD_SELECTION_DEV_SEEDS as JUNCTION_SELECTION_DEV_SEEDS,
+    JUNCTION_CROWD_STAGE_ACCEPT_SEEDS,
 )
 
 
@@ -58,6 +59,34 @@ STANDARD_DEV_DIAGNOSTIC_SEEDS: Tuple[int, ...] = tuple(range(97401, 97501))  # 1
 # Never used for training (rejected by _assert_not_formal_seed), never used
 # for the paper's formal/Test8 numbers.
 STANDARD_SELECTION_DEV_SEEDS: Tuple[int, ...] = tuple(range(2_900_000, 2_900_100))  # 100 (V2)
+
+# Order 14 section 7: the STAGE-ACCEPTANCE block. 30 layouts per training
+# scenario, evaluated closed-loop and greedily at a stage boundary (end of
+# IL, end of DAgger) to decide whether the next stage may start at all.
+#
+# Why a new block rather than reusing an existing one: every block above is
+# either already trained on or already reserved for choosing/reporting the
+# paper's weights. This one exists to answer a single question -- can the
+# policy complete an episode -- and a stage gate that shares seeds with the
+# training distribution answers a different question than it claims to.
+#
+# junction_crowd here is the NOMINAL scene (is_heldout=False), the same
+# geometry training uses; the shifted held-out variant is a different
+# distribution and would confound a stage gate with a generalisation test.
+#
+# Never trained on: _assert_not_formal_seed rejects the whole block.
+STAGE_ACCEPT_CIRCLE_SEEDS: Tuple[int, ...] = tuple(range(3_000_000, 3_000_030))          # 30
+STAGE_ACCEPT_SQUARE_SEEDS: Tuple[int, ...] = tuple(range(3_010_000, 3_010_030))          # 30
+# junction_crowd's stage block is owned by junction_scenario.py, which is also
+# where the role resolver lives. Restating the range here is what broke the
+# 90-episode gate: two sources of truth, only one of them consulted.
+STAGE_ACCEPT_JUNCTION_CROWD_SEEDS: Tuple[int, ...] = JUNCTION_CROWD_STAGE_ACCEPT_SEEDS
+STAGE_ACCEPT_SEEDS: Tuple[int, ...] = (
+    STAGE_ACCEPT_CIRCLE_SEEDS + STAGE_ACCEPT_SQUARE_SEEDS + STAGE_ACCEPT_JUNCTION_CROWD_SEEDS)
+STAGE_ACCEPT_PLAN = (
+    (("circle",) * len(STAGE_ACCEPT_CIRCLE_SEEDS)) +
+    (("square",) * len(STAGE_ACCEPT_SQUARE_SEEDS)) +
+    (("junction_crowd",) * len(STAGE_ACCEPT_JUNCTION_CROWD_SEEDS)))
 # V2: junction selection-dev now lives in junction_scenario.py beside the
 # other junction blocks, so a block can never again be wired into the
 # inventory without also being wired into the scenario's allowlist.

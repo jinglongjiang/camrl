@@ -1,0 +1,48 @@
+{
+  "experiment_id": "mm_s1_repaired_evaluation_20260805",
+  "schema_version": 1,
+  "parent_experiment_id": "mm_s1_multimodal_brne_20260805",
+  "scientific_scope": "evaluation repair only; artifacts are frozen and may not be refit",
+  "frozen_artifacts": {
+    "selected_path": "runs/bayesian_brne/mm_s1_multimodal_brne_20260805/production/base_motion_selected.npz",
+    "selected_sha256": "ef4ef52caa86484b261a515147b8faa19ee3bd96b428273089a030b70b75df22",
+    "selected_K": 4,
+    "k1_path": "runs/bayesian_brne/mm_s1_multimodal_brne_20260805/production/base_motion_k1.npz",
+    "k1_sha256": "b3232a2dd77b6dbcfd69cc205a2739f1c43511193223f4080d7530135e192713",
+    "k1_K": 1
+  },
+  "health_gate": {
+    "audit_path": "runs/bayesian_brne/mm_s1_multimodal_brne_20260805/diagnostics/orca_protocol_audit/summary.json",
+    "require_exact_pilot_reproduction": true,
+    "min_reciprocal_orca_success_rate_per_split": 0.95,
+    "max_reciprocal_orca_collision_rate_per_split": 0.02,
+    "max_controller_fallbacks": 0,
+    "require_collision_geometry_consistency": true
+  },
+  "action_sensitivity": {
+    "reference_controller": "scripted_probe",
+    "responsibility_mode": "robot_only",
+    "suite_seeds": [8781, 8782, 8783, 8784, 8785],
+    "episodes_per_seed": 10,
+    "splits": ["test_nominal", "test_heldout_interactive"],
+    "scenario": "baseline_circle",
+    "max_steps": 140,
+    "bootstrap_replicates": 2000,
+    "gate_scope": "test_heldout_interactive",
+    "gate_subset": "fsm_conflict",
+    "minimum_gate_states": 100,
+    "meaningful_action_l2": 0.05,
+    "minimum_mean_l2_ci_low": 0.01,
+    "minimum_meaningful_fraction_ci_low": 0.05,
+    "required_pairs": ["selected_vs_k1", "full_vs_mean"]
+  },
+  "repaired_pilot": {
+    "suite_seeds": [8821, 8822, 8823, 8824, 8825],
+    "episodes_per_seed": 20,
+    "splits": ["test_nominal", "test_heldout_interactive"],
+    "scenario": "baseline_circle",
+    "max_steps": 140,
+    "bootstrap_replicates": 2000,
+    "blocked_until_health_and_action_gates_pass": true
+  }
+}

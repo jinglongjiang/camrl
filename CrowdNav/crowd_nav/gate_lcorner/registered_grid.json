@@ -1,0 +1,52 @@
+{
+  "status": "frozen_before_2b",
+  "frozen_at": "2026-09-02T15:00:00+09:00",
+  "purpose": "upstream falsification gate; values must not be moved after single-cell results",
+  "base_model": {
+    "goal_x": 12,
+    "intersection_x": 6,
+    "horizon": 9,
+    "distances": [3.0, 4.0, 5.0, 6.0],
+    "occupancy_steps": 2,
+    "max_peek": 2,
+    "detour_steps": 11,
+    "p_miss": 0.05,
+    "p_false_alarm": 0.02,
+    "success_reward": 1.0,
+    "collision_cost": 2.0,
+    "timeout_cost": 1.0,
+    "step_cost": 0.02
+  },
+  "grid": {
+    "p_exist": [0.2, 0.4, 0.6, 0.8, 1.0],
+    "peek_steps": [1, 2, 3]
+  },
+  "speed_pairs": {
+    "slow": [0.75, 1.5],
+    "nominal": [1.0, 2.0],
+    "fast": [1.25, 2.5]
+  },
+  "fov_depths": {
+    "narrow": [2, 4],
+    "medium": [3, 6],
+    "wide": [4, 8]
+  },
+  "default_cell": {
+    "p_exist": 0.6,
+    "speed_name": "nominal",
+    "fov_name": "medium",
+    "peek_steps": 1
+  },
+  "fixed_confidence": 0.5,
+  "prior_mismatch_ratios": [0.5, 1.0, 2.0],
+  "dev_rule": "even parity of 4D grid indices",
+  "heldout_rule": "odd parity of 4D grid indices",
+  "gates": {
+    "G1_min_oracle_SR_gap": 0.10,
+    "G1_min_grid_fraction": 0.60,
+    "G2_min_SR_gain_over_each_baseline": 0.03,
+    "G4_min_connected_grid_fraction": 0.40,
+    "G6_min_oracle_gap_closed": 0.50
+  }
+}
+

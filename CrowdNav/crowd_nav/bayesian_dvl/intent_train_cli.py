@@ -61,6 +61,7 @@ from crowd_nav.bayesian_dvl.intent_train import (
     ABORT_TYPES, ABORT_WARMUP_FAILURE, TEST8_AUDIT_BASE_SEED, TEST8_AUDIT_BASE_SEED_RETIRED,
     FORMAL_EVAL_HELDOUT_SEEDS, FORMAL_SIX_SCENARIOS, PAPER_MAIN_BASE_SEED,
     STANDARD_DEV_DIAGNOSTIC_SEEDS, STANDARD_SELECTION_DEV_SEEDS, JUNCTION_SELECTION_DEV_SEEDS,
+    STAGE_ACCEPT_SEEDS,
     PAPER_MAIN_EPISODES_PER_SCENARIO, EMAModel,
     IntentReplay, paper_main_jobs, IL_AUDIT_PER_SCENARIO,
     build_il_audit_set,
@@ -167,6 +168,8 @@ SQUARE_ONLINE_SEED_BASE = 2_710_000    # square online     (2_710_000-2_713_332)
 # same seeds twice would report a self-overlap.
 STANDARD_VALIDATION_SEEDS = tuple(range(2_800_000, 2_800_010))    # 10
 FINAL_EMA_NAME = "final_ema.pth"
+# The ranking-only weights, saved the moment warm-up passes (Order 14 s2).
+WARMUP_EMA_NAME = "warmup_end.pth"
 RUN_STATE_NAME = "run_state.json"
 # A1: ONE atomic full resume. The two-slot A/B scheme still cost 2 x ~1.1 GB
 # per run against 2.5 GB of free disk. _atomic_write_bytes already writes to
@@ -795,6 +798,12 @@ def _assert_not_formal_seed(seed: int) -> None:
     if seed in set(STANDARD_SELECTION_DEV_SEEDS) or seed in set(JUNCTION_SELECTION_DEV_SEEDS):
         raise IntentCLIError(
             f"training tried to use seed {seed}, which is a CHECKPOINT-SELECTION development seed")
+    # Order 14 section 7: the stage-acceptance block decides whether the NEXT
+    # training stage may start. Training on it would make that gate score
+    # data it had already fit.
+    if seed in set(STAGE_ACCEPT_SEEDS):
+        raise IntentCLIError(
+            f"training tried to use seed {seed}, which is a STAGE-ACCEPTANCE closed-loop seed")
     # Test8 identities are DERIVED, not enumerated, so an inventory range
     # cannot catch them. The audit suite and the formal suite use different
     # base seeds and both must be refused.
@@ -843,6 +852,7 @@ def seed_inventory(cfg: IntentTrainingConfig) -> Dict[str, object]:
         "junction_crowd_validation": JUNCTION_CROWD_VALIDATION_SEEDS,
         "standard_dev_diagnostic": STANDARD_DEV_DIAGNOSTIC_SEEDS,
         "standard_selection_dev": STANDARD_SELECTION_DEV_SEEDS,
+        "stage_accept": STAGE_ACCEPT_SEEDS,
         "junction_selection_dev": JUNCTION_SELECTION_DEV_SEEDS,
         # Never used by training or selection. Listed here so the mutual-
         # exclusion proof covers it; the V1 paper-test block was spent the
@@ -1128,6 +1138,15 @@ def cmd_train(args, resume: bool = False) -> int:
         overrides["audit_episodes_per_scenario"] = args.audit_episodes
     if args.warmup_steps is not None:
         overrides["warmup_max_steps"] = args.warmup_steps
+    # Order 14 section 2, decisive experiment: warm-up ranks EVERY rankable
+    # row of its 256-row batch, joint IL ranks at most ranking_batch_size=32
+    # of them -- roughly an 8x drop in ranking supervision at exactly the
+    # transition where the measured ranking structure collapses. Raising this
+    # to the batch size removes the truncation. PILOT ONLY: it is a frozen
+    # value, so a run that overrides it is an engineering check and is
+    # labelled as one, never a formal result.
+    if args.ranking_batch_size is not None:
+        overrides["ranking_batch_size"] = args.ranking_batch_size
 
     art = _build_artifacts(cfg, seed, device, action_grid_hash, scene_hash)
     art.state.training_arm = args.training_arm
@@ -1176,6 +1195,8 @@ def cmd_train(args, resume: bool = False) -> int:
     # C4R.1: updates are batch_size mini-batches drawn from the CPU-side
     # reservoir, never one device-resident full-corpus batch.
     total_il_passes = cfg.il_passes if args.il_passes is None else args.il_passes
+    eff_rank_bs = (cfg.ranking_batch_size if args.ranking_batch_size is None
+                   else args.ranking_batch_size)
     corpus_dir = Path(args.il_corpus_dir) if args.il_corpus_dir else run_dir.parent / "il_corpus"
     corpus_file = Path(args.il_corpus) if args.il_corpus else il_corpus_path(corpus_dir, arm, cfg)
     if args.il_episodes is not None:
@@ -1470,7 +1491,8 @@ def cmd_train(args, resume: bool = False) -> int:
         _run_development_if_due(art.state.online_episodes_done)
 
     def _train_diag_mc() -> float:
-        r = evaluate_il_audit(art.model, train_diag_set, n_taus=cfg.iqn_train_quantiles,
+        r = evaluate_il_audit(art.model, train_diag_set, n_taus=cfg.iqn_mc_quantiles,
+                              action_taus=cfg.iqn_action_quantiles,
                               ranking_margin=cfg.ranking_margin, device=str(device))
         return float(r["audit_mc_loss"])
 
@@ -1484,10 +1506,11 @@ def cmd_train(args, resume: bool = False) -> int:
         """
         if audit_set is None or art.health is None:
             return
-        m = evaluate_il_audit(art.model, audit_set, n_taus=cfg.iqn_train_quantiles,
+        m = evaluate_il_audit(art.model, audit_set, n_taus=cfg.iqn_mc_quantiles,
+                              action_taus=cfg.iqn_action_quantiles,
                               ranking_margin=cfg.ranking_margin, device=str(device),
                               scenario_of=audit_labels_sel)
-        d = expert_rank_diagnostics(art.model, audit_set, n_taus=cfg.iqn_train_quantiles,
+        d = expert_rank_diagnostics(art.model, audit_set, n_taus=cfg.iqn_action_quantiles,
                                     device=str(device))
         art.state.il_audit_mc_loss = float(m["audit_mc_loss"])
         art.state.il_audit_rank_loss = float(d["audit_rank_loss"])
@@ -1525,7 +1548,7 @@ def cmd_train(args, resume: bool = False) -> int:
         wu = run_ranking_warmup(
             art.model, art.optimizer, art.buffer, cfg.batch_size, art.sample_rng, audit_set,
             max_steps=wu_max,
-            n_taus=cfg.iqn_train_quantiles,
+            n_taus=cfg.iqn_action_quantiles,
             ranking_margin=cfg.ranking_margin,
             # ranking is the ONLY objective here, so the 80-action pass is
             # not throttled: at ranking_batch_size=32 the same budget stalls
@@ -1550,6 +1573,15 @@ def cmd_train(args, resume: bool = False) -> int:
                 f"Joint training must not start on an unlearned ranking term.")
         telemetry.log(f"WARMUP PASSED steps={wu['steps']} top1={art.state.warmup_top1:.3f} "
                       f"rank={art.state.warmup_rank_loss:.5f}")
+        # Order 14 section 2: keep the weights the ranking objective produced
+        # ALONE, before joint training. Measured on V10: warm-up ends at
+        # rank=0.038 / margin=+0.070 / score range 0.509, and 2400 joint
+        # passes later the same run reads rank=0.098 / margin=+0.002 / range
+        # 0.099 -- the ranking structure is nearly gone. Whether THOSE
+        # weights can already navigate is a decisive question, and it cannot
+        # be asked at all unless they are on disk.
+        _save_milestone(run_dir / WARMUP_EMA_NAME, art, cfg, action_grid_hash, scene_hash)
+        telemetry.log(f"WARMUP weights saved -> {run_dir / WARMUP_EMA_NAME}")
 
     if art.state.il_passes_done < total_il_passes:
         result = None
@@ -1558,8 +1590,9 @@ def cmd_train(args, resume: bool = False) -> int:
             measure = (art.state.global_updates % diag_every == 0)
             result = run_il_update(
                 art.model, art.optimizer, art.buffer, cfg.batch_size, art.sample_rng, art.tau_generator,
-                n_taus=cfg.iqn_train_quantiles, ranking_margin=cfg.ranking_margin,
-                rho=effective_rho, ranking_batch_size=cfg.ranking_batch_size,
+                n_taus=cfg.iqn_mc_quantiles, action_taus=cfg.iqn_action_quantiles,
+                ranking_margin=cfg.ranking_margin,
+                rho=effective_rho, ranking_batch_size=eff_rank_bs,
                 device=str(device), grad_clip_norm=cfg.grad_clip_norm,
                 measure_gradient_ratio=measure)
             art.ema.update(art.model)
@@ -1595,8 +1628,9 @@ def cmd_train(args, resume: bool = False) -> int:
         result = run_online_training_step(
             args.env_config, art.model, art.optimizer, action_table, scenario, ep_seed, epsilon,
             art.buffer, cfg.batch_size, art.explore_rng, art.sample_rng, art.tau_generator,
-            gamma=cfg.gamma, n_taus=cfg.iqn_train_quantiles, ranking_margin=cfg.ranking_margin,
-            rho=cfg.rank_cap_rho, ranking_batch_size=cfg.ranking_batch_size,
+            gamma=cfg.gamma, n_taus=cfg.iqn_mc_quantiles,
+            action_taus=cfg.iqn_action_quantiles, ranking_margin=cfg.ranking_margin,
+            rho=cfg.rank_cap_rho, ranking_batch_size=eff_rank_bs,
             n_samples=cfg.future_n_samples, horizon=cfg.future_horizon, device=str(device),
             demo_ratio=cfg.demo_sample_ratio, grad_clip_norm=cfg.grad_clip_norm,
             measure_gradient_ratio=measure, updates=cfg.updates_per_episode, belief_mode=arm)
@@ -1762,6 +1796,8 @@ def build_parser() -> argparse.ArgumentParser:
         t.add_argument("--warmup-steps", type=int, default=None,
                        help="PILOT ONLY: cap the ranking warm-up. The frozen budget is used "
                             "for any full-budget run.")
+        t.add_argument("--ranking-batch-size", type=int, default=None,
+                       help="PILOT ONLY: override the frozen per-batch ranking cap")
         t.add_argument("--audit-episodes", type=int, default=None,
                        help="PILOT ONLY: held-out audit episodes per scenario. The frozen "
                             "value is used for any full-budget run.")

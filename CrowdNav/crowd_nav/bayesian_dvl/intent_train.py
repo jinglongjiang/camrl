@@ -27,7 +27,7 @@ import torch
 import torch.nn.functional as F
 
 from crowd_nav.bayesian_dvl.intent_runtime_config import (
-    ActionGridSpec, FROZEN_VALUES, TRACKER_DEFAULTS, robot_visible_from,
+    ACTION_QUANTILES, ActionGridSpec, FROZEN_VALUES, TRACKER_DEFAULTS, robot_visible_from,
 )
 from crowd_nav.bayesian_dvl.contracts import HumanObservation, RobotObservation
 from crowd_nav.bayesian_dvl.geometry_features import _robot_feature_vector, compute_action_features_array
@@ -628,6 +628,7 @@ class TrainStepResult:
 def train_step(
     model: DistributionalValueModel, optimizer: torch.optim.Optimizer,
     batch: IntentBatch, generator: torch.Generator, n_taus: int = 16,
+    action_taus: int = ACTION_QUANTILES,
     ranking_margin: float = 0.1, ranking_batch_size: Optional[int] = None,
     grad_clip_norm: Optional[float] = None, measure_gradient_ratio: bool = False,
     rho: float = RANK_CAP_RHO,
@@ -705,7 +706,11 @@ def train_step(
         rank_positions = rank_positions[:ranking_batch_size]
 
     n_actions = batch.all_action_feats.shape[1]
-    fixed_tau = (torch.arange(n_taus, dtype=torch.float32, device=device) + 0.5) / n_taus
+    # Order 14C: the ACTION grid, not the MC grid. These used to be the
+    # SAME variable, so ranking was supervised at 16 taus while the only
+    # scorer that ever drives the robot used 32 -- disjoint point sets,
+    # and the audit shared the ranking's 16 so it could never see the gap.
+    fixed_tau = (torch.arange(action_taus, dtype=torch.float32, device=device) + 0.5) / action_taus
 
     rank_losses = []
     if rank_positions:
@@ -733,7 +738,7 @@ def train_step(
         state_rep = state_emb.repeat_interleave(n_actions, dim=0)                        # [n_rank*A, E]
         action_rep = batch.all_action_feats[idx].reshape(n_rank * n_actions, -1)         # [n_rank*A, Fa]
         action_emb = model.action_encoder(action_rep)
-        tau_rep = fixed_tau.unsqueeze(0).expand(n_rank * n_actions, n_taus)
+        tau_rep = fixed_tau.unsqueeze(0).expand(n_rank * n_actions, action_taus)
         scores = model.value_network(state_rep, action_emb, tau_rep).mean(dim=1)         # [n_rank*A]
         scores = scores.view(n_rank, n_actions)
         for row, i in enumerate(rank_positions):
@@ -1407,8 +1412,8 @@ def run_online_training_step(
     action_table: np.ndarray, scenario: str, episode_seed: int, epsilon: float,
     buffer: IntentReplay, batch_size: int, explore_rng: np.random.Generator,
     sample_rng: np.random.Generator, tau_generator: torch.Generator, is_heldout: bool = False,
-    gamma: float = 0.95, n_taus: int = 16, ranking_margin: float = 0.1,
-    rho: float = RANK_CAP_RHO,
+    gamma: float = 0.95, n_taus: int = 16, action_taus: int = ACTION_QUANTILES,
+    ranking_margin: float = 0.1, rho: float = RANK_CAP_RHO,
     ranking_batch_size: Optional[int] = None, n_samples: int = 60, horizon: int = 8, device: str = "cpu",
     demo_ratio: float = 0.20, grad_clip_norm: Optional[float] = None,
     measure_gradient_ratio: bool = False, updates: int = 1, belief_mode: str = "full",
@@ -1440,6 +1445,7 @@ def run_online_training_step(
         batch = buffer.sample(min(batch_size, len(buffer)), sample_rng, demo_ratio=demo_ratio)
         result = train_step(
             model, optimizer, batch_to_tensors(batch, device=device), tau_generator, n_taus=n_taus,
+            action_taus=action_taus,
             ranking_margin=ranking_margin, rho=rho, ranking_batch_size=ranking_batch_size,
             grad_clip_norm=grad_clip_norm, measure_gradient_ratio=measure_gradient_ratio,
         )
@@ -1462,7 +1468,7 @@ def run_online_training_step(
 def run_il_update(
     model: DistributionalValueModel, optimizer: torch.optim.Optimizer, buffer: IntentReplay,
     batch_size: int, sample_rng: np.random.Generator, tau_generator: torch.Generator,
-    n_taus: int = 16, ranking_margin: float = 0.1,
+    n_taus: int = 16, action_taus: int = ACTION_QUANTILES, ranking_margin: float = 0.1,
     ranking_batch_size: Optional[int] = None, device: str = "cpu",
     grad_clip_norm: Optional[float] = None, measure_gradient_ratio: bool = False,
     rho: float = RANK_CAP_RHO,
@@ -1484,6 +1490,7 @@ def run_il_update(
     batch = buffer.sample(min(batch_size, len(buffer)), sample_rng, demo_ratio=1.0)
     return train_step(
         model, optimizer, batch_to_tensors(batch, device=device), tau_generator, n_taus=n_taus,
+        action_taus=action_taus,
         ranking_margin=ranking_margin, rho=rho, ranking_batch_size=ranking_batch_size,
         grad_clip_norm=grad_clip_norm, measure_gradient_ratio=measure_gradient_ratio,
     )
@@ -1569,6 +1576,7 @@ FORMAL_SIX_SCENARIOS: Dict[str, Tuple[str, float, int]] = {
 from crowd_nav.bayesian_dvl.evaluation_protocol import (  # noqa: E402,F401
     FORMAL_EVAL_HELDOUT_SEEDS, JUNCTION_CROWD_PAPER_TEST_SEEDS, JUNCTION_SELECTION_DEV_SEEDS,
     PAPER_MAIN_BASE_SEED, PAPER_MAIN_CASE_IDS, PAPER_MAIN_EPISODES_PER_SCENARIO,
+    STAGE_ACCEPT_SEEDS, STAGE_ACCEPT_CIRCLE_SEEDS, STAGE_ACCEPT_SQUARE_SEEDS,
     STANDARD_DEV_DIAGNOSTIC_SEEDS, STANDARD_SELECTION_DEV_SEEDS, TEST8_AUDIT_BASE_SEED,
     TEST8_AUDIT_BASE_SEED_RETIRED, paper_main_episode_seed, paper_main_jobs,
 )
@@ -1813,6 +1821,7 @@ def _audit_rank_loss(model, audit: Sequence[IntentTransition], batch: IntentBatc
 
 
 def evaluate_il_audit(model, audit: Sequence[IntentTransition], n_taus: int = 16,
+                      action_taus: int = ACTION_QUANTILES,
                       ranking_margin: float = 0.1, device: str = "cpu",
                       scenario_of: Optional[Sequence[str]] = None) -> Dict[str, float]:
     """Deterministic: fixed rows, fixed midpoint quantiles, no RNG. Two
@@ -1829,7 +1838,10 @@ def evaluate_il_audit(model, audit: Sequence[IntentTransition], n_taus: int = 16
         batch = batch_to_tensors(audit, device=device)
         out = {
             "audit_mc_loss": _audit_mc_loss(model, batch, n_taus),
-            "audit_rank_loss": _audit_rank_loss(model, audit, batch, n_taus, ranking_margin),
+            # Order 14C: scored on the ACTION grid, i.e. the one the robot
+            # is actually driven with. audit_mc_loss above stays on the MC
+            # grid because that is the objective it mirrors.
+            "audit_rank_loss": _audit_rank_loss(model, audit, batch, action_taus, ranking_margin),
             "n": float(len(audit)),
         }
         if scenario_of is not None:
@@ -2128,7 +2140,8 @@ def expert_rank_diagnostics(model, audit: Sequence[IntentTransition], n_taus: in
 
 def run_ranking_warmup(model, optimizer, buffer: IntentReplay, batch_size: int,
                        sample_rng: np.random.Generator, audit: Sequence[IntentTransition],
-                       *, max_steps: int = WARMUP_MAX_STEPS, n_taus: int = 16,
+                       *, max_steps: int = WARMUP_MAX_STEPS,
+                       n_taus: int = ACTION_QUANTILES,
                        ranking_margin: float = 0.1, ranking_batch_size: Optional[int] = None,
                        grad_clip_norm: Optional[float] = None, device: str = "cpu",
                        check_interval: int = 50,

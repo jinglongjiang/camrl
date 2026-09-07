@@ -1189,7 +1189,7 @@ def test_c0_checkpoint_schema_v6_rejects_retired_v5_and_wrong_training_contract(
         save_intent_checkpoint(model, path, action_grid_hash="h", scene_registry_sha256="s")
         raw = torch.load(path, weights_only=False)
         assert raw["checkpoint_schema"] == CHECKPOINT_SCHEMA_V8
-        assert raw["training_contract_schema"] == TRAINING_CONTRACT_V9_FAILED_DEMOS_MC_ONLY
+        assert raw["training_contract_schema"] == TRAINING_CONTRACT_V10_UNIFIED_ACTION_QUANTILES
 
         # Order 4: a V2 checkpoint (fixed rho=380) must be refused
         # BY NAME, not with a generic schema message. Its optimizer state,
@@ -1257,13 +1257,18 @@ def test_c0_mixed_loss_matches_hand_computation() -> None:
     online_ts = collect_online_episode(env_config_path, model, action_table, "circle", 700002, epsilon=1.0,
                                         explore_rng=np.random.default_rng(7)).transitions[:5]
     batch = batch_to_tensors(list(demo_ts) + list(online_ts))
+    # Order 14C: L_MC draws n_taus RANDOM taus; L_rank scores candidates on
+    # the ACTION grid, which is a separate and deployed tau set. The hand
+    # computation has to mirror both.
     B, n_taus, lam, margin = len(batch.demo_mask), 16, 0.37, 0.1
+    action_taus = ACTION_QUANTILES
 
     # lr=0 so the production step cannot move the weights before we
     # recompute against them.
     opt = torch.optim.Adam(model.parameters(), lr=0.0)
     produced = intent_train_step(model, opt, batch, torch.Generator().manual_seed(99),
-                                  n_taus=n_taus, ranking_margin=margin, rho=lam)
+                                  n_taus=n_taus, action_taus=action_taus,
+                                  ranking_margin=margin, rho=lam)
 
     # --- independent recomputation ---
     model.train()
@@ -1273,7 +1278,7 @@ def test_c0_mixed_loss_matches_hand_computation() -> None:
         expected_mc = quantile_huber_loss(predicted, tau, batch.mc_returns.expand(B, 1)).mean()
 
         n_actions = batch.all_action_feats.shape[1]
-        fixed_tau = (torch.arange(n_taus, dtype=torch.float32) + 0.5) / n_taus
+        fixed_tau = (torch.arange(action_taus, dtype=torch.float32) + 0.5) / action_taus
         per_demo = []
         for i in range(B):
             if not bool(batch.demo_mask[i]):
@@ -1283,7 +1288,7 @@ def test_c0_mixed_loss_matches_hand_computation() -> None:
                 batch.human_feats[i:i + 1].expand(n_actions, -1, -1),
                 batch.human_mask[i:i + 1].expand(n_actions, -1),
                 batch.all_action_feats[i],
-                fixed_tau.unsqueeze(0).expand(n_actions, n_taus),
+                fixed_tau.unsqueeze(0).expand(n_actions, action_taus),
             ).mean(dim=1)
             experts = batch.expert_indices[i]
             expert_mask = torch.zeros(n_actions, dtype=torch.bool)

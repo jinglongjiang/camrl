@@ -237,9 +237,14 @@ def test_c2_vectorized_ranking_matches_the_per_sample_loop() -> None:
     b = batch_to_tensors(trans)
     torch.manual_seed(0)
     model = DistributionalValueModel(human_feature_dim=HUMAN_FEATURE_DIM_V7)
+    # Order 14C: ranking is scored on the ACTION grid, a different (and
+    # deployed) tau set from the MC grid. This test is about vectorization
+    # == per-sample loop, so the reference must be built on whichever grid
+    # the ranking term actually uses.
     n_taus, margin = 16, 0.1
+    action_taus = ACTION_QUANTILES
     n_act = b.all_action_feats.shape[1]
-    ft = (torch.arange(n_taus, dtype=torch.float32) + 0.5) / n_taus
+    ft = (torch.arange(action_taus, dtype=torch.float32) + 0.5) / action_taus
     model.train()
     with torch.no_grad():
         ref = []
@@ -248,12 +253,13 @@ def test_c2_vectorized_ranking_matches_the_per_sample_loop() -> None:
                       b.human_feats[i:i + 1].expand(n_act, -1, -1),
                       b.human_mask[i:i + 1].expand(n_act, -1),
                       b.all_action_feats[i],
-                      ft.unsqueeze(0).expand(n_act, n_taus)).mean(dim=1)
+                      ft.unsqueeze(0).expand(n_act, action_taus)).mean(dim=1)
             ref.append(expert_ranking_loss(q, b.expert_indices[i], margin))
         ref_rank = float(torch.stack(ref).mean())
     opt = torch.optim.Adam(model.parameters(), lr=0.0)
     got = intent_train_step(model, opt, b, torch.Generator().manual_seed(0),
-                            n_taus=n_taus, ranking_margin=margin, rho=1.0)
+                            n_taus=n_taus, action_taus=action_taus,
+                            ranking_margin=margin, rho=1.0)
     assert abs(got.rank_loss - ref_rank) < 1e-6, (got.rank_loss, ref_rank)
 
 

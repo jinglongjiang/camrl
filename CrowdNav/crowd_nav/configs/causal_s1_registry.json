@@ -1,0 +1,35 @@
+{
+  "experiment_id": "s1_causal_response_20260805",
+  "schema_version": 1,
+  "brne_commit": "633a5cdcb39ab27f18b596cb8cb1968644f82391",
+  "brne_sha256": "420d1ef383c9a80448d3c714bf22d0d6280c055488269d624c060d98cff54836",
+  "dt": 0.25,
+  "horizon_steps": 24,
+  "scenario": "baseline_circle",
+  "roles": {
+    "train": {"split": "train", "suite_seeds": [8611, 8612, 8613, 8614, 8615], "episodes_per_seed": 40},
+    "selection": {"split": "validation", "suite_seeds": [8621, 8622, 8623, 8624, 8625], "episodes_per_seed": 20},
+    "necessity": {"split": "test_heldout_interactive", "suite_seeds": [8631, 8632, 8633, 8634, 8635, 8636, 8637, 8638, 8639, 8640], "episodes_per_seed": 20},
+    "audit_interactive": {"split": "test_heldout_interactive", "suite_seeds": [8651, 8652, 8653, 8654, 8655, 8656, 8657, 8658, 8659, 8660], "episodes_per_seed": 20},
+    "audit_nominal": {"split": "test_nominal", "suite_seeds": [8671, 8672, 8673, 8674, 8675, 8676, 8677, 8678, 8679, 8680], "episodes_per_seed": 20}
+  },
+  "fit": {
+    "em_max_iters": 30,
+    "em_tol": 0.0001,
+    "restarts": 2,
+    "sticky_kappa": 4.0,
+    "dirichlet_alpha": 1.1,
+    "base_ridge": 0.00001,
+    "response_ridge": 0.05,
+    "covariance_floor": 0.0001,
+    "seed": 8611
+  },
+  "gate": {
+    "bootstrap_replicates": 2000,
+    "bootstrap_seed": 8681,
+    "min_response_mse_improvement": 0.05,
+    "nominal_nll_equivalence": 0.01,
+    "nominal_response_upper": 0.02,
+    "min_mode_occupancy": 0.03
+  }
+}

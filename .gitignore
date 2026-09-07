@@ -1,0 +1,36 @@
+# 大体积备份与归档（88GB，不入库）
+4090/
+4090_server_backup/
+CrowdNav(*
+CrowdNav_bayesian_replaced_*/
+old-soc-nav-training-videos/
+soc-nav-training-old/
+
+# 训练产物与日志
+runs/
+mamba_log/
+Bayesian_log/
+*.pth
+*.pt
+*.zip
+*.tgz
+*.tar.gz
+*.log
+*.csv
+
+# Python
+__pycache__/
+*.pyc
+
+# 备份文件
+*.backup_*
+*_backup.py
+*.p1_backup
+*(copy)*
+
+# 数据与备份目录
+*.npz
+*.npy
+*.pkl
+experiment_backups/
+CrowdNav/backup/

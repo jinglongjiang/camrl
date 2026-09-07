@@ -1,0 +1,59 @@
+{
+  "results": [
+    {
+      "seed": 42,
+      "success_rate": 0.8,
+      "collision_rate": 0.2,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2616703795427545,
+      "avg_time": 9.615,
+      "success_count": 40,
+      "total_episodes": 50
+    },
+    {
+      "seed": 43,
+      "success_rate": 0.78,
+      "collision_rate": 0.22,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.29315736695230465,
+      "avg_time": 9.535,
+      "success_count": 39,
+      "total_episodes": 50
+    },
+    {
+      "seed": 44,
+      "success_rate": 0.76,
+      "collision_rate": 0.24,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.31621121873315383,
+      "avg_time": 9.44,
+      "success_count": 38,
+      "total_episodes": 50
+    },
+    {
+      "seed": 45,
+      "success_rate": 0.76,
+      "collision_rate": 0.24,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.32144142584709123,
+      "avg_time": 9.495,
+      "success_count": 38,
+      "total_episodes": 50
+    },
+    {
+      "seed": 100,
+      "success_rate": 0.68,
+      "collision_rate": 0.32,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.349778243557832,
+      "avg_time": 9.195,
+      "success_count": 34,
+      "total_episodes": 50
+    }
+  ],
+  "args": {
+    "num_seeds": 5,
+    "test_episodes": 50,
+    "config_dir": "./configs"
+  }
+}

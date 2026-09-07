@@ -73,6 +73,95 @@ class CrowdSim(gym.Env):
     # -------------------------------------------------------------------------
     # Configuration
     # -------------------------------------------------------------------------
+    def _configure_occlusion(self, config):
+        """Order 17 item 6. Absent or disabled section leaves the module inert,
+        so every pre-occlusion run keeps its exact behaviour."""
+        from crowd_sim.envs.occlusion_belief import OcclusionBelief
+        self.occlusion = None
+        if not config.has_section('occlusion'):
+            return
+        if not config.getboolean('occlusion', 'enabled', fallback=False):
+            return
+        self.occlusion_belief_features = config.get(
+            'occlusion', 'belief_features', fallback='full').strip().lower()
+        if self.occlusion_belief_features not in ('full', 'fixed_confidence'):
+            raise ValueError(
+                "[occlusion] belief_features must be full or "
+                f"fixed_confidence, got {self.occlusion_belief_features!r}")
+        self.occlusion_token_contract = config.get(
+            'occlusion', 'token_contract', fallback='legacy_top5').strip().lower()
+        self.occlusion_visible_slots = config.getint(
+            'occlusion', 'visible_slots', fallback=5)
+        self.occlusion_hidden_slots = config.getint(
+            'occlusion', 'hidden_slots', fallback=10)
+        max_entities = config.getint('occlusion', 'max_entities', fallback=5)
+        from crowd_nav.contracts import (
+            BELIEF_TOKEN_CONTRACT, LEGACY_TOKEN_CONTRACT, token_shape_for_contract)
+        token_shape_for_contract(
+            self.occlusion_token_contract,
+            self.occlusion_visible_slots,
+            self.occlusion_hidden_slots,
+        )
+        if self.occlusion_token_contract == LEGACY_TOKEN_CONTRACT:
+            if max_entities != 5:
+                raise ValueError(
+                    "legacy_top5 requires [occlusion] max_entities=5")
+        elif self.occlusion_token_contract == BELIEF_TOKEN_CONTRACT:
+            if max_entities != self.occlusion_hidden_slots:
+                raise ValueError(
+                    "belief_v3 requires max_entities == hidden_slots so the "
+                    "filter and token contract cannot silently truncate twice")
+        g = lambda k, d: config.getfloat('occlusion', k, fallback=d)
+        self.occlusion = OcclusionBelief(
+            mode=config.get('occlusion', 'mode', fallback='off'),
+            grid_resolution=g('grid_resolution', 0.25),
+            grid_extent=g('grid_extent', 5.0),
+            fov_radius=g('fov_radius', 5.0),
+            max_entities=max_entities,
+            p_prior=g('p_prior', 0.05), p_hit=g('p_hit', 0.85),
+            p_miss=g('p_miss', 0.10), decay=g('decay', 0.90),
+            diffuse=g('diffuse', 0.35), p_report=g('p_report', 0.30),
+            vmax=config.getfloat('robot', 'v_pref', fallback=1.0),
+            time_step=config.getfloat('env', 'time_step', fallback=0.25))
+
+    def occlusion_enabled(self):
+        return getattr(self, 'occlusion', None) is not None and self.occlusion.enabled
+
+    def get_policy_state(self, include_hidden_belief=True):
+        """Observation the STUDENT policy is allowed to use. With occlusion off
+        this is the ground truth, exactly as before. The optional flag is used
+        only by the Bayes checkpoint input-ablation evaluator; all training
+        callers retain the default full arm semantics."""
+        from crowd_sim.envs.utils.state import JointState
+        rs = self.robot.get_full_state()
+        if not self.occlusion_enabled():
+            return JointState(rs, [h.get_observable_state() for h in self.humans])
+        ents = self.occlusion.policy_entities(
+            include_hidden_belief=include_hidden_belief)
+        js = JointState(rs, self._entities_to_observable(ents))
+        js.policy_entities = ents
+        js.visible_ids = list(self.occlusion.visible_ids)
+        js.occluded_ids = list(self.occlusion.occluded_ids)
+        js.provenance = self.occlusion.mode
+        js.belief_features = self.occlusion_belief_features
+        js.token_contract = self.occlusion_token_contract
+        js.visible_slots = self.occlusion_visible_slots
+        js.hidden_slots = self.occlusion_hidden_slots
+        return js
+
+    def get_oracle_state(self):
+        """Ground truth, for the ORCA teacher and for evaluation only."""
+        from crowd_sim.envs.utils.state import JointState
+        js = JointState(self.robot.get_full_state(),
+                        [h.get_observable_state() for h in self.humans])
+        js.provenance = 'oracle'
+        return js
+
+    def _entities_to_observable(self, ents):
+        from crowd_sim.envs.utils.state import ObservableState
+        return [ObservableState(e['px'], e['py'], e['vx'], e['vy'], e['radius'])
+                for e in ents]
+
     def configure(self, config):
         self.config = config
 
@@ -123,6 +212,10 @@ class CrowdSim(gym.Env):
                      else "Not randomize human's radius and preferred speed")
         logging.info('Training simulation: %s, test simulation: %s', self.train_val_sim, self.test_sim)
         logging.info('Square width: %.1f, circle radius: %.1f', self.square_width, self.circle_radius)
+
+        # Order 17: build the occlusion module last, after every other
+        # setting is in place, so it can read robot v_pref and env time_step.
+        self._configure_occlusion(config)
 
     def set_robot(self, robot):
         self.robot = robot
@@ -252,9 +345,11 @@ class CrowdSim(gym.Env):
         if phase == 'test':
             self.human_times = [0.0] * self.human_num
         else:
-            self.human_times = [0.0] * (self.human_num if self.robot.policy.multiagent_training else 1)
+            self.human_times = [0.0] * (self.human_num
+                                        if (self.robot.policy.multiagent_training
+                                            or self.occlusion_enabled()) else 1)
 
-        if not self.robot.policy.multiagent_training:
+        if not self.robot.policy.multiagent_training and not self.occlusion_enabled():
             self.train_val_sim = 'circle_crossing'
 
         self.humans = []
@@ -269,7 +364,14 @@ class CrowdSim(gym.Env):
             if self.case_counter[phase] >= 0:
                 np.random.seed(counter_offset[phase] + self.case_counter[phase])
                 if phase in ['train', 'val']:
-                    human_num = self.human_num if self.robot.policy.multiagent_training else 1
+                    # Order 17 item 7: with only one pedestrian nothing can
+                    # occlude anything, so occlusion training would silently
+                    # train on an empty problem. Occlusion forces the
+                    # configured crowd size; with occlusion off the legacy
+                    # behaviour is untouched.
+                    human_num = self.human_num if (
+                        self.robot.policy.multiagent_training
+                        or self.occlusion_enabled()) else 1
                     self.generate_random_human_position(human_num=human_num, rule=self.train_val_sim)
                 else:
                     self.generate_random_human_position(human_num=self.human_num, rule=self.test_sim)
@@ -288,6 +390,12 @@ class CrowdSim(gym.Env):
             self.action_values = []
         if hasattr(self.robot.policy, 'get_attention_weights'):
             self.attention_weights = []
+
+        # Order 17 item 6: a fresh episode starts with no belief, then the
+        # first observation is built so step 0 already has an occlusion state.
+        if self.occlusion_enabled():
+            self.occlusion.reset()
+            self.occlusion.update(self.robot, self.humans)
 
         if self.robot.sensor == 'coordinates':
             ob = np.concatenate([self.robot.get_obs_array()] +
@@ -459,6 +567,12 @@ class CrowdSim(gym.Env):
             for i, ha in enumerate(human_actions):
                 self.humans[i].step(ha)
             self.global_time += self.time_step
+
+            if self.occlusion_enabled():
+                # Build the next observation from the world AFTER all agents
+                # have moved. Updating before step() leaves every occlusion arm
+                # one frame behind the legacy observation.
+                self.occlusion.update(self.robot, self.humans)
 
             for i, h in enumerate(self.humans):
                 if self.human_times[i] == 0 and h.reached_destination():

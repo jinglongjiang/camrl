@@ -1,0 +1,2067 @@
+{
+  "target_success_rate": 0.9,
+  "num_seeds_required": 8,
+  "found_seeds_count": 5,
+  "seeds_tested": 200,
+  "found_seeds": [
+    {
+      "seed": 8862,
+      "success_rate": 0.9,
+      "collision_rate": 0.1,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.09620345987391246,
+      "avg_time": 10.88,
+      "success_count": 45,
+      "total_episodes": 50
+    },
+    {
+      "seed": 6419,
+      "success_rate": 0.9,
+      "collision_rate": 0.1,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.1434306412218656,
+      "avg_time": 11.2,
+      "success_count": 45,
+      "total_episodes": 50
+    },
+    {
+      "seed": 5105,
+      "success_rate": 0.9,
+      "collision_rate": 0.1,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.09394574058715666,
+      "avg_time": 10.995,
+      "success_count": 45,
+      "total_episodes": 50
+    },
+    {
+      "seed": 1364,
+      "success_rate": 0.9,
+      "collision_rate": 0.1,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.1481550056935657,
+      "avg_time": 10.755,
+      "success_count": 45,
+      "total_episodes": 50
+    },
+    {
+      "seed": 6441,
+      "success_rate": 0.9,
+      "collision_rate": 0.1,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.10244899815695482,
+      "avg_time": 10.745,
+      "success_count": 45,
+      "total_episodes": 50
+    }
+  ],
+  "all_results": [
+    {
+      "seed": 8862,
+      "success_rate": 0.9,
+      "collision_rate": 0.1,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.09620345987391246,
+      "avg_time": 10.88,
+      "success_count": 45,
+      "total_episodes": 50
+    },
+    {
+      "seed": 6419,
+      "success_rate": 0.9,
+      "collision_rate": 0.1,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.1434306412218656,
+      "avg_time": 11.2,
+      "success_count": 45,
+      "total_episodes": 50
+    },
+    {
+      "seed": 5105,
+      "success_rate": 0.9,
+      "collision_rate": 0.1,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.09394574058715666,
+      "avg_time": 10.995,
+      "success_count": 45,
+      "total_episodes": 50
+    },
+    {
+      "seed": 1364,
+      "success_rate": 0.9,
+      "collision_rate": 0.1,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.1481550056935657,
+      "avg_time": 10.755,
+      "success_count": 45,
+      "total_episodes": 50
+    },
+    {
+      "seed": 6441,
+      "success_rate": 0.9,
+      "collision_rate": 0.1,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.10244899815695482,
+      "avg_time": 10.745,
+      "success_count": 45,
+      "total_episodes": 50
+    },
+    {
+      "seed": 1304,
+      "success_rate": 0.88,
+      "collision_rate": 0.12,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.0784740729290275,
+      "avg_time": 10.41,
+      "success_count": 44,
+      "total_episodes": 50
+    },
+    {
+      "seed": 3575,
+      "success_rate": 0.88,
+      "collision_rate": 0.12,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.09804068013240737,
+      "avg_time": 10.265,
+      "success_count": 44,
+      "total_episodes": 50
+    },
+    {
+      "seed": 8512,
+      "success_rate": 0.88,
+      "collision_rate": 0.12,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.10703523752183891,
+      "avg_time": 10.505,
+      "success_count": 44,
+      "total_episodes": 50
+    },
+    {
+      "seed": 4732,
+      "success_rate": 0.88,
+      "collision_rate": 0.12,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.15485383163652466,
+      "avg_time": 10.51,
+      "success_count": 44,
+      "total_episodes": 50
+    },
+    {
+      "seed": 9628,
+      "success_rate": 0.88,
+      "collision_rate": 0.12,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.10658633848097296,
+      "avg_time": 10.61,
+      "success_count": 44,
+      "total_episodes": 50
+    },
+    {
+      "seed": 1305,
+      "success_rate": 0.88,
+      "collision_rate": 0.12,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.08149047237720897,
+      "avg_time": 10.42,
+      "success_count": 44,
+      "total_episodes": 50
+    },
+    {
+      "seed": 5550,
+      "success_rate": 0.88,
+      "collision_rate": 0.12,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.14207544442170308,
+      "avg_time": 10.83,
+      "success_count": 44,
+      "total_episodes": 50
+    },
+    {
+      "seed": 6340,
+      "success_rate": 0.88,
+      "collision_rate": 0.12,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.1174070089598296,
+      "avg_time": 10.725,
+      "success_count": 44,
+      "total_episodes": 50
+    },
+    {
+      "seed": 5573,
+      "success_rate": 0.88,
+      "collision_rate": 0.12,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.10778195767020969,
+      "avg_time": 10.68,
+      "success_count": 44,
+      "total_episodes": 50
+    },
+    {
+      "seed": 1770,
+      "success_rate": 0.88,
+      "collision_rate": 0.12,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.1333646170254973,
+      "avg_time": 10.55,
+      "success_count": 44,
+      "total_episodes": 50
+    },
+    {
+      "seed": 1678,
+      "success_rate": 0.86,
+      "collision_rate": 0.14,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.06687636491335237,
+      "avg_time": 10.205,
+      "success_count": 43,
+      "total_episodes": 50
+    },
+    {
+      "seed": 5191,
+      "success_rate": 0.86,
+      "collision_rate": 0.14,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.35235610206051116,
+      "avg_time": 11.22,
+      "success_count": 43,
+      "total_episodes": 50
+    },
+    {
+      "seed": 7486,
+      "success_rate": 0.86,
+      "collision_rate": 0.14,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.26281681658429507,
+      "avg_time": 11.35,
+      "success_count": 43,
+      "total_episodes": 50
+    },
+    {
+      "seed": 9847,
+      "success_rate": 0.86,
+      "collision_rate": 0.14,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.15702496538092134,
+      "avg_time": 10.75,
+      "success_count": 43,
+      "total_episodes": 50
+    },
+    {
+      "seed": 2072,
+      "success_rate": 0.86,
+      "collision_rate": 0.14,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.19768969250777432,
+      "avg_time": 10.685,
+      "success_count": 43,
+      "total_episodes": 50
+    },
+    {
+      "seed": 1065,
+      "success_rate": 0.86,
+      "collision_rate": 0.14,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.13856522746278419,
+      "avg_time": 10.315,
+      "success_count": 43,
+      "total_episodes": 50
+    },
+    {
+      "seed": 1395,
+      "success_rate": 0.86,
+      "collision_rate": 0.14,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.15138917764005758,
+      "avg_time": 10.42,
+      "success_count": 43,
+      "total_episodes": 50
+    },
+    {
+      "seed": 4415,
+      "success_rate": 0.86,
+      "collision_rate": 0.14,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.13340352019844587,
+      "avg_time": 10.37,
+      "success_count": 43,
+      "total_episodes": 50
+    },
+    {
+      "seed": 8899,
+      "success_rate": 0.86,
+      "collision_rate": 0.14,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.1384167330267284,
+      "avg_time": 10.77,
+      "success_count": 43,
+      "total_episodes": 50
+    },
+    {
+      "seed": 9793,
+      "success_rate": 0.86,
+      "collision_rate": 0.14,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.26149282398983076,
+      "avg_time": 10.64,
+      "success_count": 43,
+      "total_episodes": 50
+    },
+    {
+      "seed": 6406,
+      "success_rate": 0.86,
+      "collision_rate": 0.14,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.15753236445530125,
+      "avg_time": 10.64,
+      "success_count": 43,
+      "total_episodes": 50
+    },
+    {
+      "seed": 7716,
+      "success_rate": 0.86,
+      "collision_rate": 0.14,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2458624336549331,
+      "avg_time": 10.835,
+      "success_count": 43,
+      "total_episodes": 50
+    },
+    {
+      "seed": 2199,
+      "success_rate": 0.86,
+      "collision_rate": 0.1,
+      "timeout_rate": 0.04,
+      "avg_reward": -0.3231213516952889,
+      "avg_time": 11.36,
+      "success_count": 43,
+      "total_episodes": 50
+    },
+    {
+      "seed": 188,
+      "success_rate": 0.84,
+      "collision_rate": 0.16,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.3165141961969602,
+      "avg_time": 10.585,
+      "success_count": 42,
+      "total_episodes": 50
+    },
+    {
+      "seed": 3652,
+      "success_rate": 0.84,
+      "collision_rate": 0.16,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.10368421539238232,
+      "avg_time": 10.26,
+      "success_count": 42,
+      "total_episodes": 50
+    },
+    {
+      "seed": 5788,
+      "success_rate": 0.84,
+      "collision_rate": 0.16,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2660285404651215,
+      "avg_time": 10.89,
+      "success_count": 42,
+      "total_episodes": 50
+    },
+    {
+      "seed": 7344,
+      "success_rate": 0.84,
+      "collision_rate": 0.16,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.3651673665251279,
+      "avg_time": 11.13,
+      "success_count": 42,
+      "total_episodes": 50
+    },
+    {
+      "seed": 3546,
+      "success_rate": 0.84,
+      "collision_rate": 0.16,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.13246090265903532,
+      "avg_time": 10.11,
+      "success_count": 42,
+      "total_episodes": 50
+    },
+    {
+      "seed": 7056,
+      "success_rate": 0.84,
+      "collision_rate": 0.16,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.0826366578853481,
+      "avg_time": 10.14,
+      "success_count": 42,
+      "total_episodes": 50
+    },
+    {
+      "seed": 2021,
+      "success_rate": 0.84,
+      "collision_rate": 0.16,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.220375669316802,
+      "avg_time": 10.735,
+      "success_count": 42,
+      "total_episodes": 50
+    },
+    {
+      "seed": 111,
+      "success_rate": 0.84,
+      "collision_rate": 0.16,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.11064744332485624,
+      "avg_time": 10.415,
+      "success_count": 42,
+      "total_episodes": 50
+    },
+    {
+      "seed": 2204,
+      "success_rate": 0.84,
+      "collision_rate": 0.14,
+      "timeout_rate": 0.02,
+      "avg_reward": -0.25481235817641174,
+      "avg_time": 10.805,
+      "success_count": 42,
+      "total_episodes": 50
+    },
+    {
+      "seed": 35,
+      "success_rate": 0.84,
+      "collision_rate": 0.14,
+      "timeout_rate": 0.02,
+      "avg_reward": -0.3128165223782658,
+      "avg_time": 10.8,
+      "success_count": 42,
+      "total_episodes": 50
+    },
+    {
+      "seed": 7049,
+      "success_rate": 0.84,
+      "collision_rate": 0.16,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.04293636766404209,
+      "avg_time": 10.06,
+      "success_count": 42,
+      "total_episodes": 50
+    },
+    {
+      "seed": 134,
+      "success_rate": 0.84,
+      "collision_rate": 0.16,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.13471065170904176,
+      "avg_time": 10.505,
+      "success_count": 42,
+      "total_episodes": 50
+    },
+    {
+      "seed": 2066,
+      "success_rate": 0.84,
+      "collision_rate": 0.16,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2503726851863339,
+      "avg_time": 10.625,
+      "success_count": 42,
+      "total_episodes": 50
+    },
+    {
+      "seed": 4564,
+      "success_rate": 0.84,
+      "collision_rate": 0.16,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.11375064056908961,
+      "avg_time": 10.125,
+      "success_count": 42,
+      "total_episodes": 50
+    },
+    {
+      "seed": 5880,
+      "success_rate": 0.84,
+      "collision_rate": 0.14,
+      "timeout_rate": 0.02,
+      "avg_reward": -0.29387925634936846,
+      "avg_time": 11.165,
+      "success_count": 42,
+      "total_episodes": 50
+    },
+    {
+      "seed": 110,
+      "success_rate": 0.84,
+      "collision_rate": 0.16,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.08941540133193493,
+      "avg_time": 10.37,
+      "success_count": 42,
+      "total_episodes": 50
+    },
+    {
+      "seed": 5546,
+      "success_rate": 0.84,
+      "collision_rate": 0.16,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.14582989560540305,
+      "avg_time": 10.36,
+      "success_count": 42,
+      "total_episodes": 50
+    },
+    {
+      "seed": 6401,
+      "success_rate": 0.84,
+      "collision_rate": 0.16,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.16766332176055448,
+      "avg_time": 10.45,
+      "success_count": 42,
+      "total_episodes": 50
+    },
+    {
+      "seed": 7756,
+      "success_rate": 0.84,
+      "collision_rate": 0.16,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.23505670806108905,
+      "avg_time": 10.66,
+      "success_count": 42,
+      "total_episodes": 50
+    },
+    {
+      "seed": 3024,
+      "success_rate": 0.84,
+      "collision_rate": 0.16,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.13391785982339074,
+      "avg_time": 10.215,
+      "success_count": 42,
+      "total_episodes": 50
+    },
+    {
+      "seed": 3487,
+      "success_rate": 0.84,
+      "collision_rate": 0.16,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.1613530904531354,
+      "avg_time": 10.56,
+      "success_count": 42,
+      "total_episodes": 50
+    },
+    {
+      "seed": 7071,
+      "success_rate": 0.84,
+      "collision_rate": 0.16,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.15044119948158954,
+      "avg_time": 10.315,
+      "success_count": 42,
+      "total_episodes": 50
+    },
+    {
+      "seed": 9174,
+      "success_rate": 0.84,
+      "collision_rate": 0.16,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.10012661080364951,
+      "avg_time": 10.515,
+      "success_count": 42,
+      "total_episodes": 50
+    },
+    {
+      "seed": 4638,
+      "success_rate": 0.84,
+      "collision_rate": 0.16,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.22959857142429757,
+      "avg_time": 10.425,
+      "success_count": 42,
+      "total_episodes": 50
+    },
+    {
+      "seed": 1764,
+      "success_rate": 0.84,
+      "collision_rate": 0.16,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.18626113677052858,
+      "avg_time": 10.375,
+      "success_count": 42,
+      "total_episodes": 50
+    },
+    {
+      "seed": 6837,
+      "success_rate": 0.84,
+      "collision_rate": 0.16,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.18351590273876472,
+      "avg_time": 10.61,
+      "success_count": 42,
+      "total_episodes": 50
+    },
+    {
+      "seed": 1706,
+      "success_rate": 0.84,
+      "collision_rate": 0.16,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.13652024354957207,
+      "avg_time": 10.275,
+      "success_count": 42,
+      "total_episodes": 50
+    },
+    {
+      "seed": 5956,
+      "success_rate": 0.84,
+      "collision_rate": 0.16,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2095188036145297,
+      "avg_time": 10.31,
+      "success_count": 42,
+      "total_episodes": 50
+    },
+    {
+      "seed": 9913,
+      "success_rate": 0.84,
+      "collision_rate": 0.16,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.29358453485962605,
+      "avg_time": 10.84,
+      "success_count": 42,
+      "total_episodes": 50
+    },
+    {
+      "seed": 4016,
+      "success_rate": 0.82,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2020337064979495,
+      "avg_time": 10.09,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 6019,
+      "success_rate": 0.82,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.1916487812446801,
+      "avg_time": 10.34,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 658,
+      "success_rate": 0.82,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.06284629295850963,
+      "avg_time": 9.92,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 7642,
+      "success_rate": 0.82,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2503011538385519,
+      "avg_time": 10.545,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 3213,
+      "success_rate": 0.82,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.21542319846346605,
+      "avg_time": 10.115,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 4903,
+      "success_rate": 0.82,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2697900457101504,
+      "avg_time": 10.815,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 6322,
+      "success_rate": 0.82,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.13822647924697198,
+      "avg_time": 10.405,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 3628,
+      "success_rate": 0.82,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.20985891734971077,
+      "avg_time": 10.535,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 5898,
+      "success_rate": 0.82,
+      "collision_rate": 0.16,
+      "timeout_rate": 0.02,
+      "avg_reward": -0.3138423779423713,
+      "avg_time": 11.22,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 6947,
+      "success_rate": 0.82,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.26378101497857476,
+      "avg_time": 10.575,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 3119,
+      "success_rate": 0.82,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.20274409798641563,
+      "avg_time": 10.21,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 7861,
+      "success_rate": 0.82,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.0837271292437533,
+      "avg_time": 10.2,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 3883,
+      "success_rate": 0.82,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2348668858326071,
+      "avg_time": 10.615,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 5834,
+      "success_rate": 0.82,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2526931665176151,
+      "avg_time": 10.29,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 3873,
+      "success_rate": 0.82,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.22133535775588442,
+      "avg_time": 10.72,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 6031,
+      "success_rate": 0.82,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.17013154082318344,
+      "avg_time": 10.36,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 791,
+      "success_rate": 0.82,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.24768596856271333,
+      "avg_time": 10.665,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 6316,
+      "success_rate": 0.82,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.1274895321591377,
+      "avg_time": 10.26,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 5529,
+      "success_rate": 0.82,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.1462982803793082,
+      "avg_time": 10.335,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 5129,
+      "success_rate": 0.82,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.19973093079769344,
+      "avg_time": 10.57,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 7829,
+      "success_rate": 0.82,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.12502497893826747,
+      "avg_time": 9.995,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 3554,
+      "success_rate": 0.82,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.17296042273012527,
+      "avg_time": 10.06,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 3755,
+      "success_rate": 0.82,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.22046649077306363,
+      "avg_time": 10.265,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 4724,
+      "success_rate": 0.82,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.16034064083381572,
+      "avg_time": 10.075,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 8952,
+      "success_rate": 0.82,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.23224435022518977,
+      "avg_time": 10.75,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 5530,
+      "success_rate": 0.82,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.11838261686913686,
+      "avg_time": 10.165,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 6314,
+      "success_rate": 0.82,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.11416611493444487,
+      "avg_time": 10.13,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 8996,
+      "success_rate": 0.82,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2909690262135714,
+      "avg_time": 10.905,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 7193,
+      "success_rate": 0.82,
+      "collision_rate": 0.16,
+      "timeout_rate": 0.02,
+      "avg_reward": -0.2566122677594806,
+      "avg_time": 10.51,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 8778,
+      "success_rate": 0.82,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.13454349175595604,
+      "avg_time": 10.265,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 362,
+      "success_rate": 0.82,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.18157446937015426,
+      "avg_time": 9.97,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 2451,
+      "success_rate": 0.82,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.10380772695757322,
+      "avg_time": 10.4,
+      "success_count": 41,
+      "total_episodes": 50
+    },
+    {
+      "seed": 2605,
+      "success_rate": 0.8,
+      "collision_rate": 0.2,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2367761804350448,
+      "avg_time": 10.215,
+      "success_count": 40,
+      "total_episodes": 50
+    },
+    {
+      "seed": 2841,
+      "success_rate": 0.8,
+      "collision_rate": 0.2,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.21758432800957686,
+      "avg_time": 10.06,
+      "success_count": 40,
+      "total_episodes": 50
+    },
+    {
+      "seed": 4505,
+      "success_rate": 0.8,
+      "collision_rate": 0.2,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.16747148374185894,
+      "avg_time": 10.235,
+      "success_count": 40,
+      "total_episodes": 50
+    },
+    {
+      "seed": 973,
+      "success_rate": 0.8,
+      "collision_rate": 0.2,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.25980692691750695,
+      "avg_time": 10.43,
+      "success_count": 40,
+      "total_episodes": 50
+    },
+    {
+      "seed": 6747,
+      "success_rate": 0.8,
+      "collision_rate": 0.2,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2576128870746149,
+      "avg_time": 10.055,
+      "success_count": 40,
+      "total_episodes": 50
+    },
+    {
+      "seed": 7208,
+      "success_rate": 0.8,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.02,
+      "avg_reward": -0.34332330373261244,
+      "avg_time": 10.315,
+      "success_count": 40,
+      "total_episodes": 50
+    },
+    {
+      "seed": 5280,
+      "success_rate": 0.8,
+      "collision_rate": 0.2,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.14729696683324556,
+      "avg_time": 9.815,
+      "success_count": 40,
+      "total_episodes": 50
+    },
+    {
+      "seed": 9142,
+      "success_rate": 0.8,
+      "collision_rate": 0.2,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.13684825493874395,
+      "avg_time": 10.185,
+      "success_count": 40,
+      "total_episodes": 50
+    },
+    {
+      "seed": 4547,
+      "success_rate": 0.8,
+      "collision_rate": 0.2,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.11756855803457858,
+      "avg_time": 9.815,
+      "success_count": 40,
+      "total_episodes": 50
+    },
+    {
+      "seed": 3120,
+      "success_rate": 0.8,
+      "collision_rate": 0.2,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2143751817957103,
+      "avg_time": 10.065,
+      "success_count": 40,
+      "total_episodes": 50
+    },
+    {
+      "seed": 9347,
+      "success_rate": 0.8,
+      "collision_rate": 0.2,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.22516517681130147,
+      "avg_time": 10.345,
+      "success_count": 40,
+      "total_episodes": 50
+    },
+    {
+      "seed": 2326,
+      "success_rate": 0.8,
+      "collision_rate": 0.2,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.14930368988706572,
+      "avg_time": 10.09,
+      "success_count": 40,
+      "total_episodes": 50
+    },
+    {
+      "seed": 8925,
+      "success_rate": 0.8,
+      "collision_rate": 0.2,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.13327945616263048,
+      "avg_time": 10.275,
+      "success_count": 40,
+      "total_episodes": 50
+    },
+    {
+      "seed": 9276,
+      "success_rate": 0.8,
+      "collision_rate": 0.2,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.33394085270361884,
+      "avg_time": 10.405,
+      "success_count": 40,
+      "total_episodes": 50
+    },
+    {
+      "seed": 3467,
+      "success_rate": 0.8,
+      "collision_rate": 0.2,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.19831090122381528,
+      "avg_time": 10.305,
+      "success_count": 40,
+      "total_episodes": 50
+    },
+    {
+      "seed": 8339,
+      "success_rate": 0.8,
+      "collision_rate": 0.2,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.31753471200752864,
+      "avg_time": 10.28,
+      "success_count": 40,
+      "total_episodes": 50
+    },
+    {
+      "seed": 9241,
+      "success_rate": 0.8,
+      "collision_rate": 0.16,
+      "timeout_rate": 0.04,
+      "avg_reward": -0.3749561068755139,
+      "avg_time": 11.11,
+      "success_count": 40,
+      "total_episodes": 50
+    },
+    {
+      "seed": 8323,
+      "success_rate": 0.8,
+      "collision_rate": 0.2,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.331550122987972,
+      "avg_time": 10.41,
+      "success_count": 40,
+      "total_episodes": 50
+    },
+    {
+      "seed": 431,
+      "success_rate": 0.8,
+      "collision_rate": 0.2,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2807403911066836,
+      "avg_time": 10.495,
+      "success_count": 40,
+      "total_episodes": 50
+    },
+    {
+      "seed": 1836,
+      "success_rate": 0.8,
+      "collision_rate": 0.2,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.18019460996520542,
+      "avg_time": 9.975,
+      "success_count": 40,
+      "total_episodes": 50
+    },
+    {
+      "seed": 7180,
+      "success_rate": 0.8,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.02,
+      "avg_reward": -0.3135489442112069,
+      "avg_time": 10.745,
+      "success_count": 40,
+      "total_episodes": 50
+    },
+    {
+      "seed": 364,
+      "success_rate": 0.8,
+      "collision_rate": 0.2,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.20188196515031065,
+      "avg_time": 9.865,
+      "success_count": 40,
+      "total_episodes": 50
+    },
+    {
+      "seed": 1136,
+      "success_rate": 0.8,
+      "collision_rate": 0.2,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2313316960672669,
+      "avg_time": 10.04,
+      "success_count": 40,
+      "total_episodes": 50
+    },
+    {
+      "seed": 4267,
+      "success_rate": 0.8,
+      "collision_rate": 0.2,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.23946392279046577,
+      "avg_time": 10.2,
+      "success_count": 40,
+      "total_episodes": 50
+    },
+    {
+      "seed": 5833,
+      "success_rate": 0.8,
+      "collision_rate": 0.2,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.23432095064564082,
+      "avg_time": 10.07,
+      "success_count": 40,
+      "total_episodes": 50
+    },
+    {
+      "seed": 3760,
+      "success_rate": 0.8,
+      "collision_rate": 0.2,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.24020819653676587,
+      "avg_time": 10.055,
+      "success_count": 40,
+      "total_episodes": 50
+    },
+    {
+      "seed": 7884,
+      "success_rate": 0.8,
+      "collision_rate": 0.2,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2098039399094828,
+      "avg_time": 10.295,
+      "success_count": 40,
+      "total_episodes": 50
+    },
+    {
+      "seed": 9213,
+      "success_rate": 0.78,
+      "collision_rate": 0.18,
+      "timeout_rate": 0.04,
+      "avg_reward": -0.33576739355376334,
+      "avg_time": 10.57,
+      "success_count": 39,
+      "total_episodes": 50
+    },
+    {
+      "seed": 9585,
+      "success_rate": 0.78,
+      "collision_rate": 0.22,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.1867137682552501,
+      "avg_time": 9.77,
+      "success_count": 39,
+      "total_episodes": 50
+    },
+    {
+      "seed": 4128,
+      "success_rate": 0.78,
+      "collision_rate": 0.22,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.3489797585303752,
+      "avg_time": 10.195,
+      "success_count": 39,
+      "total_episodes": 50
+    },
+    {
+      "seed": 8678,
+      "success_rate": 0.78,
+      "collision_rate": 0.22,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.15802425453617025,
+      "avg_time": 9.87,
+      "success_count": 39,
+      "total_episodes": 50
+    },
+    {
+      "seed": 7005,
+      "success_rate": 0.78,
+      "collision_rate": 0.22,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.26423075687745545,
+      "avg_time": 10.165,
+      "success_count": 39,
+      "total_episodes": 50
+    },
+    {
+      "seed": 3427,
+      "success_rate": 0.78,
+      "collision_rate": 0.22,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.22696224008803884,
+      "avg_time": 9.96,
+      "success_count": 39,
+      "total_episodes": 50
+    },
+    {
+      "seed": 6011,
+      "success_rate": 0.78,
+      "collision_rate": 0.22,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.29384240178798554,
+      "avg_time": 10.295,
+      "success_count": 39,
+      "total_episodes": 50
+    },
+    {
+      "seed": 3065,
+      "success_rate": 0.78,
+      "collision_rate": 0.22,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.20893433850378645,
+      "avg_time": 10.215,
+      "success_count": 39,
+      "total_episodes": 50
+    },
+    {
+      "seed": 8708,
+      "success_rate": 0.78,
+      "collision_rate": 0.22,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.1175384137540979,
+      "avg_time": 10.02,
+      "success_count": 39,
+      "total_episodes": 50
+    },
+    {
+      "seed": 143,
+      "success_rate": 0.78,
+      "collision_rate": 0.22,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.23950503238349724,
+      "avg_time": 10.155,
+      "success_count": 39,
+      "total_episodes": 50
+    },
+    {
+      "seed": 1620,
+      "success_rate": 0.78,
+      "collision_rate": 0.22,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.21586318458488424,
+      "avg_time": 10.065,
+      "success_count": 39,
+      "total_episodes": 50
+    },
+    {
+      "seed": 7607,
+      "success_rate": 0.78,
+      "collision_rate": 0.22,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.1757251838355522,
+      "avg_time": 10.0,
+      "success_count": 39,
+      "total_episodes": 50
+    },
+    {
+      "seed": 5215,
+      "success_rate": 0.78,
+      "collision_rate": 0.22,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.1706878422294883,
+      "avg_time": 10.26,
+      "success_count": 39,
+      "total_episodes": 50
+    },
+    {
+      "seed": 9430,
+      "success_rate": 0.78,
+      "collision_rate": 0.22,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.18032953613913918,
+      "avg_time": 10.3,
+      "success_count": 39,
+      "total_episodes": 50
+    },
+    {
+      "seed": 520,
+      "success_rate": 0.78,
+      "collision_rate": 0.2,
+      "timeout_rate": 0.02,
+      "avg_reward": -0.3452730188777601,
+      "avg_time": 10.365,
+      "success_count": 39,
+      "total_episodes": 50
+    },
+    {
+      "seed": 4811,
+      "success_rate": 0.78,
+      "collision_rate": 0.22,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.13658901796228917,
+      "avg_time": 10.08,
+      "success_count": 39,
+      "total_episodes": 50
+    },
+    {
+      "seed": 6558,
+      "success_rate": 0.78,
+      "collision_rate": 0.22,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.22410196860033302,
+      "avg_time": 9.8,
+      "success_count": 39,
+      "total_episodes": 50
+    },
+    {
+      "seed": 8956,
+      "success_rate": 0.78,
+      "collision_rate": 0.22,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2544759009027588,
+      "avg_time": 10.47,
+      "success_count": 39,
+      "total_episodes": 50
+    },
+    {
+      "seed": 47,
+      "success_rate": 0.76,
+      "collision_rate": 0.22,
+      "timeout_rate": 0.02,
+      "avg_reward": -0.3642920364924311,
+      "avg_time": 10.18,
+      "success_count": 38,
+      "total_episodes": 50
+    },
+    {
+      "seed": 8645,
+      "success_rate": 0.76,
+      "collision_rate": 0.24,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.235971230256508,
+      "avg_time": 9.745,
+      "success_count": 38,
+      "total_episodes": 50
+    },
+    {
+      "seed": 5234,
+      "success_rate": 0.76,
+      "collision_rate": 0.24,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.20498595734184558,
+      "avg_time": 10.09,
+      "success_count": 38,
+      "total_episodes": 50
+    },
+    {
+      "seed": 6768,
+      "success_rate": 0.76,
+      "collision_rate": 0.24,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.27115437932250047,
+      "avg_time": 10.05,
+      "success_count": 38,
+      "total_episodes": 50
+    },
+    {
+      "seed": 291,
+      "success_rate": 0.76,
+      "collision_rate": 0.24,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.35778495142467015,
+      "avg_time": 10.255,
+      "success_count": 38,
+      "total_episodes": 50
+    },
+    {
+      "seed": 4976,
+      "success_rate": 0.76,
+      "collision_rate": 0.24,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.30090001972082087,
+      "avg_time": 10.035,
+      "success_count": 38,
+      "total_episodes": 50
+    },
+    {
+      "seed": 8671,
+      "success_rate": 0.76,
+      "collision_rate": 0.24,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.18992941768878707,
+      "avg_time": 9.79,
+      "success_count": 38,
+      "total_episodes": 50
+    },
+    {
+      "seed": 9126,
+      "success_rate": 0.76,
+      "collision_rate": 0.24,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.1937446645739382,
+      "avg_time": 9.735,
+      "success_count": 38,
+      "total_episodes": 50
+    },
+    {
+      "seed": 1571,
+      "success_rate": 0.76,
+      "collision_rate": 0.24,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.1649017222103666,
+      "avg_time": 9.73,
+      "success_count": 38,
+      "total_episodes": 50
+    },
+    {
+      "seed": 8664,
+      "success_rate": 0.76,
+      "collision_rate": 0.24,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2148425315736081,
+      "avg_time": 9.645,
+      "success_count": 38,
+      "total_episodes": 50
+    },
+    {
+      "seed": 1490,
+      "success_rate": 0.76,
+      "collision_rate": 0.24,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.36817035756986755,
+      "avg_time": 10.01,
+      "success_count": 38,
+      "total_episodes": 50
+    },
+    {
+      "seed": 6156,
+      "success_rate": 0.76,
+      "collision_rate": 0.24,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.18411640847457034,
+      "avg_time": 9.79,
+      "success_count": 38,
+      "total_episodes": 50
+    },
+    {
+      "seed": 5720,
+      "success_rate": 0.76,
+      "collision_rate": 0.24,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.28841345000621404,
+      "avg_time": 10.305,
+      "success_count": 38,
+      "total_episodes": 50
+    },
+    {
+      "seed": 7928,
+      "success_rate": 0.76,
+      "collision_rate": 0.24,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2506722497947238,
+      "avg_time": 10.005,
+      "success_count": 38,
+      "total_episodes": 50
+    },
+    {
+      "seed": 9290,
+      "success_rate": 0.76,
+      "collision_rate": 0.24,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2471785465016497,
+      "avg_time": 9.68,
+      "success_count": 38,
+      "total_episodes": 50
+    },
+    {
+      "seed": 4269,
+      "success_rate": 0.76,
+      "collision_rate": 0.24,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.28009422720504695,
+      "avg_time": 9.92,
+      "success_count": 38,
+      "total_episodes": 50
+    },
+    {
+      "seed": 2539,
+      "success_rate": 0.76,
+      "collision_rate": 0.24,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.25906896699122234,
+      "avg_time": 9.78,
+      "success_count": 38,
+      "total_episodes": 50
+    },
+    {
+      "seed": 6647,
+      "success_rate": 0.76,
+      "collision_rate": 0.24,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.35616266071183217,
+      "avg_time": 9.84,
+      "success_count": 38,
+      "total_episodes": 50
+    },
+    {
+      "seed": 2612,
+      "success_rate": 0.76,
+      "collision_rate": 0.24,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.27154080027621164,
+      "avg_time": 10.02,
+      "success_count": 38,
+      "total_episodes": 50
+    },
+    {
+      "seed": 45,
+      "success_rate": 0.76,
+      "collision_rate": 0.22,
+      "timeout_rate": 0.02,
+      "avg_reward": -0.3843001932357141,
+      "avg_time": 10.285,
+      "success_count": 38,
+      "total_episodes": 50
+    },
+    {
+      "seed": 4276,
+      "success_rate": 0.76,
+      "collision_rate": 0.24,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2861530990293985,
+      "avg_time": 9.835,
+      "success_count": 38,
+      "total_episodes": 50
+    },
+    {
+      "seed": 2886,
+      "success_rate": 0.74,
+      "collision_rate": 0.24,
+      "timeout_rate": 0.02,
+      "avg_reward": -0.24503367839021137,
+      "avg_time": 10.02,
+      "success_count": 37,
+      "total_episodes": 50
+    },
+    {
+      "seed": 9895,
+      "success_rate": 0.74,
+      "collision_rate": 0.26,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.3497442220839855,
+      "avg_time": 10.055,
+      "success_count": 37,
+      "total_episodes": 50
+    },
+    {
+      "seed": 885,
+      "success_rate": 0.74,
+      "collision_rate": 0.24,
+      "timeout_rate": 0.02,
+      "avg_reward": -0.3121541939648248,
+      "avg_time": 10.065,
+      "success_count": 37,
+      "total_episodes": 50
+    },
+    {
+      "seed": 2218,
+      "success_rate": 0.74,
+      "collision_rate": 0.24,
+      "timeout_rate": 0.02,
+      "avg_reward": -0.36006235955236177,
+      "avg_time": 10.025,
+      "success_count": 37,
+      "total_episodes": 50
+    },
+    {
+      "seed": 8470,
+      "success_rate": 0.74,
+      "collision_rate": 0.26,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.23582577838379234,
+      "avg_time": 9.725,
+      "success_count": 37,
+      "total_episodes": 50
+    },
+    {
+      "seed": 604,
+      "success_rate": 0.74,
+      "collision_rate": 0.26,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.21586165002300395,
+      "avg_time": 9.78,
+      "success_count": 37,
+      "total_episodes": 50
+    },
+    {
+      "seed": 1231,
+      "success_rate": 0.74,
+      "collision_rate": 0.26,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.18242461059078557,
+      "avg_time": 9.54,
+      "success_count": 37,
+      "total_episodes": 50
+    },
+    {
+      "seed": 2536,
+      "success_rate": 0.74,
+      "collision_rate": 0.26,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2516723052705826,
+      "avg_time": 9.62,
+      "success_count": 37,
+      "total_episodes": 50
+    },
+    {
+      "seed": 4795,
+      "success_rate": 0.74,
+      "collision_rate": 0.26,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.1613090473791211,
+      "avg_time": 9.835,
+      "success_count": 37,
+      "total_episodes": 50
+    },
+    {
+      "seed": 8473,
+      "success_rate": 0.74,
+      "collision_rate": 0.26,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.24930616644530615,
+      "avg_time": 9.92,
+      "success_count": 37,
+      "total_episodes": 50
+    },
+    {
+      "seed": 525,
+      "success_rate": 0.74,
+      "collision_rate": 0.24,
+      "timeout_rate": 0.02,
+      "avg_reward": -0.4258226538411731,
+      "avg_time": 10.395,
+      "success_count": 37,
+      "total_episodes": 50
+    },
+    {
+      "seed": 7899,
+      "success_rate": 0.74,
+      "collision_rate": 0.26,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2677286598900241,
+      "avg_time": 9.945,
+      "success_count": 37,
+      "total_episodes": 50
+    },
+    {
+      "seed": 4593,
+      "success_rate": 0.74,
+      "collision_rate": 0.26,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.26384818205755217,
+      "avg_time": 9.515,
+      "success_count": 37,
+      "total_episodes": 50
+    },
+    {
+      "seed": 7901,
+      "success_rate": 0.74,
+      "collision_rate": 0.26,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.30067149251903186,
+      "avg_time": 9.99,
+      "success_count": 37,
+      "total_episodes": 50
+    },
+    {
+      "seed": 245,
+      "success_rate": 0.74,
+      "collision_rate": 0.26,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.1896245047506139,
+      "avg_time": 9.37,
+      "success_count": 37,
+      "total_episodes": 50
+    },
+    {
+      "seed": 2912,
+      "success_rate": 0.74,
+      "collision_rate": 0.26,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.25690775605504823,
+      "avg_time": 10.06,
+      "success_count": 37,
+      "total_episodes": 50
+    },
+    {
+      "seed": 4859,
+      "success_rate": 0.74,
+      "collision_rate": 0.26,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2673228628162957,
+      "avg_time": 10.165,
+      "success_count": 37,
+      "total_episodes": 50
+    },
+    {
+      "seed": 1013,
+      "success_rate": 0.74,
+      "collision_rate": 0.26,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.3208288595439358,
+      "avg_time": 9.77,
+      "success_count": 37,
+      "total_episodes": 50
+    },
+    {
+      "seed": 6191,
+      "success_rate": 0.74,
+      "collision_rate": 0.26,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2708211051281566,
+      "avg_time": 9.95,
+      "success_count": 37,
+      "total_episodes": 50
+    },
+    {
+      "seed": 4598,
+      "success_rate": 0.74,
+      "collision_rate": 0.26,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.24598814495380192,
+      "avg_time": 9.605,
+      "success_count": 37,
+      "total_episodes": 50
+    },
+    {
+      "seed": 6799,
+      "success_rate": 0.74,
+      "collision_rate": 0.26,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.272579866480233,
+      "avg_time": 9.81,
+      "success_count": 37,
+      "total_episodes": 50
+    },
+    {
+      "seed": 8259,
+      "success_rate": 0.74,
+      "collision_rate": 0.26,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2443491338561804,
+      "avg_time": 9.855,
+      "success_count": 37,
+      "total_episodes": 50
+    },
+    {
+      "seed": 2889,
+      "success_rate": 0.74,
+      "collision_rate": 0.24,
+      "timeout_rate": 0.02,
+      "avg_reward": -0.2546959146161264,
+      "avg_time": 10.04,
+      "success_count": 37,
+      "total_episodes": 50
+    },
+    {
+      "seed": 1230,
+      "success_rate": 0.74,
+      "collision_rate": 0.26,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.195697438518499,
+      "avg_time": 9.595,
+      "success_count": 37,
+      "total_episodes": 50
+    },
+    {
+      "seed": 9698,
+      "success_rate": 0.74,
+      "collision_rate": 0.26,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.18101026200673653,
+      "avg_time": 9.505,
+      "success_count": 37,
+      "total_episodes": 50
+    },
+    {
+      "seed": 3531,
+      "success_rate": 0.74,
+      "collision_rate": 0.26,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.15433261061066816,
+      "avg_time": 9.345,
+      "success_count": 37,
+      "total_episodes": 50
+    },
+    {
+      "seed": 5302,
+      "success_rate": 0.72,
+      "collision_rate": 0.28,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2849678274247729,
+      "avg_time": 9.6,
+      "success_count": 36,
+      "total_episodes": 50
+    },
+    {
+      "seed": 1460,
+      "success_rate": 0.72,
+      "collision_rate": 0.28,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.3024051114686918,
+      "avg_time": 9.62,
+      "success_count": 36,
+      "total_episodes": 50
+    },
+    {
+      "seed": 9658,
+      "success_rate": 0.72,
+      "collision_rate": 0.26,
+      "timeout_rate": 0.02,
+      "avg_reward": -0.276875487833858,
+      "avg_time": 9.92,
+      "success_count": 36,
+      "total_episodes": 50
+    },
+    {
+      "seed": 7550,
+      "success_rate": 0.72,
+      "collision_rate": 0.28,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2691164483636867,
+      "avg_time": 9.93,
+      "success_count": 36,
+      "total_episodes": 50
+    },
+    {
+      "seed": 2684,
+      "success_rate": 0.72,
+      "collision_rate": 0.28,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.29632503560823326,
+      "avg_time": 9.92,
+      "success_count": 36,
+      "total_episodes": 50
+    },
+    {
+      "seed": 8038,
+      "success_rate": 0.72,
+      "collision_rate": 0.28,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.3073905682977492,
+      "avg_time": 9.355,
+      "success_count": 36,
+      "total_episodes": 50
+    },
+    {
+      "seed": 9524,
+      "success_rate": 0.72,
+      "collision_rate": 0.28,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.32297052462552117,
+      "avg_time": 9.675,
+      "success_count": 36,
+      "total_episodes": 50
+    },
+    {
+      "seed": 3456,
+      "success_rate": 0.72,
+      "collision_rate": 0.28,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.25385477650329985,
+      "avg_time": 9.7,
+      "success_count": 36,
+      "total_episodes": 50
+    },
+    {
+      "seed": 2511,
+      "success_rate": 0.72,
+      "collision_rate": 0.28,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2538708109472263,
+      "avg_time": 9.36,
+      "success_count": 36,
+      "total_episodes": 50
+    },
+    {
+      "seed": 2672,
+      "success_rate": 0.72,
+      "collision_rate": 0.28,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2787038671665399,
+      "avg_time": 10.045,
+      "success_count": 36,
+      "total_episodes": 50
+    },
+    {
+      "seed": 3829,
+      "success_rate": 0.72,
+      "collision_rate": 0.28,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.33183977673184883,
+      "avg_time": 10.05,
+      "success_count": 36,
+      "total_episodes": 50
+    },
+    {
+      "seed": 9660,
+      "success_rate": 0.72,
+      "collision_rate": 0.26,
+      "timeout_rate": 0.02,
+      "avg_reward": -0.2905877466312521,
+      "avg_time": 9.935,
+      "success_count": 36,
+      "total_episodes": 50
+    },
+    {
+      "seed": 4850,
+      "success_rate": 0.7,
+      "collision_rate": 0.3,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2705898095815366,
+      "avg_time": 9.78,
+      "success_count": 35,
+      "total_episodes": 50
+    },
+    {
+      "seed": 1221,
+      "success_rate": 0.68,
+      "collision_rate": 0.32,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.31332575337941554,
+      "avg_time": 9.45,
+      "success_count": 34,
+      "total_episodes": 50
+    },
+    {
+      "seed": 1196,
+      "success_rate": 0.68,
+      "collision_rate": 0.32,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.33622248244408715,
+      "avg_time": 9.52,
+      "success_count": 34,
+      "total_episodes": 50
+    },
+    {
+      "seed": 9066,
+      "success_rate": 0.66,
+      "collision_rate": 0.34,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2622111521332885,
+      "avg_time": 9.225,
+      "success_count": 33,
+      "total_episodes": 50
+    },
+    {
+      "seed": 2390,
+      "success_rate": 0.64,
+      "collision_rate": 0.36,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.30818032208468077,
+      "avg_time": 8.96,
+      "success_count": 32,
+      "total_episodes": 50
+    },
+    {
+      "seed": 8076,
+      "success_rate": 0.64,
+      "collision_rate": 0.36,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.31261898161646856,
+      "avg_time": 9.035,
+      "success_count": 32,
+      "total_episodes": 50
+    },
+    {
+      "seed": 5368,
+      "success_rate": 0.64,
+      "collision_rate": 0.34,
+      "timeout_rate": 0.02,
+      "avg_reward": -0.37886833668694975,
+      "avg_time": 9.36,
+      "success_count": 32,
+      "total_episodes": 50
+    }
+  ],
+  "args": {
+    "target_success_rate": 0.9,
+    "test_episodes": 50,
+    "max_seeds": 200,
+    "num_seeds_required": 8,
+    "config_dir": "./configs"
+  }
+}

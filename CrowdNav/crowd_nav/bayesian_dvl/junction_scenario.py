@@ -302,6 +302,18 @@ JUNCTION_CROWD_SELECTION_DEV_SEEDS: Tuple[int, ...] = tuple(range(2_400_000, 2_4
 # Never touched by training or selection. Training and selection code must
 # REFUSE these; the V1 paper-test block was spent the moment it was read.
 JUNCTION_CROWD_PAPER_TEST_SEEDS: Tuple[int, ...] = tuple(range(2_500_000, 2_500_500))     # 500
+# Order 14 section 7: STAGE ACCEPTANCE. Closed-loop layouts that decide whether
+# the NEXT training stage may start. NOMINAL geometry -- the same junction the
+# training distribution uses -- because a stage gate must measure whether the
+# policy can finish an episode, not whether it generalises to a shifted scene;
+# mixing those two questions makes a failed gate uninterpretable.
+#
+# Defined HERE and nowhere else. evaluation_protocol imports this constant
+# rather than restating the range: the first version of this block was written
+# as a literal range in evaluation_protocol only, so the role resolver never
+# learned about it and the 90-episode gate crashed on its 61st layout with
+# 'seed 3020000 is not in any frozen junction_crowd block'.
+JUNCTION_CROWD_STAGE_ACCEPT_SEEDS: Tuple[int, ...] = tuple(range(3_020_000, 3_020_030))   # 30
 
 # Seed -> ROLE, and ROLE -> geometry. One seed belongs to exactly one role.
 JUNCTION_CROWD_SEED_ROLES: Dict[str, Tuple[int, ...]] = {
@@ -312,11 +324,15 @@ JUNCTION_CROWD_SEED_ROLES: Dict[str, Tuple[int, ...]] = {
     "validation": JUNCTION_CROWD_VALIDATION_SEEDS,
     "selection_dev": JUNCTION_CROWD_SELECTION_DEV_SEEDS,
     "paper_test": JUNCTION_CROWD_PAPER_TEST_SEEDS,
+    "stage_accept": JUNCTION_CROWD_STAGE_ACCEPT_SEEDS,
 }
-TRAIN_GEOMETRY_ROLES = frozenset({"mechanism_train", "il", "online", "validation"})
+TRAIN_GEOMETRY_ROLES = frozenset({"mechanism_train", "il", "online", "validation", "stage_accept"})
 HELDOUT_GEOMETRY_ROLES = frozenset({"mechanism_heldout", "selection_dev", "paper_test"})
-# Roles training must never touch, whatever geometry they use.
-FORMAL_ONLY_ROLES = frozenset({"mechanism_heldout", "selection_dev", "paper_test"})
+# Roles training must never touch, whatever geometry they use. stage_accept is
+# the first member that uses TRAIN geometry: "never trained on" and "shifted
+# scene" are independent properties, and a stage gate needs the first without
+# the second.
+FORMAL_ONLY_ROLES = frozenset({"mechanism_heldout", "selection_dev", "paper_test", "stage_accept"})
 
 
 def _assert_roles_partition() -> None:

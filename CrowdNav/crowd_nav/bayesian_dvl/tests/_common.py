@@ -17,9 +17,9 @@ from pathlib import Path
 import numpy as np
 import torch.nn as nn
 from crowd_nav.bayesian_dvl.intent_runtime_config import (
-    ACTION_FEATURE_DIM, ActionGridSpec, FEATURE_SCHEMA_V7, FROZEN_VALUES,
+    ACTION_FEATURE_DIM, ACTION_QUANTILES, ActionGridSpec, FEATURE_SCHEMA_V7, FROZEN_VALUES,
     NORMALIZATION_CONSTANTS, PROGRESS_REWARD_NORMALIZED_K,
-    TRAINING_CONTRACT_V9_FAILED_DEMOS_MC_ONLY,
+    TRAINING_CONTRACT_V10_UNIFIED_ACTION_QUANTILES,
     derive_return_bounds,
 )
 from crowd_nav.bayesian_dvl.contracts import (
@@ -389,6 +389,7 @@ __all__ = [
     'ActionGridSpec',
     'CALIBRATION_TAUS',
 
+    'ACTION_QUANTILES',
     'CHECKPOINT_SCHEMA_V8',
     'CROWD_HELDOUT_BACKGROUND_SPEED_RANGE',
     'CROWD_HELDOUT_EXIT_LEFT',
@@ -448,7 +449,7 @@ __all__ = [
     'SceneCandidatesError',
     'SetEncoder',
     'StatisticsError',
-    'TRAINING_CONTRACT_V9_FAILED_DEMOS_MC_ONLY',
+    'TRAINING_CONTRACT_V10_UNIFIED_ACTION_QUANTILES',
     'WAYPOINT_RADIUS',
     '_FakeConfig',
     '_FakeConfigSection',

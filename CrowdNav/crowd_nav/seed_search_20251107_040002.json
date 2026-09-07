@@ -1,0 +1,93 @@
+{
+  "target_success_rate": 0.9,
+  "found_target": true,
+  "seeds_tested": 7,
+  "best_result": {
+    "seed": 6717,
+    "success_rate": 0.94,
+    "collision_rate": 0.06,
+    "timeout_rate": 0.0,
+    "avg_reward": -0.12449914922763547,
+    "avg_time": 11.185,
+    "success_count": 47,
+    "total_episodes": 50
+  },
+  "all_results": [
+    {
+      "seed": 6717,
+      "success_rate": 0.94,
+      "collision_rate": 0.06,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.12449914922763547,
+      "avg_time": 11.185,
+      "success_count": 47,
+      "total_episodes": 50
+    },
+    {
+      "seed": 5111,
+      "success_rate": 0.88,
+      "collision_rate": 0.12,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.08067754793482626,
+      "avg_time": 10.735,
+      "success_count": 44,
+      "total_episodes": 50
+    },
+    {
+      "seed": 2212,
+      "success_rate": 0.86,
+      "collision_rate": 0.14,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.16386646981740724,
+      "avg_time": 10.285,
+      "success_count": 43,
+      "total_episodes": 50
+    },
+    {
+      "seed": 1173,
+      "success_rate": 0.84,
+      "collision_rate": 0.16,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2653257129663797,
+      "avg_time": 10.67,
+      "success_count": 42,
+      "total_episodes": 50
+    },
+    {
+      "seed": 3316,
+      "success_rate": 0.78,
+      "collision_rate": 0.22,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.28438058550718337,
+      "avg_time": 10.39,
+      "success_count": 39,
+      "total_episodes": 50
+    },
+    {
+      "seed": 4522,
+      "success_rate": 0.76,
+      "collision_rate": 0.24,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.19805897092944527,
+      "avg_time": 9.49,
+      "success_count": 38,
+      "total_episodes": 50
+    },
+    {
+      "seed": 403,
+      "success_rate": 0.72,
+      "collision_rate": 0.26,
+      "timeout_rate": 0.02,
+      "avg_reward": -0.4062767621063603,
+      "avg_time": 10.38,
+      "success_count": 36,
+      "total_episodes": 50
+    }
+  ],
+  "args": {
+    "target_success_rate": 0.9,
+    "test_episodes": 50,
+    "max_seeds": 10000,
+    "config_dir": "./configs"
+  }
+}

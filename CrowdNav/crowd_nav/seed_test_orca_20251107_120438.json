@@ -1,0 +1,169 @@
+{
+  "results": [
+    {
+      "seed": 1000,
+      "success_rate": 0.81,
+      "collision_rate": 0.19,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2857816406774009,
+      "avg_time": 9.8075,
+      "success_count": 81,
+      "total_episodes": 100
+    },
+    {
+      "seed": 456,
+      "success_rate": 0.8,
+      "collision_rate": 0.19,
+      "timeout_rate": 0.01,
+      "avg_reward": -0.32320614971835193,
+      "avg_time": 10.155,
+      "success_count": 80,
+      "total_episodes": 100
+    },
+    {
+      "seed": 777,
+      "success_rate": 0.79,
+      "collision_rate": 0.21,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.31580103132123605,
+      "avg_time": 9.9075,
+      "success_count": 79,
+      "total_episodes": 100
+    },
+    {
+      "seed": 2000,
+      "success_rate": 0.78,
+      "collision_rate": 0.22,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.33736100690607107,
+      "avg_time": 9.845,
+      "success_count": 78,
+      "total_episodes": 100
+    },
+    {
+      "seed": 300,
+      "success_rate": 0.76,
+      "collision_rate": 0.24,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2805449113671525,
+      "avg_time": 9.335,
+      "success_count": 76,
+      "total_episodes": 100
+    },
+    {
+      "seed": 3000,
+      "success_rate": 0.76,
+      "collision_rate": 0.24,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.3508518547054553,
+      "avg_time": 9.71,
+      "success_count": 76,
+      "total_episodes": 100
+    },
+    {
+      "seed": 200,
+      "success_rate": 0.74,
+      "collision_rate": 0.26,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.31742787110809795,
+      "avg_time": 9.3325,
+      "success_count": 74,
+      "total_episodes": 100
+    },
+    {
+      "seed": 400,
+      "success_rate": 0.74,
+      "collision_rate": 0.26,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.38065255646181984,
+      "avg_time": 9.9,
+      "success_count": 74,
+      "total_episodes": 100
+    },
+    {
+      "seed": 42,
+      "success_rate": 0.72,
+      "collision_rate": 0.28,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.32084704988107204,
+      "avg_time": 9.2625,
+      "success_count": 72,
+      "total_episodes": 100
+    },
+    {
+      "seed": 43,
+      "success_rate": 0.72,
+      "collision_rate": 0.28,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.3167389093438018,
+      "avg_time": 9.255,
+      "success_count": 72,
+      "total_episodes": 100
+    },
+    {
+      "seed": 4000,
+      "success_rate": 0.72,
+      "collision_rate": 0.28,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.3536470583925903,
+      "avg_time": 9.275,
+      "success_count": 72,
+      "total_episodes": 100
+    },
+    {
+      "seed": 44,
+      "success_rate": 0.71,
+      "collision_rate": 0.29,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.33136654073751,
+      "avg_time": 9.225,
+      "success_count": 71,
+      "total_episodes": 100
+    },
+    {
+      "seed": 45,
+      "success_rate": 0.71,
+      "collision_rate": 0.29,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.33063367821214457,
+      "avg_time": 9.26,
+      "success_count": 71,
+      "total_episodes": 100
+    },
+    {
+      "seed": 1234,
+      "success_rate": 0.7,
+      "collision_rate": 0.3,
+      "timeout_rate": 0.0,
+      "avg_reward": -0.2931636115372129,
+      "avg_time": 8.965,
+      "success_count": 70,
+      "total_episodes": 100
+    },
+    {
+      "seed": 100,
+      "success_rate": 0.69,
+      "collision_rate": 0.3,
+      "timeout_rate": 0.01,
+      "avg_reward": -0.44566767643854166,
+      "avg_time": 9.5625,
+      "success_count": 69,
+      "total_episodes": 100
+    },
+    {
+      "seed": 123,
+      "success_rate": 0.68,
+      "collision_rate": 0.31,
+      "timeout_rate": 0.01,
+      "avg_reward": -0.4391772904915678,
+      "avg_time": 9.4225,
+      "success_count": 68,
+      "total_episodes": 100
+    }
+  ],
+  "args": {
+    "num_seeds": 16,
+    "test_episodes": 100,
+    "config_dir": "./configs"
+  }
+}
