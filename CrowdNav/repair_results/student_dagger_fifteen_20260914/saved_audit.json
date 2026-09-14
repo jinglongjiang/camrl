@@ -1,0 +1,236 @@
+{
+  "rounds": [
+    {
+      "round": 1,
+      "success": 59,
+      "collision": 35,
+      "timeout": 6,
+      "student_steps": 3896,
+      "label_action_disagreements": 3896,
+      "teacher_feasibility_class_counts": {
+        "0": 3074,
+        "1": 39,
+        "2": 783
+      },
+      "actual_overlap_episodes": 35,
+      "checkpoint_sha256": "eba558e3892f1bf8452ff7c692773ee79755c45dd4f30d4ee6ebcfdb48ccc38a"
+    },
+    {
+      "round": 2,
+      "success": 69,
+      "collision": 30,
+      "timeout": 1,
+      "student_steps": 4968,
+      "label_action_disagreements": 4968,
+      "teacher_feasibility_class_counts": {
+        "0": 4283,
+        "1": 26,
+        "2": 659
+      },
+      "actual_overlap_episodes": 30,
+      "checkpoint_sha256": "720eaf97c25a9c8ca82e01142a68c0e644f7f7df10b7845777b9ecd4ba410765"
+    },
+    {
+      "round": 3,
+      "success": 74,
+      "collision": 25,
+      "timeout": 1,
+      "student_steps": 4487,
+      "label_action_disagreements": 4487,
+      "teacher_feasibility_class_counts": {
+        "0": 3645,
+        "1": 24,
+        "2": 818
+      },
+      "actual_overlap_episodes": 24,
+      "checkpoint_sha256": "b3fc77ddf1e2c9b5ab43270df8f2599ea078da3da3a99539c37967b8c9d35e76"
+    },
+    {
+      "round": 4,
+      "success": 79,
+      "collision": 20,
+      "timeout": 1,
+      "student_steps": 4868,
+      "label_action_disagreements": 4868,
+      "teacher_feasibility_class_counts": {
+        "0": 4299,
+        "1": 26,
+        "2": 543
+      },
+      "actual_overlap_episodes": 20,
+      "checkpoint_sha256": "e2aa72aa7999ab2fc8d6fc396059425d877f1b753b17bb10e9b1bf5605bdf824"
+    },
+    {
+      "round": 5,
+      "success": 90,
+      "collision": 10,
+      "timeout": 0,
+      "student_steps": 5112,
+      "label_action_disagreements": 5112,
+      "teacher_feasibility_class_counts": {
+        "0": 4491,
+        "1": 29,
+        "2": 592
+      },
+      "actual_overlap_episodes": 10,
+      "checkpoint_sha256": "1f260fc539ca430785b7f413048e72458eed70af901fa4759951a59f6ceb61bb"
+    },
+    {
+      "round": 6,
+      "success": 93,
+      "collision": 7,
+      "timeout": 0,
+      "student_steps": 5131,
+      "label_action_disagreements": 5131,
+      "teacher_feasibility_class_counts": {
+        "0": 4362,
+        "1": 28,
+        "2": 741
+      },
+      "actual_overlap_episodes": 7,
+      "checkpoint_sha256": "f29df76e42128957a60113dad9fbd8a07722b861f24b9a7bc37c030b33c068aa"
+    },
+    {
+      "round": 7,
+      "success": 92,
+      "collision": 7,
+      "timeout": 1,
+      "student_steps": 5101,
+      "label_action_disagreements": 5101,
+      "teacher_feasibility_class_counts": {
+        "0": 4657,
+        "1": 15,
+        "2": 429
+      },
+      "actual_overlap_episodes": 7,
+      "checkpoint_sha256": "6f5d7feadc9602668b11e838f1e367067210c1de828e0eab5e7d90cb38303701"
+    },
+    {
+      "round": 8,
+      "success": 97,
+      "collision": 0,
+      "timeout": 3,
+      "student_steps": 4753,
+      "label_action_disagreements": 4753,
+      "teacher_feasibility_class_counts": {
+        "0": 4181,
+        "1": 22,
+        "2": 550
+      },
+      "actual_overlap_episodes": 0,
+      "checkpoint_sha256": "53ff1e65eada5a69da342bcb4397a1b8439f28e63831b3ae94ba7f1bc0b556db"
+    },
+    {
+      "round": 9,
+      "success": 93,
+      "collision": 6,
+      "timeout": 1,
+      "student_steps": 5249,
+      "label_action_disagreements": 5249,
+      "teacher_feasibility_class_counts": {
+        "0": 4618,
+        "1": 17,
+        "2": 614
+      },
+      "actual_overlap_episodes": 6,
+      "checkpoint_sha256": "89c4224f0ca8f349ccbe3fd0e6be3dce0d95219941480f15ef9e9b6ca09decc0"
+    },
+    {
+      "round": 10,
+      "success": 97,
+      "collision": 3,
+      "timeout": 0,
+      "student_steps": 5082,
+      "label_action_disagreements": 5082,
+      "teacher_feasibility_class_counts": {
+        "0": 4606,
+        "1": 14,
+        "2": 462
+      },
+      "actual_overlap_episodes": 3,
+      "checkpoint_sha256": "f93028ceee4a39a62cdf8f61680cc0510bb12ebbfdbc2bd66b4677761a9614ed"
+    },
+    {
+      "round": 11,
+      "success": 99,
+      "collision": 1,
+      "timeout": 0,
+      "student_steps": 4743,
+      "label_action_disagreements": 4743,
+      "teacher_feasibility_class_counts": {
+        "0": 4221,
+        "1": 45,
+        "2": 477
+      },
+      "actual_overlap_episodes": 1,
+      "checkpoint_sha256": "b505b8dbba87d8d207daff10367b8109006c5f6f1c0672e447a7ee0d66ae6390"
+    },
+    {
+      "round": 12,
+      "success": 99,
+      "collision": 1,
+      "timeout": 0,
+      "student_steps": 5060,
+      "label_action_disagreements": 5060,
+      "teacher_feasibility_class_counts": {
+        "0": 4587,
+        "1": 34,
+        "2": 439
+      },
+      "actual_overlap_episodes": 1,
+      "checkpoint_sha256": "44e88cead07b133b45a8c72d1e4402e345439df59c214386bdfa7c8a226712b8"
+    },
+    {
+      "round": 13,
+      "success": 99,
+      "collision": 1,
+      "timeout": 0,
+      "student_steps": 5154,
+      "label_action_disagreements": 5154,
+      "teacher_feasibility_class_counts": {
+        "0": 4535,
+        "1": 19,
+        "2": 600
+      },
+      "actual_overlap_episodes": 1,
+      "checkpoint_sha256": "ae8642898a852a7b64c8a2d8df24085f79d11ff4aa260354f965657bf92c81fb"
+    },
+    {
+      "round": 14,
+      "success": 98,
+      "collision": 2,
+      "timeout": 0,
+      "student_steps": 5238,
+      "label_action_disagreements": 5238,
+      "teacher_feasibility_class_counts": {
+        "0": 4735,
+        "1": 13,
+        "2": 490
+      },
+      "actual_overlap_episodes": 2,
+      "checkpoint_sha256": "32ccd6a5ebdf5c24197e3f817705abb16c947f22cc74eee89f1f537295a0de03"
+    },
+    {
+      "round": 15,
+      "success": 99,
+      "collision": 1,
+      "timeout": 0,
+      "student_steps": 5183,
+      "label_action_disagreements": 5183,
+      "teacher_feasibility_class_counts": {
+        "0": 4677,
+        "1": 21,
+        "2": 485
+      },
+      "actual_overlap_episodes": 1,
+      "checkpoint_sha256": "5ff655f2c80a4a69bab2c0ec911c60add262273403771eeefebe6a88449d508e"
+    }
+  ],
+  "route_tracks_student_not_teacher": true,
+  "original_9037_steps_retained": true,
+  "unique_new_layouts": 1500,
+  "development_overlap": 0,
+  "reward_and_cost_critics_unchanged_between_rounds": true,
+  "rl_steps": 0,
+  "scope": "five-human nominal development; not evidence of Bayesian value or independent generalization"
+}
