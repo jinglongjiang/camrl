@@ -559,7 +559,10 @@ class BeliefMDPFeatureEngine:
         belief_state = belief_state_observation(robot, all_humans, self.num_humans)
 
         self.filter.update(belief_state)
-        belief_vecs = np.asarray(self.filter.get_per_ped_belief_vec(), dtype=np.float32)
+        if isinstance(self.filter, GDBNIntegration):
+            belief_vecs = np.asarray(self.filter.get_belief_snapshot().features, dtype=np.float32)
+        else:
+            belief_vecs = np.asarray(self.filter.get_per_ped_belief_vec(), dtype=np.float32)
 
         if self.belief_mode == "corrupted" and self._corruption_permutation is not None:
             belief_vecs = belief_vecs[self._corruption_permutation]

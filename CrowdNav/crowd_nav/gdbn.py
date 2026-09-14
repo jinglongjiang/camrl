@@ -20,6 +20,16 @@ Pipeline:
 import os
 import numpy as np
 from typing import List, Optional, Tuple
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class ModeBeliefSnapshot:
+    update_index: int
+    features: Tuple[Tuple[float, ...], ...]
+    mode_count: int
+    coordinate_frame: str = 'world_xy_velocity'
+    probability_semantics: str = 'first_K_columns_sum_to_one_per_person'
 
 # ============================================================================ #
 #  1. GNG — Growing Neural Gas
@@ -429,7 +439,13 @@ class PedestrianBeliefTracker:
         ))
 
         diff_all = z[np.newaxis, :] - self.particles_x  # (N, 4)
-        log_w = -0.5 * np.einsum('ni,ij,nj->n', diff_all, self._R_inv, diff_all)
+        # Bootstrap proposal uses the transition prior. Unless the previous
+        # step resampled, its nonuniform importance weights must survive.
+        with np.errstate(divide='ignore'):
+            log_w = np.log(self.weights) - 0.5 * np.einsum(
+                'ni,ij,nj->n', diff_all, self._R_inv, diff_all)
+        if not np.isfinite(log_w).any():
+            raise FloatingPointError('GDBN observation produced no finite particle weight')
         log_w -= log_w.max()
         self.weights = np.exp(log_w)
         w_sum = self.weights.sum()
@@ -480,6 +496,7 @@ class GDBNIntegration:
         max_peds: int = 5,
         klda_norm_clip: float = 5.0,
         random_seed: int = 42,
+        allow_unfitted: bool = False,
     ):
         self.K = K
         self.n_particles = n_particles
@@ -499,10 +516,31 @@ class GDBNIntegration:
         load_dir = params_dir or self.DEFAULT_PARAMS_DIR
         self.params_dir = os.path.abspath(load_dir)
         if os.path.isdir(load_dir):
-            try:
-                self.load(load_dir)
-            except Exception as e:
-                print(f"[GDBN]  ({e}) train_offline() ")
+            self.load(load_dir)
+        elif not allow_unfitted:
+            raise FileNotFoundError(f'GDBN parameter directory not found: {load_dir}')
+
+    def _require_fitted(self):
+        if not self._fitted:
+            raise RuntimeError('GDBN is not fitted; inference must not return zero risk')
+
+    def _validate_parameters(self):
+        if self.K < 1 or self.gng.n_modes != self.K:
+            raise ValueError('GNG/GDBN mode count mismatch')
+        pi = np.asarray(self.gdbn.Pi)
+        if (pi.shape != (self.K, self.K) or not np.isfinite(pi).all()
+                or (pi < 0).any() or not np.allclose(pi.sum(axis=1), 1., atol=1e-8)):
+            raise ValueError('GDBN transition rows must be finite normalized probabilities')
+        for matrix in self.gdbn.A:
+            if matrix.shape != (4, 4) or not np.isfinite(matrix).all():
+                raise ValueError('Invalid GDBN dynamics matrix')
+        for covariance in [self.gdbn.R] + list(self.gdbn.Q):
+            if (covariance.shape != (4, 4) or not np.isfinite(covariance).all()
+                    or not np.allclose(covariance, covariance.T, atol=1e-8)
+                    or np.linalg.eigvalsh(covariance).min() < -1e-10):
+                raise ValueError('Invalid GDBN covariance')
+        if np.linalg.eigvalsh(self.gdbn.R).min() <= 0:
+            raise ValueError('GDBN observation covariance must be positive definite')
 
     # ------------------------------------------------------------------ #
     # ------------------------------------------------------------------ #
@@ -547,10 +585,13 @@ class GDBNIntegration:
         print(f"[GDBN] : {save_dir}")
 
     def load(self, params_dir: str):
+        self._fitted = False
+        self._action_fitted = False
         self.params_dir = os.path.abspath(params_dir)
         self.gng.load(os.path.join(params_dir, 'gng.npz'))
         self.gdbn.load(os.path.join(params_dir, 'gdbn.npz'))
         self.K = self.gdbn.K
+        self._validate_parameters()
         self.B_action = [np.zeros((4, 2), dtype=np.float64) for _ in range(self.K)]
         self.action_residual_cov = [0.1 * np.eye(4) for _ in range(self.K)]
         action_path = os.path.join(params_dir, 'action_model.npz')
@@ -559,6 +600,11 @@ class GDBNIntegration:
             for k in range(self.K):
                 self.B_action[k] = d[f'B_{k}']
                 self.action_residual_cov[k] = d[f'C_{k}']
+                if (self.B_action[k].shape != (4, 2)
+                        or not np.isfinite(self.B_action[k]).all()
+                        or self.action_residual_cov[k].shape != (4, 4)
+                        or not np.isfinite(self.action_residual_cov[k]).all()):
+                    raise ValueError('Invalid GDBN action model')
             self._action_fitted = True
         self._fitted = True
         print(f"[GDBN] : K={self.K} {params_dir}")
@@ -629,6 +675,7 @@ class GDBNIntegration:
     # ------------------------------------------------------------------ #
 
     def reset(self, n_peds: Optional[int] = None):
+        self._update_index = -1
         """episodetracker"""
         self._n_peds = int(n_peds or self.max_peds)
         self._trackers = [
@@ -650,8 +697,7 @@ class GDBNIntegration:
  state_34d: (34,) = robot(9) + 5×ped(5)
  : KLDA _last_klda
         """
-        if not self._fitted:
-            return [0.0] * self._n_peds
+        self._require_fitted()
         if not self._trackers:
             self.reset()
 
@@ -667,7 +713,17 @@ class GDBNIntegration:
             klda_list.append(klda)
 
         self._last_klda = klda_list
+        self._update_index += 1
         return klda_list
+
+    def get_belief_snapshot(self):
+        features = self.get_per_ped_belief_vec()
+        if (not np.isfinite(features).all()
+                or not np.allclose(features[:, :self.K].sum(axis=1), 1., atol=1e-6)):
+            raise ValueError('Invalid per-person mode posterior')
+        return ModeBeliefSnapshot(
+            getattr(self, '_update_index', -1),
+            tuple(tuple(float(x) for x in row) for row in features), self.K)
 
     # ------------------------------------------------------------------ #
     # ------------------------------------------------------------------ #
@@ -678,6 +734,7 @@ class GDBNIntegration:
 
  predict_sarl_style
         """
+        self._require_fitted()
         if not self._last_klda:
             return 0.0
         return float(max(self._last_klda))
@@ -690,8 +747,7 @@ class GDBNIntegration:
  EnhancedSpatialEncoder token
         """
         features = np.zeros((self.max_peds, self.K), dtype=np.float32)
-        if not self._fitted:
-            return features
+        self._require_fitted()
         for p, tracker in enumerate(self._trackers[:self.max_peds]):
             if tracker.particles_x is not None:
                 features[p] = tracker.get_mode_distribution().astype(np.float32)
@@ -699,6 +755,7 @@ class GDBNIntegration:
 
     def get_all_klda(self) -> List[float]:
         """KLDA/"""
+        self._require_fitted()
         return list(self._last_klda)
 
     def get_per_ped_belief_vec(self) -> np.ndarray:
@@ -711,9 +768,7 @@ class GDBNIntegration:
         """
         out_dim = self.K + 2
         features = np.zeros((self.max_peds, out_dim), dtype=np.float32)
-        if not self._fitted:
-            features[:, :self.K] = 1.0 / self.K  # uniform prior
-            return features
+        self._require_fitted()
         klda_clip = max(float(self.klda_norm_clip), 1e-6)
         log_K = float(np.log(max(self.K, 2)))
         for p, tracker in enumerate(self._trackers[:self.max_peds]):
@@ -788,13 +843,7 @@ class GDBNIntegration:
         """
         out_dim = self.K + 2
         belief_vec = np.zeros((self.max_peds, out_dim), dtype=np.float32)
-        if not self._fitted:
-            belief_vec[:, :self.K] = 1.0 / self.K
-            return {
-                'risk': 0.0, 'entropy': 0.0, 'klda': 0.0,
-                'min_clearance': float('inf'), 'belief_vec': belief_vec,
-                'action_fitted': False,
-            }
+        self._require_fitted()
 
         state_34d = np.asarray(state_34d, dtype=np.float64).reshape(-1)
         if state_34d.shape[0] < 34:
@@ -917,14 +966,7 @@ class GDBNIntegration:
         """
         out_dim = self.K + 2
         belief_vec = np.zeros((self.max_peds, out_dim), dtype=np.float32)
-        if not self._fitted:
-            belief_vec[:, :self.K] = 1.0 / self.K
-            return {
-                'risk': 0.0, 'entropy': 0.0, 'klda': 0.0,
-                'epistemic_value': 0.0,
-                'min_clearance': float('inf'), 'belief_vec': belief_vec,
-                'action_fitted': False,
-            }
+        self._require_fitted()
 
         state_34d = np.asarray(state_34d, dtype=np.float64).reshape(-1)
         if state_34d.shape[0] < 34:
@@ -1052,16 +1094,7 @@ class GDBNIntegration:
         Returns:
             dict with 'risk', 'entropy', 'klda', 'epistemic_value': (B,) float64 arrays.
         """
-        if not self._fitted:
-            B = max(1, len(states_34d))
-            zero = np.zeros(B, dtype=np.float64)
-            return {
-                'risk': zero,
-                'tail_risk': zero,
-                'entropy': zero,
-                'klda': zero,
-                'epistemic_value': zero,
-            }
+        self._require_fitted()
 
         states_34d = np.asarray(states_34d, dtype=np.float64)
         actions_xy = np.asarray(actions_xy, dtype=np.float64)
@@ -1129,6 +1162,7 @@ class GDBNIntegration:
             A_x = np.einsum('kij,bpj->bpki', A_stack, x_batch)
             pred_by_mode = A_x + B_a[:, None, :, :]  # (B,P,K,4)
 
+            # Mean-projected rollout, not a persistent joint mixture of futures.
             x_batch = (base_alpha[:, :, :, None] * pred_by_mode).sum(axis=2)
             robot_future = robot_future + actions_xy * dt
 

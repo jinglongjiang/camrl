@@ -259,6 +259,10 @@ def compute_artifact_hashes(args) -> dict:
         "model_py_sha256": sha256_file(str(THIS_DIR / "model.py")),
         "runtime_py_sha256": sha256_file(str(THIS_DIR / "runtime.py")),
         "evaluate_py_sha256": sha256_file(str(THIS_DIR / "evaluate.py")),
+        "gdbn_py_sha256": sha256_file(str(THIS_DIR.parent / "gdbn.py")),
+        "contracts_py_sha256": sha256_file(str(THIS_DIR.parent / "contracts.py")),
+        "mamba_rl_py_sha256": sha256_file(str(THIS_DIR.parent / "policy/mamba_rl.py")),
+        "frozen_teacher_runtime_sha256": sha256_file(str(THIS_DIR.parent / "belief_space_rl/runtime.py")),
     }
     if args.belief_mode == "k1_belief":
         hashes["k1_gdbn_params_sha256"] = sha256_dir(args.k1_gdbn_params)

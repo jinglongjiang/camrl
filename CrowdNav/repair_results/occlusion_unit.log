@@ -1,0 +1,21 @@
+[UNIT]
+  off: module is inert and returns no payload  OK
+  geometry: blocker occludes collinear pedestrian, spares lateral one  OK
+  geometry: beyond field of view counts as occluded  OK
+  filter: posterior in [0,1]; peak 0.999 -> 0.050 without confirmation  OK
+  filter: observed free cells fall below the prior (0.0100 < 0.05)  OK
+  filter: world-frame reprojection and non-wrapping diffusion  OK
+  oracle: exact hidden state uses the same hidden-only consumer path  OK
+  metrics: never-seen is episode-causal and distance-stratified  OK
+  tokens: [8,13], columns 0-8 legacy, 9-12 carry existence/uncertainty/flags  OK
+  belief-v3: 15 entities survive selection, replay and backward  OK
+  paper2: MLP is stateless and IL teacher observability is explicit  OK
+  replay-contract: paired columns survive Explorer and replay exactly  OK
+  arms: gt=2 sensor=1 deterministic=1 bayes=2  OK
+  ablation: Bayes visible-only entities and tokens equal sensor exactly  OK
+  contracts: near-hidden metrics, strict metadata, legacy zero-init  OK
+  gt-parity: 20-human current and successor legacy columns exact  OK
+  warm-start: activated columns are exactly inert for legacy weights  OK
+[UNIT] all passed
+ERROR:root:[MAMBA-SSM] ✗ Failed to import mamba_ssm: No module named 'mamba_ssm'
+ERROR:root:[MAMBA-SSM] Please install: pip install mamba-ssm

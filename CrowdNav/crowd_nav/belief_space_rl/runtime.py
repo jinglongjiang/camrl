@@ -123,7 +123,11 @@ def build_frozen_mamba(
     checkpoint_path: str,
     device: torch.device,
 ) -> MambaRLPolicy:
-    policy = MambaRLPolicy(config=config, device=device)
+    # A frozen historical teacher must retain the coordinates it was trained on.
+    import copy
+    teacher_config = copy.deepcopy(config)
+    teacher_config.set('mamba', 'coordinate_contract', 'legacy_v1')
+    policy = MambaRLPolicy(config=teacher_config, device=device)
     state = checkpoint_state(checkpoint_path)
     incompatible = policy.load_state_dict(state, strict=False)
     missing_encoder = [

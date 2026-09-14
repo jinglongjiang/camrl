@@ -31,11 +31,15 @@ def sha256_dir(path: str) -> str:
     listing order never does.
     """
     root = Path(path)
+    if not root.is_dir():
+        raise FileNotFoundError(f'Artifact directory not found: {root}')
     entries = []
     for file_path in sorted(root.rglob("*")):
         if file_path.is_file():
             relative = file_path.relative_to(root).as_posix()
             entries.append(f"{relative}:{sha256_file(str(file_path))}")
     digest = hashlib.sha256()
+    if not entries:
+        raise ValueError(f'Artifact directory is empty: {root}')
     digest.update("\n".join(entries).encode("utf-8"))
     return digest.hexdigest()

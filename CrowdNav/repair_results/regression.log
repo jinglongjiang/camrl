@@ -1,0 +1,17 @@
+ERROR:root:[MAMBA-SSM] ✗ Failed to import mamba_ssm: No module named 'mamba_ssm'
+ERROR:root:[MAMBA-SSM] Please install: pip install mamba-ssm
+test_belief_can_affect_only_the_existing_risk_head (crowd_nav.test_belief_contract_repair.RepairTests) ... ok
+test_coordinates_and_legacy_contract (crowd_nav.test_belief_contract_repair.RepairTests) ... ok
+test_equal_likelihood_preserves_nonuniform_weight (crowd_nav.test_belief_contract_repair.RepairTests) ... ok
+test_missing_and_corrupt_parameters_fail_fast (crowd_nav.test_belief_contract_repair.RepairTests) ... ok
+test_old_checkpoint_metadata_is_rejected (crowd_nav.test_belief_contract_repair.RepairTests) ... ok
+test_random_and_greedy_both_append_once (crowd_nav.test_belief_contract_repair.RepairTests) ... ok
+test_resampling_is_unbiased_in_ensemble (crowd_nav.test_belief_contract_repair.RepairTests) ... ok
+test_snapshot_read_is_immutable_and_idempotent (crowd_nav.test_belief_contract_repair.RepairTests) ... ok
+test_transition_is_not_frozen_by_uninformative_observation (crowd_nav.test_belief_contract_repair.RepairTests) ... ok
+test_two_evidence_steps_multiply_odds (crowd_nav.test_belief_contract_repair.RepairTests) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.238s
+
+OK

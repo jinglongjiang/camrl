@@ -42,8 +42,11 @@ class EnhancedSpatialEncoder(nn.Module):
     3. MultiheadAttention聚合人类特征
     4. 2路融合（robot + human含relation）
     """
-    def __init__(self, d_model: int = 256):
+    def __init__(self, d_model: int = 256, coordinate_contract: str = 'relative_v2'):
         super().__init__()
+        if coordinate_contract not in ('relative_v2', 'legacy_v1'):
+            raise ValueError(f'Unknown coordinate contract: {coordinate_contract}')
+        self.coordinate_contract = coordinate_contract
         self.d_model = d_model
 
         # 机器人特征编码器（完整13维）
@@ -114,8 +117,9 @@ class EnhancedSpatialEncoder(nn.Module):
         h_vx = humans_tokens[..., 3]
         h_vy = humans_tokens[..., 4]
 
-        rel_x = h_px - robot_px
-        rel_y = h_py - robot_py
+        # Human token columns 0/1 are already robot-relative.
+        rel_x = h_px if self.coordinate_contract == 'relative_v2' else h_px - robot_px
+        rel_y = h_py if self.coordinate_contract == 'relative_v2' else h_py - robot_py
         rel_dist = torch.sqrt(rel_x**2 + rel_y**2 + 1e-6)
         rel_vx = h_vx - robot_vx
         rel_vy = h_vy - robot_vy
@@ -305,7 +309,9 @@ class MambaRLPolicy(nn.Module):
             raise ValueError("Missing time_step in config (expected [env] time_step or [action_space] time_step).")
 
         # Build network: Spatial -> Temporal -> Heads
-        self.spatial_encoder = EnhancedSpatialEncoder(d_model)
+        self.coordinate_contract = config.get(
+            'mamba', 'coordinate_contract', fallback='relative_v2')
+        self.spatial_encoder = EnhancedSpatialEncoder(d_model, self.coordinate_contract)
         self.temporal_encoder = build_temporal_encoder(
             temporal_backbone,
             d_model=d_model,
@@ -877,6 +883,7 @@ class MambaRLPolicy(nn.Module):
 
         # 3. ε-greedy
         if self._phase == 'train' and np.random.random() < self.epsilon:
+            self._history.append(self._state_to_policy_tokens(state))
             random_idx = int(np.random.choice(len(self.action_space)))
             self._last_action_index = random_idx
             return self.action_space[random_idx]
@@ -1449,6 +1456,10 @@ def occlusion_checkpoint_meta(env_config, mode, backbone):
     token_schema = ('v3_belief_15_entities' if schema_version == 3
                     else 'v2_belief_features')
     return {"occlusion_mode": mode, "token_schema": token_schema,
+            "coordinate_contract": env_config.get(
+                'mamba', 'coordinate_contract', fallback='relative_v2'),
+            "belief_read_contract": "snapshot_v1",
+            "history_contract": "every_decision_v1",
             "belief_features": env_config.get(
                 'occlusion', 'belief_features', fallback='full').strip().lower(),
             "token_contract": token_contract,
@@ -1473,7 +1484,8 @@ def assert_checkpoint_compatible(meta, mode, backbone, expected_meta=None):
         if meta.get(k) != want:
             raise ValueError(f"checkpoint {k}={meta.get(k)!r} but this run is {want!r}")
     if expected_meta is not None:
-        identity_keys = ["token_schema", "schema_version"]
+        identity_keys = ["token_schema", "schema_version", "coordinate_contract",
+                         "belief_read_contract", "history_contract"]
         if int(expected_meta.get("schema_version", -1)) >= 3:
             identity_keys.extend([
                 "token_contract", "visible_slots", "hidden_slots",

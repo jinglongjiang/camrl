@@ -1,0 +1,8 @@
+[SMOKE]
+  smoke[bayes/mlp/full]: 30 steps, nan=False, belief={'episodes': 1, 'entity_rows': 183, 'hidden_rows': 105, 'nontrivial_confidence_rows': 105}, {'occluded_frac': 0.235, 'n_visible': 2, 'n_occluded': 3, 'n_near_occluded': 0, 'n_unseen_occluded': 0, 'n_near_unseen_occluded': 0, 'min_occluded_clearance_m': 4.20872002067132, 'min_unseen_occluded_clearance_m': nan}
+  smoke[bayes/gru/full]: 30 steps, nan=False, belief={'episodes': 1, 'entity_rows': 199, 'hidden_rows': 117, 'nontrivial_confidence_rows': 117}, {'occluded_frac': 0.260625, 'n_visible': 2, 'n_occluded': 3, 'n_near_occluded': 0, 'n_unseen_occluded': 0, 'n_near_unseen_occluded': 0, 'min_occluded_clearance_m': 3.3199655471313236, 'min_unseen_occluded_clearance_m': nan}
+  smoke: every arm x backbone ran and back-propagated cleanly  OK
+[SMOKE] passed
+ERROR:root:[MAMBA-SSM] ✗ Failed to import mamba_ssm: No module named 'mamba_ssm'
+ERROR:root:[MAMBA-SSM] Please install: pip install mamba-ssm
+WARNING:root:[policy_factory] BayesianDVL not registered: ModuleNotFoundError("No module named 'crowd_nav.bayesian_dvl.policy'")

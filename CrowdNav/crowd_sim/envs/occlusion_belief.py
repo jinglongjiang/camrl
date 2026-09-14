@@ -29,6 +29,43 @@ path. Ground truth is reachable exclusively through `oracle_entities()`, which
 the student policy must never call.
 """
 import numpy as np
+from dataclasses import asdict, dataclass
+from typing import Tuple
+
+
+@dataclass(frozen=True)
+class BeliefEntity:
+    px: float
+    py: float
+    vx: float
+    vy: float
+    radius: float
+    p_exist: float
+    uncertainty: float
+    visible: float
+    hidden: float
+    id: int
+
+    def __post_init__(self):
+        values = (self.px, self.py, self.vx, self.vy, self.radius,
+                  self.p_exist, self.uncertainty, self.visible, self.hidden)
+        if not np.isfinite(values).all() or self.radius < 0:
+            raise ValueError('Invalid belief entity')
+        if not (0 <= self.p_exist <= 1 and 0 <= self.uncertainty <= 1):
+            raise ValueError('Invalid belief confidence')
+
+
+@dataclass(frozen=True)
+class BeliefSnapshot:
+    frame_index: int
+    time_step: float
+    entities: Tuple[BeliefEntity, ...]
+    coordinate_frame: str = 'world_xy_velocity'
+    probability_semantics: str = 'occupancy_peak_per_entity_not_normalized_across_entities'
+    uncertainty_semantics: str = 'normalized_spatial_spread_not_covariance'
+
+    def entity_dicts(self):
+        return [asdict(entity) for entity in self.entities]
 
 MODES = ("off", "sensor", "deterministic", "bayes", "gt", "oracle_belief")
 SCHEMA_VERSION = 1
@@ -106,6 +143,8 @@ class OcclusionBelief:
 
     # ---------------------------------------------------------------- state
     def reset(self):
+        self._frame_index = -1
+        self._snapshot = BeliefSnapshot(-1, self.dt, ())
         self.logodds = None          # belief over the local grid, log-odds
         self._grid_shape = None
         self._prev_modes = []        # for velocity estimation of belief modes
@@ -353,6 +392,17 @@ class OcclusionBelief:
         if self.mode == "bayes":
             self._predict()
             self._correct(sensor)
+            # Association advances exactly once per sensor update, never on read.
+            entities = self._visible_entities() + self._extract_modes(sensor)
+            self._frame_index += 1
+            self._snapshot = BeliefSnapshot(
+                self._frame_index, self.dt,
+                tuple(BeliefEntity(**entity) for entity in entities))
+
+    def get_belief_snapshot(self):
+        if self.mode != 'bayes':
+            raise RuntimeError('Occupancy snapshot requires bayes mode')
+        return self._snapshot
 
     # ------------------------------------------------------------ entities
     def _visible_entities(self):
@@ -406,7 +456,7 @@ class OcclusionBelief:
                              "uncertainty": float(min(1.0, v[5] / max_age)),
                              "visible": 0.0, "hidden": 1.0, "id": -1})
             return ents
-        return ents + self._extract_modes(self.sensor_grid)
+        return self.get_belief_snapshot().entity_dicts()
 
     def oracle_entities(self):
         """Ground truth. For the oracle arm and for evaluation only; the

@@ -156,7 +156,7 @@ class BeliefMDPQNetwork(nn.Module):
             nn.Linear(2 * hidden_dim, hidden_dim),
             nn.SiLU(),
             nn.Linear(hidden_dim, 1),
-            nn.Softplus(),  # Q_C approximates a discounted eventual-collision probability
+            nn.Softplus(),  # Nonnegative discounted-cost estimate; not bounded/calibrated probability.
         )
         # Softplus(0) = ln(2) ~= 0.693 -- far too large an initial estimate
         # for a quantity that should start near the base collision rate

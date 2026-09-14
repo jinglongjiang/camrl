@@ -31,6 +31,7 @@ def main():
 
     model = GDBNIntegration(
         K=1,
+        allow_unfitted=True,
         n_particles=args.particles,
         max_peds=args.max_peds,
     )

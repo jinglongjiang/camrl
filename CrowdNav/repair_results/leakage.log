@@ -1,0 +1,7 @@
+[LEAKAGE]
+  leakage[sensor]: tokens identical = True
+  leakage[deterministic]: tokens identical = True
+  leakage[bayes]: tokens identical = True
+  leakage[gt]: tokens changed = True (must be True)
+  leakage: hidden motion invisible to student arms, visible to oracle  OK
+[LEAKAGE] passed
