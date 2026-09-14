@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import numpy as np
 import torch
+import gymnasium as gym
 from stable_baselines3.common.noise import NormalActionNoise
 from stable_baselines3.common.utils import obs_as_tensor
 from crowd_nav.bayes_continuous.environment import BeliefEnv, ARMS
@@ -15,6 +16,90 @@ from crowd_nav.gdbn import GNG, GDBN
 
 def stack_obs(observations):
     return {k:np.stack([o[k] for o in observations]) for k in observations[0]}
+
+
+class ActionHistory(gym.Wrapper):
+    """Executed action, not the teacher's hidden future plan."""
+    def __init__(self, env):
+        super().__init__(env)
+        self.observation_space = gym.spaces.Dict(dict(env.observation_space.spaces,
+            robot=gym.spaces.Box(-np.inf, np.inf, (9,), np.float32)))
+        self.previous = np.zeros(2, np.float32)
+
+    def augment(self, obs):
+        return dict(obs, robot=np.concatenate([obs['robot'], self.previous/[1.,1.2]]).astype(np.float32))
+
+    def reset(self, **kwargs):
+        self.previous[:] = 0
+        obs, info = self.env.reset(**kwargs)
+        return self.augment(obs), info
+
+    def step(self, action):
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        self.previous = np.asarray(info['action'], np.float32).copy()
+        return self.augment(obs), reward, terminated, truncated, info
+
+
+def augment_collection(trajectories):
+    for episode in trajectories:
+        previous = np.zeros(2, np.float32)
+        for row in episode:
+            if row['observation']['robot'].shape != (7,):
+                raise ValueError('Expected original seven-field observations')
+            row['observation'] = dict(row['observation'], robot=np.concatenate([
+                row['observation']['robot'], previous/[1.,1.2]]).astype(np.float32))
+            previous = np.asarray(row['action'], np.float32)
+            row['next_observation'] = dict(row['next_observation'], robot=np.concatenate([
+                row['next_observation']['robot'], previous/[1.,1.2]]).astype(np.float32))
+
+
+def neighbor_conflicts(trajectories, records):
+    from scipy.spatial import cKDTree
+    rows, episode_ids = [], []
+    for i, (episode, record) in enumerate(zip(trajectories, records)):
+        if record['outcome'] == 'success':
+            rows.extend(episode)
+            episode_ids.extend([i]*len(episode))
+    features = []
+    for row in rows:
+        obs = row['observation']
+        people = obs['humans'][obs['mask']>.5,:5]
+        people = people[np.argsort(np.linalg.norm(people[:,:2], axis=1), kind='stable')]
+        features.append(np.concatenate([obs['robot'][:7], people.ravel()]))
+    x = np.asarray(features)
+    prev = np.stack([r['observation']['robot'][7:] for r in rows])
+    omega = np.array([r['action'][1] for r in rows])
+    ids = np.asarray(episode_ids)
+    def nearest(features):
+        distances, indices = cKDTree(features).query(features, k=min(128,len(rows)))
+        eligible = ids[indices] != ids[:,None]
+        found = eligible.any(1)
+        first = eligible.argmax(1)
+        return distances[np.arange(len(rows)),first], indices[np.arange(len(rows)),first], found
+    d, j, found = nearest(x)
+    close = found & (d <= np.quantile(d[found], .1))
+    _, augmented, augmented_found = nearest(np.column_stack([x,prev]))
+    def conflict(index):
+        return (omega*omega[index] < 0) & (np.abs(omega)>.2) & (np.abs(omega[index])>.2)
+    selected = close & augmented_found
+    return dict(samples=len(rows), selected=int(selected.sum()),
+        current_only_conflict=float(conflict(j)[selected].mean()),
+        previous_action_conflict=float(conflict(augmented)[selected].mean()),
+        distance_cutoff=float(np.quantile(d[found],.1)),
+        augmented_neighbors_current_distance_mean=float(np.linalg.norm(x[selected]-x[augmented[selected]],axis=1).mean()),
+        current_neighbors_distance_mean=float(d[selected].mean()),
+        scope='Cross-episode nearest neighbors, closest 10% current states; sorted geometry; diagnostic, not a causal proof')
+
+
+def fit_metrics(model, observations, physical_actions):
+    predictions = np.concatenate([model.predict({k:v[i:i+256] for k,v in observations.items()},
+        deterministic=True)[0] for i in range(0,len(physical_actions),256)])
+    rmse = np.sqrt(np.mean((predictions-physical_actions)**2,axis=0))
+    std = predictions[:,1].std()
+    teacher_std = physical_actions[:,1].std()
+    return dict(speed_rmse=float(rmse[0]), omega_rmse=float(rmse[1]),
+        omega_std=float(std), teacher_omega_std=float(teacher_std),
+        passed=bool(rmse[1]<=.15 and std >= .8*teacher_std))
 
 
 def supervised_warmup(model, trajectories, updates=1000, risk_train=None, risk_valid=None):
@@ -153,10 +238,11 @@ def online_main():
 def episodes(params, count, offset, actor=None, collect=False, case_offset=0, diagnostics=False,
              arm='full', perturbation_seed=None):
     env = BeliefEnv(params, seed=2407, arm=arm)
+    policy_env = ActionHistory(env) if actor is not None and actor.observation_space['robot'].shape == (9,) else env
     records, trajectories, raw = [], [], []
     perturbations = np.random.default_rng(perturbation_seed)
     for episode in range(count):
-        obs, _ = env.reset(options={'layout_seed': offset+episode, 'test_case': case_offset+episode,
+        obs, _ = policy_env.reset(options={'layout_seed': offset+episode, 'test_case': case_offset+episode,
                                     'profile': 'nominal'})
         rows, states, trace = [], [], []
         layout_hash = hashlib.sha256(np.asarray([[h.px,h.py,h.gx,h.gy,h.radius,h.v_pref]
@@ -169,7 +255,7 @@ def episodes(params, count, offset, actor=None, collect=False, case_offset=0, di
                 action = np.clip(action + perturbations.normal(0., [.3, .8]),
                                  env.action_space.low, env.action_space.high).astype(np.float32)
             before = [env.world.robot.px, env.world.robot.py, env.world.robot.theta]
-            nxt, reward, done, _, info = env.step(action)
+            nxt, reward, done, _, info = policy_env.step(action)
             if diagnostics:
                 trace.append(dict(robot=before, humans=states[-1].tolist(), action=action.tolist(),
                                   clearance=float(info['dmin']),
@@ -279,16 +365,21 @@ def main():
     parser.add_argument('--teacher-only', action='store_true')
     parser.add_argument('--arm', choices=ARMS, default='no_belief')
     parser.add_argument('--teacher-receipt', type=Path)
+    parser.add_argument('--collection-dir', type=Path)
+    parser.add_argument('--bc-updates', type=int, default=12000)
+    parser.add_argument('--resume-bc', type=Path)
     parser.add_argument('--case-offset', type=int, default=0)
     parser.add_argument('--evaluation-episodes', type=int, default=100)
     parser.add_argument('--out', type=Path, required=True)
     args = parser.parse_args()
+    if args.resume_bc and not args.collection_dir:
+        parser.error('--resume-bc requires the frozen --collection-dir')
     args.out.mkdir(exist_ok=False)
     torch.set_num_threads(1)
     torch.cuda.set_per_process_memory_fraction(.2)
     result = {'protocol': 'Five-human development only, fixed stages, seed 2407',
               'gate': {'episodes':100, 'min_success':.9, 'max_collision':.02},
-              'bc_updates':3000, 'rl_started':False, 'arm':args.arm, 'stage':'bc_only'}
+              'bc_updates':args.bc_updates, 'rl_started':False, 'arm':args.arm, 'stage':'bc_only_prev_action'}
     def save():
         (args.out/'results.json').write_text(json.dumps(result, indent=2))
     result['teacher_source_sha256'] = hashlib.sha256((Path(__file__).parent/'teacher.py').read_bytes()).hexdigest()
@@ -325,32 +416,74 @@ def main():
         params = (args.out/'fitted_params').resolve()
     result['params'] = str(params)
     result['bayes_fitted'] = args.arm != 'no_belief'
-    records, trajectories, _ = episodes(params, 200, 520000, collect=True, case_offset=20000, arm=args.arm)
+    if args.collection_dir:
+        old = json.loads((args.collection_dir/'results.json').read_text())
+        if old['arm'] != args.arm or args.arm != 'no_belief':
+            raise ValueError('Reuse is restricted to matching No-Belief demonstrations')
+        for key in ('teacher_source_sha256','environment_source_sha256'):
+            if old[key] != result[key]:
+                raise ValueError('Collection source mismatch')
+        source = args.collection_dir/'collection.pt'
+        collection = torch.load(source, weights_only=False)
+        records, trajectories = collection['records'], collection['trajectories']
+        result['collection_source_sha256'] = hashlib.sha256(source.read_bytes()).hexdigest()
+    else:
+        records, trajectories, _ = episodes(params, 200, 520000, collect=True, case_offset=20000, arm=args.arm)
+    augment_collection(trajectories)
+    result['neighbor_diagnostic'] = neighbor_conflicts(trajectories, records)
+    print('neighbors',result['neighbor_diagnostic'],flush=True)
     torch.save(dict(records=records, trajectories=trajectories), args.out/'collection.pt')
     good = [row for record, rows in zip(records, trajectories) if record['outcome']=='success' for row in rows]
     result['accepted_bc_episodes'] = sum(r['outcome']=='success' for r in records)
     result['rejected_bc_episodes'] = 200-result['accepted_bc_episodes']
     result['collection_records'] = records
-    env = BeliefEnv(params, arm=args.arm)
+    env = ActionHistory(BeliefEnv(params, arm=args.arm))
     model = BayesSetTD3('MultiInputPolicy', env, replay_buffer_class=CostReplay,
         buffer_size=50000, learning_rate=3e-4, batch_size=128, seed=2407, device='cuda',
         learning_starts=0, train_freq=(1, 'step'), gradient_steps=1, policy_delay=2, tau=.005, gamma=.99,
         action_noise=NormalActionNoise(mean=np.zeros(2), sigma=.1*np.ones(2)),
-        policy_kwargs=dict(features_extractor_class=SetEncoder, net_arch=[96,96], share_features_extractor=False))
+        policy_kwargs=dict(features_extractor_class=SetEncoder, features_extractor_kwargs=dict(features_dim=192),
+                           net_arch=dict(pi=[256,256],qf=[96,96]), share_features_extractor=False))
     model.belief_arm = args.arm
-    model.stage_metadata = dict(arm=args.arm, train_humans=5, stage='bc_only', seed=2407)
+    model.stage_metadata = dict(arm=args.arm, train_humans=5, stage='bc_only_prev_action', seed=2407,
+                               previous_action_scale=[1.,1.2])
+    completed = 0
+    if args.resume_bc:
+        previous_result = json.loads((args.resume_bc/'results.json').read_text())
+        if previous_result.get('collection_source_sha256') != result.get('collection_source_sha256'):
+            raise ValueError('Resume demonstration source changed')
+        model = BayesSetTD3.load(args.resume_bc/'bc_only.zip', env=env, device='cuda')
+        model.check_arm(args.arm)
+        if model.stage_metadata.get('stage') != 'bc_only_prev_action' or model.actor_enabled:
+            raise ValueError('Only previous-action BC checkpoints can resume')
+        completed = previous_result['actual_bc_updates']
+        result['resume_checkpoint_sha256'] = hashlib.sha256((args.resume_bc/'bc_only.zip').read_bytes()).hexdigest()
+        result['resume_updates'] = completed
     result['td3_config'] = dict(learning_starts=0, train_freq=[1,'step'], gradient_steps=1,
         policy_delay=2, tau=.005, gamma=.99, normalized_action_noise_std=.1)
     observations = stack_obs([r['observation'] for r in good])
     if args.arm == 'no_belief' and np.any(observations['humans'][:,:,5:] != 0):
         raise AssertionError('Belief leaked into No-Belief BC')
     actions = model.policy.scale_action(np.stack([r['action'] for r in good])).astype(np.float32)
+    physical_actions = np.stack([r['action'] for r in good])
+    bins = [np.flatnonzero(physical_actions[:,1]<-.2),
+            np.flatnonzero(np.abs(physical_actions[:,1])<=.2),np.flatnonzero(physical_actions[:,1]>.2)]
+    if any(len(group)==0 for group in bins):
+        raise ValueError('Missing turn stratum')
+    result['sampling'] = dict(omega_threshold=.2, counts=[len(g) for g in bins], batch=[43,42,43], omega_loss_weight=2.)
     rng = np.random.default_rng(2407)
     result['bc_loss'] = []
-    for update in range(3000):
-        idx = rng.integers(len(good), size=128)
+    for _ in range(completed):
+        indices = np.concatenate([rng.choice(group,size=n,replace=True) for group,n in zip(bins,[43,42,43])])
+        rng.shuffle(indices)
+    if completed >= args.bc_updates:
+        raise ValueError('BC update limit must exceed completed updates')
+    for update in range(completed,args.bc_updates):
+        idx = np.concatenate([rng.choice(group,size=n,replace=True) for group,n in zip(bins,[43,42,43])])
+        rng.shuffle(idx)
         batch = obs_as_tensor({k:v[idx] for k,v in observations.items()}, model.device)
-        loss = torch.nn.functional.mse_loss(model.actor(batch), torch.as_tensor(actions[idx], device=model.device))
+        residual = (model.actor(batch)-torch.as_tensor(actions[idx], device=model.device)).square()
+        loss = residual[:,0].mean()+2*residual[:,1].mean()
         model.actor.optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.actor.parameters(), 10.)
@@ -358,8 +491,20 @@ def main():
         if (update+1) % 500 == 0:
             result['bc_loss'].append(dict(update=update+1, mse=float(loss.detach())))
             print('BC', result['bc_loss'][-1], flush=True)
+        if (update+1)%1000 == 0 or update+1 == args.bc_updates:
+            result['train_fit'] = fit_metrics(model, observations, physical_actions)
+            result['actual_bc_updates'] = update+1
+            print('fit',update+1,result['train_fit'],flush=True)
+            save()
+            if result['train_fit']['passed']:
+                break
     model.actor_target.load_state_dict(model.actor.state_dict())
     model.save(args.out/'bc_only')
+    if not result['train_fit']['passed']:
+        result['decision'] = 'Training fit gate failed; closed-loop evaluation and TD3 blocked'
+        save()
+        env.close()
+        return
     restored = BayesSetTD3.load(args.out/'bc_only.zip', env=env)
     restored.check_arm(args.arm)
     assert np.array_equal(model.predict(good[0]['observation'], deterministic=True)[0],

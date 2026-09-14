@@ -1,0 +1,54 @@
+{
+  "arm": "no_belief",
+  "outcomes": {
+    "success": 52,
+    "collision": 48,
+    "timeout": 0
+  },
+  "training_outcomes": {
+    "success": 199,
+    "collision": 0,
+    "timeout": 1
+  },
+  "training_steps": 9037,
+  "training_action_mse_physical": [
+    0.003903138916939497,
+    0.01962936297059059
+  ],
+  "training_teacher_action_std": [
+    0.2382201999425888,
+    0.6051926016807556
+  ],
+  "training_prediction_std": [
+    0.23570255935192108,
+    0.5748348236083984
+  ],
+  "validation_action_std": [
+    0.21264117592703072,
+    0.5535586889032733
+  ],
+  "validation_slow_step_fraction": 0.017677454446559694,
+  "validation_actual_overlap_episodes": 46,
+  "zero_random_warmup_verified": true,
+  "checkpoint_arm_verified": true,
+  "checkpoint_sha256": "1d9007123e75b0124b5483a996c877edc0ebbad4c9d3c3a5f44070c38f0b9491",
+  "train_unique": 200,
+  "validation_unique": 100,
+  "layout_overlap": 0,
+  "actor_enabled": false,
+  "warmup_updates": 0,
+  "rl_started": false,
+  "gpu": "NVIDIA GeForce RTX 4090",
+  "module_paths": {
+    "stable_baselines3": "/root/bayes_continuous_deps/stable_baselines3/__init__.py",
+    "crowd_nav.gdbn": "/root/continuous_repair_20260914/CrowdNav/crowd_nav/gdbn.py",
+    "crowd_sim.envs.crowd_sim": "/root/continuous_repair_20260914/CrowdNav/crowd_sim/envs/crowd_sim.py"
+  },
+  "versions": {
+    "torch": "2.9.1",
+    "numpy": "1.24.4",
+    "scipy": "1.15.3",
+    "stable-baselines3": "2.7.1",
+    "gymnasium": "1.2.2"
+  }
+}

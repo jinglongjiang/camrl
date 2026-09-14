@@ -8,7 +8,7 @@ class SetEncoder(BaseFeaturesExtractor):
     def __init__(self, observation_space, features_dim=96):
         super().__init__(observation_space, features_dim)
         self.human = nn.Sequential(nn.Linear(9, 64), nn.ReLU(), nn.Linear(64, 64), nn.ReLU())
-        self.robot = nn.Sequential(nn.Linear(7, 32), nn.ReLU())
+        self.robot = nn.Sequential(nn.Linear(observation_space['robot'].shape[0], 32), nn.ReLU())
         self.query = nn.Linear(32, 64)
         self.fuse = nn.Sequential(nn.Linear(160, features_dim), nn.ReLU())
 

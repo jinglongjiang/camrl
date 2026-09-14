@@ -19,6 +19,9 @@ def audit_bc(folder, params):
     result = json.loads((folder/'results.json').read_text())
     arm = result['arm']
     env = BeliefEnv(params, arm)
+    if result.get('stage') == 'bc_only_prev_action':
+        from crowd_nav.bayes_continuous.train_smoke import ActionHistory
+        env = ActionHistory(env)
     model = BayesSetTD3.load(folder/'bc_only.zip', env=env, device='cpu')
     model.check_arm(arm)
     assert model.learning_starts == 0 and model.gradient_steps == 1

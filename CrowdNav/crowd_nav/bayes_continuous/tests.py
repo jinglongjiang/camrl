@@ -15,6 +15,22 @@ PARAMS = Path(__file__).resolve().parents[2] / 'repair_results/params'
 
 
 class Contracts(unittest.TestCase):
+    def test_executed_action_history_and_collection_alignment(self):
+        from crowd_nav.bayes_continuous.train_smoke import ActionHistory, augment_collection
+        env = ActionHistory(BeliefEnv(PARAMS, arm='no_belief'))
+        obs, _ = env.reset(seed=42)
+        np.testing.assert_array_equal(obs['robot'][-2:], [0.,0.])
+        nxt, _, _, _, _ = env.step(np.array([.2,.6], np.float32))
+        np.testing.assert_allclose(nxt['robot'][-2:], [.2,.5])
+        rows = [[dict(observation=dict(obs,robot=obs['robot'][:7]),
+                      next_observation=dict(nxt,robot=nxt['robot'][:7]), action=np.array([.2,.6],np.float32))]]
+        augment_collection(rows)
+        np.testing.assert_array_equal(rows[0][0]['observation']['robot'], obs['robot'])
+        np.testing.assert_array_equal(rows[0][0]['next_observation']['robot'], nxt['robot'])
+        obs, _ = env.reset(seed=42)
+        np.testing.assert_array_equal(obs['robot'][-2:], [0.,0.])
+        env.close()
+
     def test_cost_probability_and_empty_safety_gate(self):
         from crowd_nav.bayes_continuous.train_smoke import supervised_warmup
         from types import SimpleNamespace

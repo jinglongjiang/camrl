@@ -7,6 +7,30 @@ each stage. Only `teacher.py` and `algorithm.py` are added functional modules.
 The default stage now stops after BC evaluation, even on success. The frozen
 teacher qualification receipt is mandatory; the teacher is not re-tuned.
 
+## Previous-Action BC Repair
+
+The student wrapper adds the previous executed `(v, omega)` scaled by `(1,1.2)`
+to the seven robot fields. Reset uses zeros; demonstrations reconstruct these
+fields from the preceding action in each saved episode. Closed loop uses the
+student's executed action, never the teacher plan. The base environment and
+qualified teacher remain unchanged. Existing seven-field checkpoints still load.
+
+BC now uses equal left/straight/right strata (physical omega threshold 0.2),
+normalized `L_v + 2 L_omega`, 192 encoder outputs and a `[256,256]` actor.
+The attention mechanism is unchanged. Every 1000 updates the entire original
+successful training set is evaluated without balanced resampling. Closed-loop
+evaluation is blocked until angular RMSE <=0.15 rad/s and predicted angular
+standard deviation >=80% of the teacher's. This training gate is not a navigation
+guarantee. No TD3 or cost training occurs here.
+
+Use `--collection-dir repair_results/student_no_belief_bc_20260914_attempt1`
+to reuse exactly the 9037 successful demonstration steps. `--bc-updates` is a
+finite cumulative limit (default 12000). `--resume-bc <stage-directory>` restores
+actor weights/optimizer and reconstructs the same sampler RNG position; it does
+not reset training or select a checkpoint using navigation results. The second
+development run uses a cumulative 60000-update limit without changing capacity.
+The old 30000..30099 cases remain development validation, not fresh confirmation.
+
 Current changes relative to dcc4fe5:
 
 - Existing unicycle CEM controller reused in teacher.py; projected ORCA and the
