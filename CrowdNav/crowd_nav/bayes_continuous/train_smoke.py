@@ -198,17 +198,159 @@ def supervised_warmup(model, trajectories, updates=1000, risk_train=None, risk_v
 
 
 
+def dagger_online_smoke(args, stages):
+    """Authorized diagnostic only; does not waive the independent safety gate."""
+    if (args.arm != 'no_belief' or args.safety is None or args.steps != 2000 or
+            args.nonstationary_probability != 0.):
+        raise ValueError('DAgger smoke requires no_belief, --safety, 2000 steps and nominal')
+    args.out.mkdir(exist_ok=False)
+    report = dict(stage='initializing', arm=args.arm, seed=2407, robot_fields=10,
+                  train_humans=5, profile='nominal', requested_steps=2000,
+                  diagnostic_only=True, independent_safety_gate_waived=False,
+                  formal_training_authorized=False)
+    def save(stage):
+        report['stage'] = stage
+        (args.out/'status.json').write_text(json.dumps(report, indent=2))
+        print('TD3_SMOKE', stage, flush=True)
+    save('initializing')
+    env = None
+    try:
+        for name, key in [('teacher.py','teacher_source_sha256'),
+                          ('environment.py','environment_source_sha256')]:
+            if hashlib.sha256((Path(__file__).parent/name).read_bytes()).hexdigest() != stages[key]:
+                raise ValueError('Frozen source mismatch: '+name)
+        checkpoint = args.stages/'round16.zip'
+        report['checkpoint_sha256'] = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+        if report['checkpoint_sha256'] != '634e8106713c0c316afc77bf345615d3a6a101789f82f182853356ab57dbc086':
+            raise ValueError('Not the approved round16 checkpoint')
+        torch.set_num_threads(1)
+        np.random.seed(2407)
+        torch.manual_seed(2407)
+        env = ActionHistory(BeliefEnv(args.params, arm=args.arm, seed=2407), route=True)
+        model = BayesSetTD3.load(checkpoint, env=env, device='cuda')
+        model.check_arm(args.arm)
+        if model.observation_space['robot'].shape != (10,) or model.learning_starts != 0:
+            raise ValueError('Wrong observation or random warm-up contract')
+        if model.num_timesteps != 0 or model._n_updates != 0:
+            raise ValueError('Expected a BC-only checkpoint')
+        model.action_noise = NormalActionNoise(np.zeros(2), .1*np.ones(2))
+        model.actor_enabled = False
+        report['execution'] = dict(learning_starts=model.learning_starts,
+            train_freq=list(model.train_freq), gradient_steps=model.gradient_steps,
+            policy_delay=model.policy_delay, tau=model.tau, gamma=model.gamma,
+            normalized_action_noise_std=.1)
+        if (model.gradient_steps, model.policy_delay, model.tau, model.gamma) != (1, 2, .005, .99):
+            raise ValueError('Unexpected TD3 schedule')
+        save('safety_collection')
+        safety_path = args.safety
+        for count in (80, 120):
+            safety_path = args.safety if count == 80 else args.safety.with_name(args.safety.name+'_120')
+            if safety_path.exists():
+                counts = json.loads((safety_path/'receipt.json').read_text())
+            else:
+                counts = collect_safety_replay(args.params, safety_path, args.arm, count_per_split=count)
+            report['safety_path'], report['safety_counts'] = str(safety_path), counts
+            save('safety_collection')
+            if all(counts[s]['adequate'] for s in ('train','validation')):
+                break
+        else:
+            save('blocked_insufficient_safety_classes')
+            return
+        safety = {s:torch.load(safety_path/(s+'.pt'), weights_only=False) for s in ('train','validation')}
+        collection = torch.load(args.demos/'collection.pt', weights_only=False)
+        if json.loads((args.demos/'results.json').read_text()).get('arm') != args.arm:
+            raise ValueError('Demo arm mismatch')
+        collection['arm'] = args.arm
+        add_route_history(collection['trajectories'])
+        for data in [collection, *safety.values()]:
+            if data.get('arm') != args.arm:
+                raise ValueError('Replay arm mismatch')
+            for episode in data['trajectories']:
+                for row in episode:
+                    for key in ('observation','next_observation'):
+                        if row[key]['robot'].shape != (10,):
+                            raise ValueError('Replay is not route-aware 10D')
+        save('critic_warmup_1000_actor_frozen')
+        model.actor.requires_grad_(False)
+        report['critic'] = supervised_warmup(model, collection['trajectories'], updates=1000,
+            risk_train=safety['train']['trajectories'], risk_valid=safety['validation']['trajectories'])
+        model.save(args.out/'critic_warmup')
+        save('critic_warmup_complete')
+        if not report['critic']['passed']:
+            save('blocked_critic_gate')
+            return
+        # Use the known five-person development queue, not the 500-case confirmation set.
+        def evaluate():
+            numpy_state, torch_state = np.random.get_state(), torch.get_rng_state()
+            cuda_state = torch.cuda.get_rng_state_all()
+            try:
+                records, _, _ = episodes(args.params, 100, 530000, actor=model,
+                    case_offset=30000, arm=args.arm)
+                return records
+            finally:
+                np.random.set_state(numpy_state)
+                torch.set_rng_state(torch_state)
+                torch.cuda.set_rng_state_all(cuda_state)
+        save('baseline_development_evaluation')
+        baseline = evaluate()
+        report['baseline'] = receipt(baseline)
+        (args.out/'baseline_episodes.json').write_text(json.dumps(baseline))
+        model.enable_actor(report['baseline'])
+        model.actor.requires_grad_(True)
+        good = [r for rec, rows in zip(collection['records'], collection['trajectories'])
+                if rec['outcome']=='success' for r in rows]
+        model.demo_observations = {k:np.stack([r['observation'][k] for r in good])
+                                   for k in good[0]['observation']}
+        model.demo_actions = model.policy.scale_action(np.stack([r['action'] for r in good])).astype(np.float32)
+        # Validation trajectories never enter replay; perturbed actions are never BC labels.
+        for rows in collection['trajectories'][:-20] + safety['train']['trajectories']:
+            for r in rows:
+                model.replay_buffer.add({k:v[None] for k,v in r['observation'].items()},
+                    {k:v[None] for k,v in r['next_observation'].items()},
+                    model.policy.scale_action(r['action'][None]), np.array([r['reward']]),
+                    np.array([r['done']]), [{'collision_cost':r['collision_cost']}])
+        report['evaluations'] = []
+        for step in (1000, 2000):
+            save('td3_to_'+str(step))
+            model.learn(total_timesteps=1000, reset_num_timesteps=(step==1000))
+            model.save(args.out/('rl_'+str(step)))
+            records = evaluate()
+            result = dict(steps=model.num_timesteps, **receipt(records))
+            report['evaluations'].append(result)
+            (args.out/('evaluation_'+str(step)+'.json')).write_text(json.dumps(records))
+            (args.out/'losses.json').write_text(json.dumps(model.loss_history))
+            (args.out/'episodes.json').write_text(json.dumps(env.unwrapped.episode_records))
+            save('evaluated_'+str(step))
+            if result['success_rate'] < .8:
+                save('stopped_degradation')
+                return
+        report['retained_90_percent'] = bool(report['evaluations'][-1]['success_rate'] >= .9)
+        save('completed_diagnostic_only')
+    except Exception as exc:
+        report['error'] = repr(exc)
+        save('failed')
+        raise
+    finally:
+        if env is not None:
+            env.close()
+
+
 def online_main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--stages', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--steps', type=int, default=10000)
     parser.add_argument('--arm', choices=ARMS, required=True)
+    parser.add_argument('--safety', type=Path)
+    parser.add_argument('--params', type=Path, default=Path('repair_results/params'))
+    parser.add_argument('--demos', type=Path, default=Path('repair_results/student_bc_history_continued_20260914'))
     parser.add_argument('--nonstationary-probability', type=float, default=0.)
     args = parser.parse_args()
     results = json.loads((args.stages/'results.json').read_text())
     if results.get('arm') != args.arm:
         raise ValueError('Stage and online arms differ')
+    if results.get('stage') == 'dagger':
+        return dagger_online_smoke(args, results)
     if (results['teacher']['episodes'] < 100 or results['teacher']['success_rate'] < .9 or
             results['teacher']['collision_rate'] > .02):
         raise RuntimeError('Unqualified teacher: RL is forbidden')
@@ -244,9 +386,9 @@ def online_main():
 
 
 def episodes(params, count, offset, actor=None, collect=False, case_offset=0, diagnostics=False,
-             arm='full', perturbation_seed=None, query_teacher=False):
+             arm='full', perturbation_seed=None, query_teacher=False, route_history=False):
     env = BeliefEnv(params, seed=2407, arm=arm)
-    width = actor.observation_space['robot'].shape[0] if actor is not None else 7
+    width = actor.observation_space['robot'].shape[0] if actor is not None else (10 if route_history else 7)
     policy_env = ActionHistory(env, route=width==10) if width in (9,10) else env
     if query_teacher and (actor is None or not collect):
         raise ValueError('DAgger requires student execution and label collection')
@@ -321,11 +463,12 @@ def collect_safety_replay(params, out, arm, count_per_split=200):
         for perturbed, n, case in [(False, count_per_split//2, base),
                                     (True, count_per_split-count_per_split//2, base+2000)]:
             rec, rows, _ = episodes(params, n, 540000+case, collect=True,
-                case_offset=case, arm=arm, perturbation_seed=2407+case if perturbed else None)
+                case_offset=case, arm=arm, perturbation_seed=2407+case if perturbed else None,
+                route_history=True)
             records.extend(rec)
             trajectories.extend(rows)
         positives = sum(r['outcome']=='collision' for r in records)
-        torch.save(dict(arm=arm, records=records, trajectories=trajectories,
+        torch.save(dict(arm=arm, robot_fields=10, route_history=True, records=records, trajectories=trajectories,
                         use='cost_only_not_BC'), out/(split+'.pt'))
         result[split] = dict(positive_trajectories=positives,
             negative_trajectories=len(records)-positives,
