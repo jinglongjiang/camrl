@@ -1,0 +1,81 @@
+[GDBN] : K=3 /home/abc/workspace/il_belief_contract_repair/CrowdNav/repair_results/params
+[GDBN] : K=3 /home/abc/workspace/il_belief_contract_repair/CrowdNav/repair_results/params
+[GDBN] : K=3 /home/abc/workspace/il_belief_contract_repair/CrowdNav/repair_results/params
+[GDBN] : K=3 /home/abc/workspace/il_belief_contract_repair/CrowdNav/repair_results/params
+[GDBN] : K=3 /home/abc/workspace/il_belief_contract_repair/CrowdNav/repair_results/params
+[GDBN] : K=3 /home/abc/workspace/il_belief_contract_repair/CrowdNav/repair_results/params
+[GDBN] : K=3 /home/abc/workspace/il_belief_contract_repair/CrowdNav/repair_results/params
+[GDBN] : K=3 /home/abc/workspace/il_belief_contract_repair/CrowdNav/repair_results/params
+[GDBN] : K=3 /home/abc/workspace/il_belief_contract_repair/CrowdNav/repair_results/params
+[GDBN] : K=3 /home/abc/workspace/il_belief_contract_repair/CrowdNav/repair_results/params
+[GDBN] : K=3 /home/abc/workspace/il_belief_contract_repair/CrowdNav/repair_results/params
+[GDBN] : K=3 /home/abc/workspace/il_belief_contract_repair/CrowdNav/repair_results/params
+[GDBN] : K=3 /home/abc/workspace/il_belief_contract_repair/CrowdNav/repair_results/params
+[GDBN] : K=3 /home/abc/workspace/il_belief_contract_repair/CrowdNav/repair_results/params
+[GDBN] : K=3 /home/abc/workspace/il_belief_contract_repair/CrowdNav/repair_results/params
+[GDBN] : K=3 /home/abc/workspace/il_belief_contract_repair/CrowdNav/repair_results/params
+[GDBN] : K=3 /home/abc/workspace/il_belief_contract_repair/CrowdNav/repair_results/params
+ERROR:root:[MAMBA-SSM] ✗ Failed to import mamba_ssm: No module named 'mamba_ssm'
+ERROR:root:[MAMBA-SSM] Please install: pip install mamba-ssm
+test_all_scenarios_same_network_no_truncation (crowd_nav.belief_mdp.test_density_contract.DensityContractTest) ... ok
+test_eval_population_not_checkpoint_feature (crowd_nav.belief_mdp.test_density_contract.DensityContractTest) ... ok
+test_frame_only_forgets_earlier_particles_and_missing_breaks_history (crowd_nav.belief_mdp.test_density_contract.DensityContractTest) ... ok
+test_mlp_teacher_score_wiring_not_mamba_certification (crowd_nav.belief_mdp.test_density_contract.DensityContractTest) ... ok
+test_padding_does_not_enter_summary (crowd_nav.belief_mdp.test_density_contract.DensityContractTest) ... ok
+test_teacher_receipt_fail_closed (crowd_nav.belief_mdp.test_density_contract.DensityContractTest) ... ok
+test_training_fixed_five_and_three_arms (crowd_nav.belief_mdp.test_density_contract.DensityContractTest) ... usage: python -m unittest [-h] [--output_dir OUTPUT_DIR]
+                          [--policy_config POLICY_CONFIG]
+                          [--base_env_config BASE_ENV_CONFIG]
+                          [--env_config ENV_CONFIG]
+                          [--base_checkpoint BASE_CHECKPOINT]
+                          [--gdbn_params GDBN_PARAMS]
+                          [--k1_gdbn_params K1_GDBN_PARAMS]
+                          [--belief_mode {recursive,frame_only,action_conditioned,cv,state_only,corrupted,no_belief,k1_belief}]
+                          [--beta BETA] [--gdbn_K GDBN_K] [--num_humans {5}]
+                          --teacher_verification TEACHER_VERIFICATION
+                          [--stage1_only] [--particles PARTICLES]
+                          [--risk_horizon RISK_HORIZON]
+                          [--safe_distance SAFE_DISTANCE]
+                          [--cvar_alpha CVAR_ALPHA]
+                          [--pedestrian_aggregation PEDESTRIAN_AGGREGATION]
+                          [--train_profile TRAIN_PROFILE] [--seed SEED]
+                          [--expert_set_size EXPERT_SET_SIZE]
+                          [--demo_episodes DEMO_EPISODES]
+                          [--demo_updates DEMO_UPDATES]
+                          [--rl_episodes RL_EPISODES]
+                          [--eval_episodes EVAL_EPISODES]
+                          [--stage1_nav_episodes STAGE1_NAV_EPISODES]
+                          [--eval_interval EVAL_INTERVAL]
+                          [--batch_size BATCH_SIZE]
+                          [--replay_capacity REPLAY_CAPACITY]
+                          [--demo_buffer_capacity DEMO_BUFFER_CAPACITY]
+                          [--demo_validation_every DEMO_VALIDATION_EVERY]
+                          [--stage1_log_every STAGE1_LOG_EVERY]
+                          [--warmup_transitions WARMUP_TRANSITIONS]
+                          [--gradient_steps GRADIENT_STEPS] [--lr LR]
+                          [--gamma GAMMA] [--tau TAU]
+                          [--lambda_e_demo LAMBDA_E_DEMO]
+                          [--lambda_e_start LAMBDA_E_START]
+                          [--lambda_e_end LAMBDA_E_END]
+                          [--epsilon_start EPSILON_START]
+                          [--epsilon_end EPSILON_END]
+                          [--gate_sr_slack GATE_SR_SLACK]
+                          [--gate_cr_slack GATE_CR_SLACK]
+                          [--gate_tr_slack GATE_TR_SLACK]
+                          [--dagger_teacher_prob_schedule DAGGER_TEACHER_PROB_SCHEDULE]
+                          [--dagger_episodes_per_round DAGGER_EPISODES_PER_ROUND]
+                          [--dagger_updates_per_round DAGGER_UPDATES_PER_ROUND]
+                          [--dagger_convergence_patience DAGGER_CONVERGENCE_PATIENCE]
+                          [--convergence_nav_episodes CONVERGENCE_NAV_EPISODES]
+                          [--dagger_buffer_capacity DAGGER_BUFFER_CAPACITY]
+                          [--collision_buffer_capacity COLLISION_BUFFER_CAPACITY]
+                          [--dagger_validation_every DAGGER_VALIDATION_EVERY]
+                          [--log_grad_conflict] [--smoke]
+python -m unittest: error: argument --num_humans: invalid choice: 20 (choose from 5)
+ok
+test_zero_action_dynamics_keeps_robot_geometry (crowd_nav.belief_mdp.test_density_contract.DensityContractTest) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 1.108s
+
+OK

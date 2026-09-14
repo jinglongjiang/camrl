@@ -263,6 +263,8 @@ def compute_artifact_hashes(args) -> dict:
         "contracts_py_sha256": sha256_file(str(THIS_DIR.parent / "contracts.py")),
         "mamba_rl_py_sha256": sha256_file(str(THIS_DIR.parent / "policy/mamba_rl.py")),
         "frozen_teacher_runtime_sha256": sha256_file(str(THIS_DIR.parent / "belief_space_rl/runtime.py")),
+        "protocol_py_sha256": sha256_file(str(THIS_DIR / "protocol.py")),
+        "teacher_verification_sha256": sha256_file(args.teacher_verification),
     }
     if args.belief_mode == "k1_belief":
         hashes["k1_gdbn_params_sha256"] = sha256_dir(args.k1_gdbn_params)
@@ -960,14 +962,17 @@ def build_parser():
     )
     parser.add_argument(
         "--belief_mode",
-        default="action_conditioned",
+        default="recursive",
         choices=(
-            "action_conditioned", "cv", "state_only", "corrupted", "no_belief", "k1_belief",
+            "recursive", "frame_only", "action_conditioned", "cv", "state_only", "corrupted", "no_belief", "k1_belief",
         ),
     )
     parser.add_argument("--beta", type=float, default=0.5)
     parser.add_argument("--gdbn_K", type=int, default=3)
-    parser.add_argument("--num_humans", type=int, default=20)
+    parser.add_argument("--num_humans", type=int, choices=(5,), default=5)
+    parser.add_argument("--teacher_verification", required=True,
+                        help="Passing >=100-state teacher receipt for these exact artifacts")
+    parser.add_argument("--stage1_only", action="store_true")
     parser.add_argument("--particles", type=int, default=50)
     parser.add_argument("--risk_horizon", type=int, default=5)
     parser.add_argument("--safe_distance", type=float, default=0.20)
@@ -1072,6 +1077,11 @@ def build_parser():
 
 def main():
     args = build_parser().parse_args()
+    from crowd_nav.belief_mdp.protocol import FEATURE_CONTRACT, validate_teacher_receipt
+    args.train_num_humans = 5
+    args.feature_contract = FEATURE_CONTRACT
+    args.pedestrian_response = "nonreactive"
+    validate_teacher_receipt(args.teacher_verification, args)
     if args.belief_mode == "no_belief" and args.beta != 0.0:
         print(f"[BELIEF-MDP] no_belief forces beta=0 (was {args.beta})", flush=True)
         args.beta = 0.0
@@ -1756,7 +1766,7 @@ def main():
 
     # ---- Stage 2: online Double-DQN fine-tuning ----
     rl_episodes_completed = 0
-    if not aborted_reason and gate_passed:
+    if not aborted_reason and gate_passed and not args.stage1_only:
         print("[BELIEF-MDP] Stage 2: online Double-DQN fine-tuning", flush=True)
         for episode in range(args.rl_episodes):
             rl_episodes_completed = episode + 1
@@ -1861,12 +1871,16 @@ def main():
         "updates": updates,
         "buffer_sizes": {name: buf.size for name, buf in stratified_buffers.items()},
         "aborted_reason": aborted_reason,
+        "stage1_gate_passed": bool(gate_passed),
+        "stage1_only": args.stage1_only,
     }
     save_checkpoint(output / "final_model.pth", network, target, optimizer, args, final_metrics, artifact_hashes)
     if aborted_reason and aborted_reason.startswith("stage1_failed"):
         status = "stage1_failed"
     elif aborted_reason:
         status = "aborted"
+    elif args.stage1_only:
+        status = "stage1_completed"
     else:
         status = "completed"
     manifest.update(

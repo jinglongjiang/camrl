@@ -1,0 +1,18 @@
+ERROR:root:[MAMBA-SSM] ✗ Failed to import mamba_ssm: No module named 'mamba_ssm'
+ERROR:root:[MAMBA-SSM] Please install: pip install mamba-ssm
+Traceback (most recent call last):
+  File "belief_mdp/test_teacher_equivalence.py", line 220, in <module>
+    main()
+  File "belief_mdp/test_teacher_equivalence.py", line 90, in main
+    mamba = build_frozen_mamba(config, args.base_checkpoint, device)
+  File "/home/abc/workspace/il_belief_contract_repair/CrowdNav/crowd_nav/belief_space_rl/runtime.py", line 130, in build_frozen_mamba
+    policy = MambaRLPolicy(config=teacher_config, device=device)
+  File "/home/abc/workspace/il_belief_contract_repair/CrowdNav/crowd_nav/policy/mamba_rl.py", line 315, in __init__
+    self.temporal_encoder = build_temporal_encoder(
+  File "/home/abc/workspace/il_belief_contract_repair/CrowdNav/crowd_nav/policy/mamba_rl.py", line 253, in build_temporal_encoder
+    return MambaTemporalEncoder(
+  File "/home/abc/workspace/il_belief_contract_repair/CrowdNav/crowd_nav/policy/mamba_rl.py", line 178, in __init__
+    raise RuntimeError(
+RuntimeError: [MAMBA-SSM] ✗ mamba_ssm库不可用！
+请安装：pip install mamba-ssm
+不支持fallback - 仅使用纯Mamba实现

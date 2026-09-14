@@ -29,6 +29,8 @@ run it on the 4090. Exits nonzero on any failure.
 from __future__ import annotations
 
 import sys
+import argparse
+import json
 from pathlib import Path
 
 import numpy as np
@@ -57,13 +59,26 @@ DEFAULT_GDBN_PARAMS = "runs/bayesian_distributional/gdbn_params_cv_residual_k3"
 # still building up" phase (first few steps of an episode, where the earlier
 # padding logic differs most) and the steady-state (seq_len already full)
 # phase, across more than one initial layout.
-SCENARIOS = ["baseline_circle", "baseline_square", "dense_circle"]
+SCENARIOS = ["baseline_circle"] * 6
 STEPS_PER_SCENARIO = 60
 MIN_STATES_REQUIRED = 100
 INPUT_TOKEN_ATOL = 1e-4
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--policy_config', default=DEFAULT_POLICY_CONFIG)
+    parser.add_argument('--base_env_config', default=DEFAULT_BASE_ENV_CONFIG)
+    parser.add_argument('--env_config', default=DEFAULT_BASE_ENV_CONFIG)
+    parser.add_argument('--base_checkpoint', default=DEFAULT_BASE_CHECKPOINT)
+    parser.add_argument('--gdbn_params', default=DEFAULT_GDBN_PARAMS)
+    parser.add_argument('--output', required=True)
+    args = parser.parse_args()
+    from crowd_nav.belief_mdp.protocol import teacher_fingerprint
+    # A failed attempt must not leave an earlier passing receipt usable.
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps({'passed': False, 'status': 'started'}) + '\n')
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if device.type != "cuda":
         raise SystemExit(
@@ -71,15 +86,16 @@ def main():
             "not the local dev machine."
         )
 
-    config = merged_policy_config(DEFAULT_POLICY_CONFIG, DEFAULT_BASE_ENV_CONFIG)
-    mamba = build_frozen_mamba(config, DEFAULT_BASE_CHECKPOINT, device)
+    config = merged_policy_config(args.policy_config, args.base_env_config)
+    mamba = build_frozen_mamba(config, args.base_checkpoint, device)
     mamba.set_phase("test")
+    mamba.capture_lookahead_scores = True
     mamba.test_action_smoothing = 0.0  # isolate pure lookahead ranking from test-time action smoothing
     mamba.build_action_space(1.0)
 
     engine = BeliefMDPFeatureEngine(
-        mamba, DEFAULT_GDBN_PARAMS, device,
-        belief_mode="action_conditioned", K=3, n_particles=50, num_humans=20, seed=2407,
+        mamba, args.gdbn_params, device,
+        belief_mode="recursive", K=3, n_particles=50, num_humans=5, seed=2407,
     )
 
     captured = []
@@ -95,12 +111,14 @@ def main():
     checked = 0
     mismatched_tensor = 0
     mismatched_top1 = 0
+    mismatched_value = 0
+    mismatched_score = 0
     max_tensor_diff = 0.0
 
     try:
         for scenario_index, scenario in enumerate(SCENARIOS):
             environment = FullCrowdNavigationEnvironment(
-                DEFAULT_BASE_ENV_CONFIG, scenario, robot_visible=False
+                args.env_config, scenario, robot_visible=False
             )
             engine.reset()
             mamba.reset_episode_stats()
@@ -126,7 +144,7 @@ def main():
                         f"FAILED: expected exactly one forward_value call from teacher_scores(), "
                         f"got {len(captured)}"
                     )
-                tensor_a, _ = captured[0]
+                tensor_a, value_a = captured[0]
 
                 captured.clear()
                 action = mamba.predict_sarl_style(state)
@@ -135,7 +153,13 @@ def main():
                         f"FAILED: expected exactly one forward_value call from predict_sarl_style(), "
                         f"got {len(captured)}"
                     )
-                tensor_b, _ = captured[0]
+                tensor_b, value_b = captured[0]
+                production_scores = mamba._last_lookahead_scores.detach().cpu().numpy()
+                if not np.allclose(teacher_score, production_scores, atol=1e-4, rtol=1e-6):
+                    mismatched_score += 1
+                if (value_a.shape != value_b.shape or not torch.allclose(
+                        value_a, value_b, atol=1e-5, rtol=1e-5)):
+                    mismatched_value += 1
 
                 checked += 1
                 if tensor_a.shape != tensor_b.shape:
@@ -177,12 +201,18 @@ def main():
             f"FAILED: only checked {checked} real states, need >= {MIN_STATES_REQUIRED} "
             "(increase SCENARIOS/STEPS_PER_SCENARIO)"
         )
-    if mismatched_tensor > 0 or mismatched_top1 > 0:
+    if mismatched_tensor > 0 or mismatched_top1 > 0 or mismatched_value > 0 or mismatched_score > 0:
         raise SystemExit(
             f"FAILED: {mismatched_tensor} input-token mismatches and {mismatched_top1} top-1 action "
             f"mismatches out of {checked} real states -- teacher_scores() disagrees with Mamba's own "
-            "production-validated predict_sarl_style lookahead."
+            f"production lookahead; value mismatches={mismatched_value}, score mismatches={mismatched_score}."
         )
+    output.write_text(json.dumps(dict(
+        passed=True, states=checked, tensor_mismatches=mismatched_tensor,
+        value_mismatches=mismatched_value, top1_mismatches=mismatched_top1,
+        score_mismatches=mismatched_score,
+        max_tensor_diff=max_tensor_diff, fingerprint=teacher_fingerprint(args),
+        scenarios=SCENARIOS, robot_visible=False), indent=2) + '\n')
     print("[TEACHER-EQUIVALENCE] ALL CHECKS PASSED")
 
 

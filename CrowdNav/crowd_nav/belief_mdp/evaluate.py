@@ -77,7 +77,7 @@ RECORD_FIELDS = (
 # the one that produced the checkpoint. CLI default is None everywhere;
 # None means "use whatever the checkpoint's own args recorded."
 PARAMS_FROM_CHECKPOINT = (
-    "belief_mode", "gdbn_params", "k1_gdbn_params", "gdbn_K", "num_humans",
+    "belief_mode", "gdbn_params", "k1_gdbn_params", "gdbn_K",
     "risk_horizon", "safe_distance", "cvar_alpha", "pedestrian_aggregation",
     "particles", "policy_config", "base_env_config", "env_config", "base_checkpoint",
 )
@@ -99,6 +99,14 @@ def resolve_params(args, saved_args: dict, allow_override: bool) -> dict:
     refuse to silently evaluate a different configuration than the one the
     checkpoint was trained under."""
     resolved = {}
+    from crowd_nav.belief_mdp.protocol import FEATURE_CONTRACT
+    if saved_args.get("feature_contract") != FEATURE_CONTRACT:
+        if not allow_override:
+            raise SystemExit("Checkpoint lacks the repaired density/nonreactive contract; use its historical code")
+        print("[EVAL] exploratory override: old weights under NEW feature semantics", flush=True)
+    if getattr(args, "num_humans", None) is not None:
+        raise SystemExit("Evaluation uses each scenario's actual population; omit --num_humans")
+    resolved["train_num_humans"] = saved_args.get("train_num_humans", saved_args.get("num_humans"))
     for name in PARAMS_FROM_CHECKPOINT:
         cli_value = getattr(args, name)
         saved_value = saved_args.get(name)
@@ -271,7 +279,7 @@ def evaluate_profile(
             for episode_index in range(episodes_per_seed):
                 test_case = (seed_index * episodes_per_seed + episode_index) % 9000
 
-                engine = make_engine()
+                engine = make_engine(SIX_SCENARIOS[scenario][2])
                 environment = FullCrowdNavigationEnvironment(args.env_config, scenario, robot_visible=False)
                 outcome, steps, min_dmin = run_belief_mdp_episode(
                     network, engine, environment, seed, profile, test_case, device, max_steps
@@ -350,7 +358,7 @@ def main():
         "--belief_mode",
         default=None,
         choices=(
-            None, "action_conditioned", "cv", "state_only", "corrupted", "no_belief",
+            None, "recursive", "frame_only", "action_conditioned", "cv", "state_only", "corrupted", "no_belief",
             "k1_belief",
         ),
     )
@@ -443,7 +451,7 @@ def main():
     mamba = build_frozen_mamba(config, resolved["base_checkpoint"], device)
     belief_mode = resolved["belief_mode"]
 
-    def make_engine():
+    def make_engine(eval_num_humans=5):
         return BeliefMDPFeatureEngine(
             mamba,
             resolved["gdbn_params"],
@@ -451,7 +459,7 @@ def main():
             belief_mode=belief_mode,
             K=resolved["gdbn_K"],
             n_particles=resolved["particles"],
-            num_humans=resolved["num_humans"],
+            num_humans=eval_num_humans,
             risk_horizon=resolved["risk_horizon"],
             safe_distance=resolved["safe_distance"],
             cvar_alpha=resolved["cvar_alpha"],

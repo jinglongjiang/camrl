@@ -28,6 +28,7 @@ class ModeBeliefSnapshot:
     update_index: int
     features: Tuple[Tuple[float, ...], ...]
     mode_count: int
+    valid_mask: Tuple[bool, ...] = ()
     coordinate_frame: str = 'world_xy_velocity'
     probability_semantics: str = 'first_K_columns_sum_to_one_per_person'
 
@@ -497,8 +498,14 @@ class GDBNIntegration:
         klda_norm_clip: float = 5.0,
         random_seed: int = 42,
         allow_unfitted: bool = False,
+        history_mode: str = "recursive",
     ):
         self.K = K
+        if history_mode not in ("recursive", "frame_only"):
+            raise ValueError("Unknown GDBN history mode")
+        self.history_mode = history_mode
+        self._frame_seed = int(random_seed)
+        self._previous_observations = {}
         self.n_particles = n_particles
         self.max_peds = int(max_peds)
         self.klda_norm_clip = float(klda_norm_clip)
@@ -676,8 +683,10 @@ class GDBNIntegration:
 
     def reset(self, n_peds: Optional[int] = None):
         self._update_index = -1
+        self._previous_observations = {}
         """episodetracker"""
         self._n_peds = int(n_peds or self.max_peds)
+        self._valid_mask = np.zeros(self.max_peds, dtype=bool)
         self._trackers = [
             PedestrianBeliefTracker(
                 self.gdbn,
@@ -690,7 +699,7 @@ class GDBNIntegration:
         ]
         self._last_klda = [0.0] * self._n_peds
 
-    def update(self, state_34d: np.ndarray) -> List[float]:
+    def update(self, state_34d: np.ndarray, valid_mask=None) -> List[float]:
         """
  beliefKLDA
 
@@ -700,16 +709,39 @@ class GDBNIntegration:
         self._require_fitted()
         if not self._trackers:
             self.reset()
+        if valid_mask is None:
+            valid_mask = [len(state_34d[9+p*5:14+p*5]) == 5
+                          and np.any(state_34d[9+p*5:14+p*5] != 0)
+                          for p in range(self.max_peds)]
+        self._valid_mask = np.asarray(valid_mask, dtype=bool).copy()
+        if self._valid_mask.shape != (self.max_peds,):
+            raise ValueError("Invalid entity mask shape")
 
         klda_list = []
         for p in range(min(self._n_peds, self.max_peds)):
             s = 9 + p * 5
             ped = state_34d[s:s + 5]
-            if p >= len(self._trackers) or np.all(ped == 0):
+            if p >= len(self._trackers) or not self._valid_mask[p]:
+                self._previous_observations.pop(p, None)
                 klda_list.append(0.0)
                 continue
             obs_x = ped[:4].astype(np.float64)
-            klda = self._trackers[p].step(obs_x)
+            if self.history_mode == "frame_only":
+                # Adjacent-observation control: no earlier particles, weights or RNG state.
+                tracker = PedestrianBeliefTracker(
+                    self.gdbn, self.n_particles, np.random.default_rng(self._frame_seed + p))
+                previous = self._previous_observations.get(p)
+                tracker.reset(x0=obs_x if previous is None else previous)
+                if self.n_particles < self.K:
+                    raise ValueError("Frame-only control requires at least K particles")
+                tracker.particles_s = np.arange(self.n_particles) % self.K
+                counts = np.bincount(tracker.particles_s, minlength=self.K)
+                tracker.weights = 1. / (self.K * counts[tracker.particles_s])
+                self._trackers[p] = tracker
+                klda = 0.0 if previous is None else tracker.step(obs_x)
+                self._previous_observations[p] = obs_x.copy()
+            else:
+                klda = self._trackers[p].step(obs_x)
             klda_list.append(klda)
 
         self._last_klda = klda_list
@@ -723,7 +755,8 @@ class GDBNIntegration:
             raise ValueError('Invalid per-person mode posterior')
         return ModeBeliefSnapshot(
             getattr(self, '_update_index', -1),
-            tuple(tuple(float(x) for x in row) for row in features), self.K)
+            tuple(tuple(float(x) for x in row) for row in features), self.K,
+            tuple(bool(x) for x in getattr(self, '_valid_mask', np.zeros(self.max_peds))))
 
     # ------------------------------------------------------------------ #
     # ------------------------------------------------------------------ #

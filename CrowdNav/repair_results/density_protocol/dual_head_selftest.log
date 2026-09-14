@@ -1,0 +1,30 @@
+[PASS] Top-3 expert-set margin loss is 0 when the arg max is any member of the set
+[PASS] Top-3 expert-set margin loss is positive when the arg max is outside the set
+[PASS] Choosing the teacher's own best action has exactly zero normalized regret
+[PASS] Choosing the teacher's worst action has exactly one normalized regret
+[PASS] A middling choice has regret strictly between the best and worst cases
+[PASS] A flat (zero-range) teacher score vector gives a finite regret, not NaN/inf
+[PASS] A masked (-1e4 sentinel) action is excluded from the regret normalization range
+[PASS] Choosing the masked action itself clamps to a regret of exactly 1.0, not an unbounded value
+[PASS] Margin loss on Q_R produces exactly zero gradient in every RiskEncoder/Q_C submodule
+[PASS] Margin loss on Q_R produces a real (nonzero) gradient in every TaskEncoder/Q_R submodule
+[PASS] Demo-weighted margin loss ignores online (is_demo=0) rows entirely
+[PASS] Margin loss is a finite 0 when a batch happens to contain zero demo rows
+[PASS] Every state in a colliding trajectory gets a nonzero mc_collision_return
+[PASS] A non-colliding trajectory has all-zero mc_collision_return (no false positives)
+[PASS] A single spike does not trip the Q_R EMA abort threshold
+[PASS] Sustained divergence (every update over the limit) does trip the EMA abort
+[PASS] deterministic_chunks covers every stored transition exactly once, no duplicates/gaps
+[PASS] sample_stratified redistributes an empty buffer's ratio share to the non-empty ones (0.5/(0.5+0.3)=62.5% from a, 0.3/(0.5+0.3)=37.5% from b, 0% from the empty buffer)
+[PASS] import_batch(export_all()) transfers every transition's action field exactly, in order
+[PASS] clear() resets size/position to empty without touching the destination's already-imported copy
+[PASS] compute_gradient_conflict returns None (not a crash) when a batch has no expert-labeled rows
+[PASS] find_checkpoints returns exactly the 12 checkpoint_rl_ep*.pth files, none of checkpoint_ep600.pth/dagger/stage1_failed/final_model
+[PASS] A candidate far worse than baseline on SR/CR/TR is never eligible
+[PASS] A candidate within slack of baseline on every axis is eligible
+[PASS] non_inferior reproduces seed 3407's original FAIL on its exact reported numbers
+[PASS] non_inferior passes a candidate clearly within slack on every axis
+
+ALL SELFTESTS PASSED
+ERROR:root:[MAMBA-SSM] ✗ Failed to import mamba_ssm: No module named 'mamba_ssm'
+ERROR:root:[MAMBA-SSM] Please install: pip install mamba-ssm

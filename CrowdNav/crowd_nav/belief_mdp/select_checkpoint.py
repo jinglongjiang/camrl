@@ -110,7 +110,7 @@ def evaluate_checkpoint(path, args, device):
             belief_mode=resolved["belief_mode"],
             K=resolved["gdbn_K"],
             n_particles=resolved["particles"],
-            num_humans=resolved["num_humans"],
+            num_humans=5,
             risk_horizon=resolved["risk_horizon"],
             safe_distance=resolved["safe_distance"],
             cvar_alpha=resolved["cvar_alpha"],

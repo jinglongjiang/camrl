@@ -78,12 +78,14 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--params', type=Path, required=True)
     parser.add_argument('--out', type=Path, default=ROOT / 'repair_results')
+    parser.add_argument('--teacher-checkpoint', type=Path)
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     torch.set_num_threads(1)
     results = {}
     commands = {
         'regression': ['-m', 'unittest', 'crowd_nav.test_belief_contract_repair', '-v'],
+        'density_contract': ['-m', 'unittest', 'crowd_nav.belief_mdp.test_density_contract', '-v'],
         'dual_head_selftest': ['crowd_nav/belief_mdp/selftest.py'],
         'occlusion_unit': ['crowd_nav/test_occlusion_belief.py', '--unit'],
         'leakage': ['crowd_nav/test_occlusion_belief.py', '--leakage'],
@@ -108,8 +110,27 @@ def main():
     results['formal_retraining'] = False
     results['mamba_teacher_equivalence'] = 'not run: mamba_ssm unavailable'
     results['passed'] = True
+    results['contract_tests_passed'] = True
+    results['formal_training_ready'] = False
+    if args.teacher_checkpoint is not None:
+        receipt = args.out.resolve() / 'teacher_verification.json'
+        run = subprocess.run([
+            sys.executable, 'belief_mdp/test_teacher_equivalence.py',
+            '--base_checkpoint', str(args.teacher_checkpoint.resolve()),
+            '--gdbn_params', str(args.params.resolve()), '--output', str(receipt)],
+            cwd=str(ROOT / 'crowd_nav'), capture_output=True, text=True)
+        (args.out / 'teacher_equivalence.log').write_text(run.stdout + run.stderr)
+        results['mamba_teacher_equivalence'] = dict(returncode=run.returncode, receipt=str(receipt))
+        results['formal_training_ready'] = run.returncode == 0
+        results['passed'] = run.returncode == 0
+    sources = list((ROOT / 'crowd_nav/belief_mdp').glob('*.py'))
+    sources += [ROOT / 'crowd_nav/gdbn.py', ROOT / 'crowd_nav/policy/mamba_rl.py']
+    results['source_sha256'] = {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
+                              for p in sorted(sources)}
     (args.out / 'verification.json').write_text(json.dumps(results, indent=2) + '\n')
-    print('INTEGRATION PASSED', flush=True)
+    print('CONTRACT INTEGRATION PASSED; training ready:', results['formal_training_ready'], flush=True)
+    if not results['passed']:
+        raise SystemExit(2)
 
 
 if __name__ == '__main__':

@@ -1,0 +1,31 @@
+本轮修改与判断（2026-09-14）
+
+已完成的代码修改
+1. 训练仅允许5人；checkpoint写入train_num_humans=5与新feature_contract。
+2. 选模型仍只用5人；正式evaluate按六场景处理5/10/12/20人，超容量直接报错。
+3. 有效实体mask从输入实体列表进入GDBN snapshot与全局统计。5真人+15padding的valid_fraction为0.25，
+   mode、entropy和KLDA只统计真人。No-belief的summary保持全零。
+4. 非响应环境内存中B_action=0；未修改原参数文件。机器人候选动作仍改变碰撞几何。
+5. 新增frame_only（仅相邻观测转移）：每步固定模式先验、重置连续粒子与随机流，不残留更早证据。
+   注意它与recursive的差别包含连续过滤历史，不能把全部收益仅归因于模式权重递推。
+6. 教师评分补齐生产代码的首动作减分，统一非法候选惩罚；生产决策公式不变。
+7. 真实教师验收扩大为输入tensor、value、完整80分数与top1；至少100个5人真实状态。
+   成功记录与代码/配置/模型哈希绑定，缺失或过期禁止训练。Stage1-only开关已添加。
+
+实际测试
+新增密度协议测试8项通过；上一轮10项回归通过；原双头、遮挡unit、泄漏与MLP/GRU smoke通过。
+八个MLP真实状态的教师完整评分一致，不能冒充Mamba教师验收。
+同一随机网络权重在六场景人数下输入维度不变，输出80个有限值；只验证连接，不报告泛化成功率。
+12步真实环境、12条回放、3次梯度更新短链路通过。
+真实Mamba验收实际调用失败：当前Python环境缺mamba_ssm；未产生通过凭证，未启动正式训练。
+verification.json区分contract_tests_passed与formal_training_ready；整体验收不标为通过。
+
+明确结论
+本轮要求的代码修改已落地，所列CPU/替身接口测试通过。
+现在不能直接重训：剩下真实Mamba教师验收，不是又发现一个待选研究方向。
+没有三臂成绩，没有宣称Bayes有效或无效，没有使用10/20人成绩调参。
+旧8ad7e97及其报告保留；本次结果独立存放在density_protocol，不覆盖旧实验。
+
+下一步已规定
+在具备mamba_ssm、CUDA和原checkpoint的环境运行真实教师验收；通过后先跑三臂各3种子Stage1。
+配置、语义限制和命令见crowd_nav/belief_mdp/DENSITY_PROTOCOL_ZH.txt。

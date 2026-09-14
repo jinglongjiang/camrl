@@ -986,6 +986,8 @@ class MambaRLPolicy(nn.Module):
         # 🔥 Tie-break: discourage STOP when values are nearly equal
         if total_values.numel() > 0:
             total_values[0] -= 1e-3
+        if getattr(self, 'capture_lookahead_scores', False):
+            self._last_lookahead_scores = total_values.detach().clone()
 
         # 8. 选择最优动作
         best_idx = total_values.argmax().item()

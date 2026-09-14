@@ -75,6 +75,8 @@ from crowd_sim.envs.utils.state import FullState, JointState, ObservableState
 
 
 BELIEF_MODES = (
+    "recursive",
+    "frame_only",
     "action_conditioned",
     "cv",
     "state_only",
@@ -255,6 +257,7 @@ def build_risk_filter(
         params_dir=params_dir,
         max_peds=num_humans,
         random_seed=seed,
+        history_mode="frame_only" if belief_mode == "frame_only" else "recursive",
     )
 
 
@@ -275,7 +278,7 @@ class BeliefMDPFeatureEngine:
         belief_mode: str = "action_conditioned",
         K: int = 3,
         n_particles: int = 50,
-        num_humans: int = 20,
+        num_humans: int = 5,
         seq_len: int = 24,
         risk_horizon: int = 5,
         safe_distance: float = 0.20,
@@ -284,6 +287,7 @@ class BeliefMDPFeatureEngine:
         dt: float = 0.25,
         seed: int = 2407,
         k1_gdbn_params: str = DEFAULT_K1_GDBN_PARAMS,
+        pedestrian_response: str = "nonreactive",
     ):
         if belief_mode not in BELIEF_MODES:
             raise ValueError(f"Unknown belief_mode: {belief_mode}")
@@ -291,6 +295,10 @@ class BeliefMDPFeatureEngine:
         self.device = device
         self.belief_mode = belief_mode
         self.num_humans = int(num_humans)
+        if self.num_humans < 1:
+            raise ValueError("num_humans must be positive")
+        if pedestrian_response != "nonreactive":
+            raise ValueError("This belief-MDP protocol requires nonreactive pedestrians")
         self.seq_len = int(seq_len)
         self.risk_horizon = int(risk_horizon)
         self.safe_distance = float(safe_distance)
@@ -310,6 +318,9 @@ class BeliefMDPFeatureEngine:
             k1_gdbn_params=k1_gdbn_params,
         )
         self.filter_K = int(self.filter.K)
+        if isinstance(self.filter, GDBNIntegration):
+            # Only candidate robot geometry depends on the action in this environment.
+            self.filter.B_action = [np.zeros_like(b) for b in self.filter.B_action]
         n_actions = int(GRID["n_speeds"]) * int(GRID["n_headings"]) + int(
             bool(GRID.get("include_stop", False))
         )
@@ -363,9 +374,13 @@ class BeliefMDPFeatureEngine:
         pad_width = [(0, 0)] * (mode_probs.ndim - 1) + [(0, MAX_K - self.filter_K)]
         return np.pad(mode_probs, pad_width, mode="constant")
 
-    def _global_belief(self, belief: np.ndarray) -> np.ndarray:
-        valid = np.any(belief != 0.0, axis=-1)
-        active = belief[valid] if valid.any() else belief[:1]
+    def _global_belief(self, belief: np.ndarray, valid: np.ndarray) -> np.ndarray:
+        valid = np.asarray(valid, dtype=bool)
+        if valid.shape != (len(belief),):
+            raise ValueError("Entity mask must match belief slots")
+        if not valid.any():
+            return np.zeros(self.belief_dim, dtype=np.float32)
+        active = belief[valid]
         mode = self._pad_mode_probs(active[:, : self.filter_K])
         entropy = active[:, self.filter_K]
         klda = active[:, self.filter_K + 1]
@@ -541,31 +556,46 @@ class BeliefMDPFeatureEngine:
             torch.as_tensor(rewards, dtype=torch.float32, device=self.device)
             + float(self.mamba.gamma) * next_values
         )
+        ablation = getattr(self.mamba, "lookahead_ablation_mode", "full")
+        if ablation == "reward_only":
+            scores = torch.as_tensor(rewards, dtype=torch.float32, device=self.device)
+        elif ablation == "value_only":
+            scores = float(self.mamba.gamma) * next_values
         clearances = torch.as_tensor(minimum_clearances, dtype=torch.float32, device=self.device)
         minimum = float(self.mamba.test_min_clearance)
         risk_lambda = float(self.mamba.test_risk_lambda)
         if minimum > 0.0:
             safe = clearances >= minimum
             if safe.any():
-                scores = scores.masked_fill(~safe, -1e4)
+                scores = scores.masked_fill(~safe, -1e9)
         if risk_lambda > 0.0:
             margin = minimum if minimum > 0.0 else float(self.mamba.discomfort_dist)
             scores = scores - risk_lambda * torch.clamp(margin - clearances, min=0.0)
+        if scores.numel() > 0:
+            scores[0] -= 1e-3
         return scores.detach().cpu().numpy().astype(np.float32)
 
     def encode(self, robot, all_humans) -> DecisionFeatures:
+        if len(all_humans) > self.num_humans:
+            raise ValueError("Tracker capacity would silently truncate real pedestrians")
+        valid = np.arange(self.num_humans) < len(all_humans)
         top5 = sort_humans_by_ttc(robot, all_humans)
         token = mamba_token_observation(robot, top5)
         belief_state = belief_state_observation(robot, all_humans, self.num_humans)
 
-        self.filter.update(belief_state)
         if isinstance(self.filter, GDBNIntegration):
-            belief_vecs = np.asarray(self.filter.get_belief_snapshot().features, dtype=np.float32)
+            self.filter.update(belief_state, valid_mask=valid)
+            snapshot = self.filter.get_belief_snapshot()
+            valid = np.asarray(snapshot.valid_mask, dtype=bool)
+            belief_vecs = np.asarray(snapshot.features, dtype=np.float32)
         else:
+            self.filter.update(belief_state)
             belief_vecs = np.asarray(self.filter.get_per_ped_belief_vec(), dtype=np.float32)
 
         if self.belief_mode == "corrupted" and self._corruption_permutation is not None:
-            belief_vecs = belief_vecs[self._corruption_permutation]
+            order = self._corruption_permutation[self._corruption_permutation < len(all_humans)]
+            belief_vecs = belief_vecs.copy()
+            belief_vecs[:len(all_humans)] = belief_vecs[order]
 
         if self.belief_mode == "state_only":
             neutral_action = np.zeros((1, 2), dtype=np.float32)
@@ -580,7 +610,9 @@ class BeliefMDPFeatureEngine:
             belief_vecs = np.zeros_like(belief_vecs)
             risk = np.zeros_like(risk)
 
-        belief_global = self._global_belief(belief_vecs)
+        belief_global = (np.zeros(self.belief_dim, dtype=np.float32)
+                         if self.belief_mode == "no_belief"
+                         else self._global_belief(belief_vecs, valid))
         candidates = np.concatenate((risk, kinematics), axis=-1)
 
         return DecisionFeatures(
