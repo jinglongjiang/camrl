@@ -93,6 +93,9 @@ Original demonstrations and all prior DAgger data remain. Both earlier
 confirmation sets are explicitly excluded. Round 16, not a selected earlier
 checkpoint, is evaluated once on 500 new cases 960000..960499. Serial/parallel
 collection equivalence is checked before running the extension.
+The original BC checkpoint is also evaluated on those same 500 layouts, with
+paired outcome transitions retained. This comparison measures the combined
+training/data/state changes, not a single-variable causal ablation.
 
 ```bash
 python -m crowd_nav.bayes_continuous.train_smoke --dagger \

@@ -114,6 +114,18 @@ def confirm_dagger(folder, params, original_collection):
         scope='One training seed; five-human nominal full-observation No-Belief student',
         metrics=receipt(records), records=records, unique_layouts=count, previous_layout_overlap=0,
         actor_unchanged=True, teacher_queried=False, rl_started=False)
+    if final_round==16:
+        baseline_path = original_collection.parent/'bc_only.zip'
+        baseline = BayesSetTD3.load(baseline_path,device='cpu')
+        baseline.check_arm('no_belief')
+        old_records,_,_ = episodes(params,count,offset,baseline,case_offset=offset,
+                                   arm='no_belief',diagnostics=True)
+        assert [r['layout_sha256'] for r in old_records]==[r['layout_sha256'] for r in records]
+        report['baseline'] = dict(checkpoint_sha256=hashlib.sha256(baseline_path.read_bytes()).hexdigest(),
+            metrics=receipt(old_records),records=old_records)
+        report['paired_outcome_transitions'] = {
+            f'{a}->{b}':sum(x['outcome']==a and y['outcome']==b for x,y in zip(old_records,records))
+            for a in ('success','collision','timeout') for b in ('success','collision','timeout')}
     output.write_text(json.dumps(report, indent=2))
     print('INDEPENDENT CONFIRMATION', report['metrics'], flush=True)
 
