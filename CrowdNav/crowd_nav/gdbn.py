@@ -364,13 +364,16 @@ class PedestrianBeliefTracker:
 
     def reset(self, x0: Optional[np.ndarray] = None):
         N, K = self.N, self.K
-        self.particles_s = self.rng.integers(0, K, size=N)
+        if N < K:
+            raise ValueError('Uniform mode initialization requires N >= K')
+        self.particles_s = self.rng.permutation(np.arange(N) % K)
         if x0 is not None:
             noise = self.rng.normal(size=(N, 4)) * 0.05
             self.particles_x = np.tile(x0.astype(np.float64), (N, 1)) + noise
         else:
             self.particles_x = np.zeros((N, 4), dtype=np.float64)
-        self.weights = np.full(N, 1.0 / N)
+        counts = np.bincount(self.particles_s, minlength=K)
+        self.weights = 1.0 / (K * counts[self.particles_s])
 
     def _marginal_s(self) -> np.ndarray:
         """ π(S_t)"""
@@ -681,7 +684,9 @@ class GDBNIntegration:
     # ------------------------------------------------------------------ #
     # ------------------------------------------------------------------ #
 
-    def reset(self, n_peds: Optional[int] = None):
+    def reset(self, n_peds: Optional[int] = None, seed: Optional[int] = None):
+        if seed is not None:
+            self._rng = np.random.default_rng(seed)
         self._update_index = -1
         self._previous_observations = {}
         """episodetracker"""

@@ -1,16 +1,51 @@
 import sys
 import unittest
+import tempfile
 from pathlib import Path
 import numpy as np
 import torch
 from stable_baselines3.common.env_checker import check_env
 from crowd_nav.bayes_continuous.environment import BeliefEnv, project_orca, transform_observation
 from crowd_nav.bayes_continuous.network import SetEncoder
+from crowd_nav.bayes_continuous.algorithm import BayesSetTD3, CostReplay
 
 PARAMS = Path(__file__).resolve().parents[2] / 'repair_results/params'
 
 
 class Contracts(unittest.TestCase):
+    def test_explicit_critic_and_stage_contract(self):
+        env = BeliefEnv(PARAMS)
+        model = BayesSetTD3('MultiInputPolicy', env, replay_buffer_class=CostReplay,
+            buffer_size=100, device='cpu', policy_kwargs=dict(features_extractor_class=SetEncoder,
+            net_arch=[32], share_features_extractor=False), seed=2)
+        obs, _ = env.reset(seed=9)
+        for i in range(8):
+            model.replay_buffer.add({k:v[None] for k,v in obs.items()},
+                {k:v[None] for k,v in obs.items()}, np.zeros((1,2), np.float32),
+                np.array([-.5]), np.array([True]), [{'collision_cost':float(i%2)}])
+        before = {k:v.clone() for k,v in model.actor.state_dict().items()}
+        model.train(3, 8)
+        self.assertTrue(all(torch.equal(before[k], v) for k,v in model.actor.state_dict().items()))
+        with self.assertRaises(RuntimeError):
+            model.enable_actor(dict(episodes=100, success_rate=1., collision_rate=0.))
+        # Synthetic receipt only exercises the gated optimizer, not navigation qualification.
+        model.warmup_updates = 1000
+        model.critic_validation = {'passed': True}
+        model.enable_actor(dict(episodes=100, success_rate=1., collision_rate=0.))
+        model.demo_observations = {k:np.repeat(v[None], 8, axis=0) for k,v in obs.items()}
+        model.demo_actions = np.zeros((8,2), np.float32)
+        model.train(2, 8)
+        self.assertIn('actor_cost_grad_norm', model.loss_history[-2])
+        with tempfile.TemporaryDirectory() as folder:
+            model.save(Path(folder)/'checkpoint')
+            restored = BayesSetTD3.load(Path(folder)/'checkpoint', device='cpu')
+            self.assertEqual(restored.warmup_updates, 1000)
+            self.assertFalse(restored.actor_enabled)
+            self.assertTrue(restored.critic_validation['passed'])
+            np.testing.assert_array_equal(model.predict(obs)[0], restored.predict(obs)[0])
+            for a,b in zip(model.cost_critic.parameters(), restored.cost_critic.parameters()):
+                torch.testing.assert_close(a, b)
+
     def test_no_mamba_import(self):
         self.assertFalse(any(name.startswith('crowd_nav.policy.mamba') for name in sys.modules))
 
@@ -34,9 +69,34 @@ class Contracts(unittest.TestCase):
         env = BeliefEnv(PARAMS)
         env.reset(seed=81)
         before = env.expert_action()
-        memory = env.world.teacher._last_pref_vel.copy()
+        position = env.world.robot.px
         np.testing.assert_array_equal(before, env.expert_action())
-        np.testing.assert_array_equal(memory, env.world.teacher._last_pref_vel)
+        self.assertEqual(position, env.world.robot.px)
+
+    def test_seed_and_uniform_prior(self):
+        env = BeliefEnv(PARAMS)
+        def rollout():
+            observations = [env.reset(seed=123)[0]]
+            for _ in range(3):
+                observations.append(env.step(np.array([.1, .2], np.float32))[0])
+            return observations
+        first, second = rollout(), rollout()
+        np.testing.assert_allclose(first[0]['humans'][:5, 5:8], 1./3, atol=1e-7)
+        for a, b in zip(first, second):
+            for key in a:
+                np.testing.assert_array_equal(a[key], b[key])
+
+    def test_terminal_step(self):
+        env = BeliefEnv(PARAMS)
+        env.reset(seed=123)
+        env.world.env.humans = []
+        env.world.env.global_time = env.world.env.time_limit - .25
+        _, _, done, _, info = env.step(np.zeros(2, np.float32))
+        self.assertTrue(done)
+        self.assertEqual(info['outcome'], 'timeout')
+        self.assertEqual(env.world.env.global_time, env.world.env.time_limit)
+        with self.assertRaises(RuntimeError):
+            env.step(np.zeros(2, np.float32))
 
     def test_set_permutation_padding_and_empty(self):
         torch.manual_seed(77)

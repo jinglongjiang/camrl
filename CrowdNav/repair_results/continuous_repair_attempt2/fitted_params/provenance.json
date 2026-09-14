@@ -1,0 +1,16 @@
+{
+  "scenario": "baseline_circle",
+  "humans": 5,
+  "profile": "nominal",
+  "layout_offset": 520000,
+  "mode_features": "world px,py,vx,vy,radius",
+  "dynamics": "world px,py,vx,vy",
+  "coordinate_contract": "No robot-relative feature assignment on this inference path",
+  "mode_support": [
+    46637,
+    32681,
+    36927
+  ],
+  "model_R": "fixed 0.01 I; not calibrated sensor noise",
+  "raw_sha256": "2a01f1e8b52e35c5a116e3edbe4b5da31210c2ff3b1706eb16b6721d9ffce9fe"
+}

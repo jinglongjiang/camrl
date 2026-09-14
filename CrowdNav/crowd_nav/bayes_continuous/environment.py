@@ -1,5 +1,4 @@
 """Current observations -> recursive belief -> continuous unicycle actions."""
-import copy
 from pathlib import Path
 import numpy as np
 import gymnasium as gym
@@ -53,8 +52,10 @@ class BeliefEnv(gym.Env):
         if arm not in ARMS:
             raise ValueError(arm)
         self.arm, self.training = arm, training
+        self.nonstationary_probability = 0.0
         self.world = FullCrowdNavigationEnvironment(str(ROOT / 'crowd_nav/configs/env_belief_mdp.config'),
                                                     scenario, robot_visible=False)
+        self.world.env.continuous_terminal_order = True
         self.filter = GDBNIntegration(params_dir=str(params), max_peds=MAX_HUMANS,
                                       n_particles=particles, random_seed=seed)
         if self.filter.K != 3:
@@ -63,7 +64,7 @@ class BeliefEnv(gym.Env):
         self.rng = np.random.default_rng(seed)
         self.action_space = spaces.Box(np.array([0., -1.2], np.float32), np.array([1., 1.2], np.float32))
         self.observation_space = spaces.Dict({
-            'robot': spaces.Box(-np.inf, np.inf, (9,), np.float32),
+            'robot': spaces.Box(-np.inf, np.inf, (7,), np.float32),
             'humans': spaces.Box(-np.inf, np.inf, (MAX_HUMANS, 9), np.float32),
             'mask': spaces.Box(0., 1., (MAX_HUMANS,), np.float32)})
         self.episode_records = []
@@ -75,14 +76,18 @@ class BeliefEnv(gym.Env):
             self.rng = np.random.default_rng(seed)
         options = options or {}
         layout_seed = int(options.get('layout_seed', 300000 + self.rng.integers(10_000_000)))
-        profile = options.get('profile', 'nominal')
+        profile = options.get('profile')
+        if profile is None:
+            profile = ('train_nonstationary' if self.training and
+                       self.rng.random() < self.nonstationary_probability else 'nominal')
         if self.training and profile not in ('nominal', 'train_nonstationary'):
             raise ValueError('Held-out profile cannot enter training')
         case = int(options.get('test_case', self.rng.integers(9000)))
         self.world.reset(layout_seed, profile, case)
         # Human agents remain holonomic; only the robot changes executor.
         self.world.robot.kinematics = 'unicycle'
-        self.filter.reset()
+        self.filter.reset(seed=layout_seed)
+        self._done = False
         self.elapsed = 0
         self.total_reward = 0.
         self.bound_violations = 0
@@ -103,22 +108,24 @@ class BeliefEnv(gym.Env):
         goal = rotation @ np.array([robot.gx-robot.px, robot.gy-robot.py])
         velocity = rotation @ np.array([robot.vx, robot.vy])
         remaining = max(0., (self.world.env.time_limit-self.world.env.global_time)/self.world.env.time_limit)
-        ego = np.array([*goal, *velocity, robot.radius, robot.v_pref, s, c, remaining], np.float32)
+        ego = np.array([*(goal/10.), *(velocity/2.), robot.radius/.3,
+                        robot.v_pref/2., remaining], np.float32)
         tokens = np.zeros((MAX_HUMANS, 9), np.float32)
         for i, h in enumerate(humans):
             relative = rotation @ np.array([h.px-robot.px, h.py-robot.py])
             rel_velocity = rotation @ np.array([h.vx-robot.vx, h.vy-robot.vy])
-            tokens[i] = [*relative, *rel_velocity, h.radius, *belief[i, :4]]
+            tokens[i] = [*(relative/10.), *(rel_velocity/2.), h.radius/.3, *belief[i, :4]]
         return transform_observation({'robot': ego, 'humans': tokens, 'mask': mask.astype(np.float32)}, self.arm)
 
     def expert_action(self):
         if self._teacher_cache is None:
-            action = self.world.expert_action()
-            self._teacher_cache = project_orca([action.vx, action.vy], self.world.robot.theta,
-                                               self.world.env.time_step)
+            from crowd_nav.bayes_continuous.teacher import unicycle_teacher
+            self._teacher_cache = unicycle_teacher(self.world)
         return self._teacher_cache.copy()
 
     def step(self, action):
+        if self._done:
+            raise RuntimeError('Reset is required after terminal transition')
         action = np.asarray(action, np.float32)
         if action.shape != (2,) or not np.isfinite(action).all():
             raise ValueError('Action must be finite (v, omega)')
@@ -137,8 +144,10 @@ class BeliefEnv(gym.Env):
         self.total_reward += result.reward
         self._teacher_cache = None
         obs = self._observation()
-        info = {'outcome': result.outcome, 'dmin': result.dmin, 'action': action.copy()}
+        info = {'outcome': result.outcome, 'dmin': result.dmin, 'action': action.copy(),
+                'collision_cost': float(result.outcome == 'collision')}
         if result.done:
+            self._done = True
             record = dict(layout_seed=self.layout_seed, test_case=self.case, outcome=result.outcome,
                           steps=self.elapsed, reward=self.total_reward, bound_violations=self.bound_violations)
             self.episode_records.append(record)

@@ -520,7 +520,8 @@ class CrowdSim(gym.Env):
         terminated = False
         truncated = False
 
-        if self.global_time >= self.time_limit - 1e-6:
+        corrected_horizon = getattr(self, 'continuous_terminal_order', False)
+        if not corrected_horizon and self.global_time >= self.time_limit - 1e-6:
             # timeout
             reward = self.timeout_penalty
             truncated = True
@@ -535,6 +536,10 @@ class CrowdSim(gym.Env):
             reward = self.success_reward
             terminated = True
             info = {"event": "reach_goal", "dmin": max(dmin, 0.0)}
+        elif corrected_horizon and self.global_time + self.time_step >= self.time_limit - 1e-6:
+            reward = self.timeout_penalty
+            truncated = True
+            info = {"event": "timeout", "dmin": max(dmin, 0.0)}
         else:
             # dense shaping
             reward += self.progress_reward * progress

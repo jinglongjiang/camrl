@@ -1,4 +1,46 @@
-# Continuous Bayesian Set RL prototype
+# Continuous Bayesian Set RL: Repair Status
+
+Current entry is `train_smoke.py`. It owns teacher qualification, collection,
+five-human model refitting, BC-only evaluation, supervised critic warm-up and
+the gated online entry (`--online`). Do not create separate entry scripts for
+each stage. Only `teacher.py` and `algorithm.py` are added functional modules.
+
+Current changes relative to dcc4fe5:
+
+- Direct bounded unicycle rollout teacher; projected ORCA is no longer used.
+- Fixed scaling (position 10 m, velocity 2 m/s, radius 0.3 m), seven ego inputs,
+  robot-conditioned attention plus max pooling, no heading or explicit count.
+- Balanced uniform mode prior and deterministic per-episode filter RNG.
+- Five-human-only GNG/GDBN refit, world coordinates in discovery and dynamics;
+  no robot-action coupling. This fixes a coordinate contract, not calibration.
+- Corrected terminal order is opt-in for this environment, preserving legacy
+  experiment semantics. Timeout is now at step 140; post-terminal step rejects.
+- Explicit TD3 reward/BC/collision-cost objectives. No optimizer hooks in the
+  active entry. Cost critic is a soft penalty, not certified safe control.
+- BC only uses successful teacher episodes; all failures remain in raw data
+  and critic data. BC-only runs 100 distinct five-human development episodes.
+- Critics warm up on Monte Carlo labels from complete episodes, with a held-out
+  20-episode check. Actor must remain bitwise unchanged during warm-up.
+- Actor RL requires teacher and BC success >=90%, collision <=2%, 100 episodes,
+  1000 warm-up updates and a passed held-out critic check. These are development
+  thresholds, not statistical safety certificates. Long RL is not auto-started.
+
+```bash
+python -m crowd_nav.bayes_continuous.tests
+python -m crowd_nav.bayes_continuous.train_smoke --params repair_results/params --out repair_results/new_development
+# Qualification-only audit, same fixed 100 development layouts:
+python -m crowd_nav.bayes_continuous.train_smoke --params repair_results/params --out repair_results/new_teacher_audit --teacher-only
+# Refuses failed stage receipts:
+python -m crowd_nav.bayes_continuous.train_smoke --online --stages repair_results/new_development --out repair_results/new_online --steps 10000
+```
+
+Nonstationary training probability defaults to zero (nominal acquisition).
+The online CLI can explicitly schedule a fixed nonstationary mixture while
+keeping five humans. No 10/20-human layout is used for current model selection.
+Full observations remain an explicit scope limitation, not occlusion sensing.
+Old checkpoints with nine ego inputs are incompatible; they are not hot-loaded.
+
+## Historical dcc4fe5 Smoke (Not the Current Training Protocol)
 
 Independent execution path: observed human states -> repaired GDBN mode posterior
 -> shared human MLP -> masked mean/max pooling -> continuous TD3 actor/critics.

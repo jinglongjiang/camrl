@@ -1,173 +1,268 @@
-"""BC + SB3 TD3 with a decaying online BC regularizer; smoke evidence only."""
+"""Frozen five-human development stages; no high-density model selection."""
 import argparse
-import copy
-import gc
 import hashlib
 import json
-import sys
-import time
 from pathlib import Path
-
 import numpy as np
 import torch
-from torch.nn import functional as F
-from stable_baselines3 import TD3
-from stable_baselines3.common.noise import NormalActionNoise
 from stable_baselines3.common.utils import obs_as_tensor
-
-from crowd_nav.bayes_continuous.environment import BeliefEnv, ARMS, transform_observation
+from crowd_nav.bayes_continuous.environment import BeliefEnv
+from crowd_nav.bayes_continuous.algorithm import BayesSetTD3, CostReplay
 from crowd_nav.bayes_continuous.network import SetEncoder
+from crowd_nav.gdbn import GNG, GDBN
 
 
 def stack_obs(observations):
-    return {key: np.stack([o[key] for o in observations]) for key in observations[0]}
+    return {k:np.stack([o[k] for o in observations]) for k in observations[0]}
 
 
-def collect(params, episodes):
+def supervised_warmup(model, trajectories, updates=1000):
+    def dataset(episodes):
+        rows, returns, costs = [], [], []
+        for episode in episodes:
+            reward, cost = 0., 0.
+            episode_returns, episode_costs = [], []
+            for row in reversed(episode):
+                reward = row['reward'] + model.gamma*reward
+                cost = max(cost, row['collision_cost'])
+                episode_returns.append(reward)
+                episode_costs.append(cost)
+            rows.extend(episode)
+            returns.extend(reversed(episode_returns))
+            costs.extend(reversed(episode_costs))
+        return ({k:np.stack([r['observation'][k] for r in rows]) for k in rows[0]['observation']},
+                model.policy.scale_action(np.stack([r['action'] for r in rows])),
+                np.asarray(returns, np.float32)[:,None], np.asarray(costs, np.float32)[:,None])
+    train, valid = dataset(trajectories[:-20]), dataset(trajectories[-20:])
+    rng = np.random.default_rng(2407)
+    before = {k:v.clone() for k,v in model.actor.state_dict().items()}
+    def losses(data, indices):
+        obs, act, returns, costs = data
+        obs = obs_as_tensor({k:v[indices] for k,v in obs.items()}, model.device)
+        act, returns, costs = [torch.as_tensor(v[indices], device=model.device) for v in (act, returns, costs)]
+        qr = model.critic(obs, act)
+        qc = model.cost_critic(obs, act)
+        return (sum(torch.nn.functional.smooth_l1_loss(q, returns) for q in qr),
+                sum(torch.nn.functional.mse_loss(q, costs) for q in qc))
+    with torch.no_grad():
+        initial = [float(x) for x in losses(valid, np.arange(len(valid[1])))]
+    for _ in range(updates):
+        reward_loss, cost_loss = losses(train, rng.integers(len(train[1]), size=128))
+        for optimizer, loss in [(model.critic.optimizer, reward_loss), (model.cost_optimizer, cost_loss)]:
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+    with torch.no_grad():
+        final = [float(x) for x in losses(valid, np.arange(len(valid[1])))]
+    assert all(torch.equal(before[k], v) for k,v in model.actor.state_dict().items())
+    model.critic_target.load_state_dict(model.critic.state_dict())
+    model.cost_target.load_state_dict(model.cost_critic.state_dict())
+    model.warmup_updates = updates
+    model.critic_validation = dict(before=initial, after=final, heldout_episodes=20,
+                                  actor_unchanged=True,
+                                  passed=bool(final[0] <= .2 and final[1] <= .04 and
+                                              final[0] <= initial[0] and final[1] <= initial[1]))
+    return model.critic_validation
+
+
+
+def online_main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--stages', type=Path, required=True)
+    parser.add_argument('--out', type=Path, required=True)
+    parser.add_argument('--steps', type=int, default=10000)
+    parser.add_argument('--nonstationary-probability', type=float, default=0.)
+    args = parser.parse_args()
+    results = json.loads((args.stages/'results.json').read_text())
+    if results['teacher']['success_rate'] < .9 or results['teacher']['collision_rate'] > .02:
+        raise RuntimeError('Unqualified teacher: RL is forbidden')
+    if not 0 <= args.nonstationary_probability <= 1:
+        raise ValueError('Invalid training profile probability')
+    torch.set_num_threads(1)
+    env = BeliefEnv(args.stages/'fitted_params')
+    env.nonstationary_probability = args.nonstationary_probability
+    model = BayesSetTD3.load(args.stages/'supervised_warmup.zip', env=env)
+    model.enable_actor(results['bc'])
+    args.out.mkdir(exist_ok=False)
+    collection = torch.load(args.stages/'collection.pt', weights_only=False)
+    good = []
+    for record, rows in zip(collection['records'], collection['trajectories']):
+        if record['outcome'] == 'success':
+            good.extend(rows)
+        for r in rows:
+            model.replay_buffer.add({k:v[None] for k,v in r['observation'].items()},
+                {k:v[None] for k,v in r['next_observation'].items()},
+                model.policy.scale_action(r['action'][None]), np.array([r['reward']]),
+                np.array([r['done']]), [{'collision_cost':r['collision_cost']}])
+    model.demo_observations = {k:np.stack([r['observation'][k] for r in good]) for k in good[0]['observation']}
+    model.demo_actions = model.policy.scale_action(np.stack([r['action'] for r in good])).astype(np.float32)
+    model.learn(total_timesteps=args.steps)
+    model.save(args.out/'final')
+    (args.out/'episodes.json').write_text(json.dumps(env.episode_records, indent=2))
+    (args.out/'losses.json').write_text(json.dumps(model.loss_history))
+
+
+def episodes(params, count, offset, actor=None, collect=False):
     env = BeliefEnv(params, seed=2407)
-    rows, records = [], []
-    for episode in range(episodes):
-        obs, _ = env.reset(seed=4000+episode,
-                           options={'layout_seed': 40000+episode, 'test_case': 100+episode})
-        for _ in range(160):
-            action = env.expert_action()
+    records, trajectories, raw = [], [], []
+    for episode in range(count):
+        obs, _ = env.reset(options={'layout_seed': offset+episode, 'test_case': episode,
+                                    'profile': 'nominal'})
+        rows, states = [], []
+        for _ in range(140):
+            states.append(np.array([[h.px, h.py, h.vx, h.vy, h.radius] for h in env.world.env.humans]))
+            action = env.expert_action() if actor is None else actor.predict(obs, deterministic=True)[0]
             nxt, reward, done, _, info = env.step(action)
-            rows.append(dict(observation=obs, action=action.copy(), reward=reward,
-                             next_observation=nxt, done=done, episode=episode))
+            if collect:
+                rows.append(dict(observation=obs, next_observation=nxt, action=action,
+                                 reward=reward, done=done, collision_cost=info['collision_cost']))
             obs = nxt
             if done:
                 records.append(info['episode_result'])
                 break
         else:
-            raise AssertionError('Environment failed to terminate at its time limit')
+            raise AssertionError('140-step terminal contract failed')
+        trajectories.append(rows)
+        raw.append(np.asarray(states))
+        if episode % 20 == 19:
+            print('episodes', offset, episode+1, flush=True)
     env.close()
-    return rows, records
+    return records, trajectories, raw
 
 
-def mse(model, observations, actions):
-    with torch.no_grad():
-        predicted = model.actor(obs_as_tensor(observations, model.device))
-        return float(F.mse_loss(predicted, torch.as_tensor(actions, device=model.device)))
+def receipt(records):
+    return dict(episodes=len(records), success_rate=np.mean([r['outcome']=='success' for r in records]),
+                collision_rate=np.mean([r['outcome']=='collision' for r in records]))
 
 
-def evaluate(model, params, arm):
-    records = []
-    for index, scenario in enumerate(('baseline_circle', 'dense_circle', 'dense_square')):
-        env = BeliefEnv(params, arm, scenario, training=False, seed=8107)
-        obs, _ = env.reset(options={'layout_seed': 810000+index, 'test_case': 800+index})
-        for _ in range(160):
-            action, _ = model.predict(obs, deterministic=True)
-            obs, _, done, _, info = env.step(action)
-            if done:
-                records.append(dict(scenario=scenario, humans=len(env.world.env.humans), **info['episode_result']))
-                break
-        else:
-            raise AssertionError('Evaluation did not terminate')
-        env.close()
-    return records
+def fit_world_models(raw, out):
+    # Both mode discovery and linear dynamics use absolute world coordinates.
+    features = np.concatenate([x.reshape(-1, 5) for x in raw])
+    np.random.seed(2407)
+    gng = GNG(k_target=3)
+    gng._feat_mean = features.mean(0)
+    gng._feat_std = features.std(0)+1e-6
+    standardized = (features-gng._feat_mean)/gng._feat_std
+    rng = np.random.default_rng(2407)
+    gng.nodes = standardized[rng.choice(len(features), 2, replace=False)].copy()
+    gng.errors = np.zeros(2)
+    for _ in range(3):
+        for i in rng.permutation(len(features)):
+            gng._gng_step(standardized[i])
+    if gng.n_modes != 3:
+        raise RuntimeError('Mode fitting did not produce three supported modes')
+    pairs = [[] for _ in range(3)]
+    counts = np.ones((3, 3))
+    for trajectory in raw:
+        for t in range(len(trajectory)-1):
+            for i in range(5):
+                x, y = trajectory[t, i], trajectory[t+1, i]
+                k, j = gng.assign_mode(x), gng.assign_mode(y)
+                pairs[k].append((x[:4], y[:4]))
+                counts[k, j] += 1
+    model = GDBN(3)
+    model.Pi = counts/counts.sum(1, keepdims=True)
+    for k in range(3):
+        if len(pairs[k]) < 100:
+            raise RuntimeError('Insufficient five-human training support')
+        x, y = np.asarray(pairs[k]).transpose(1, 0, 2)
+        model.A[k] = np.linalg.solve(x.T@x+1e-3*np.eye(4), x.T@y).T
+        residual = y-x@model.A[k].T
+        model.Q[k] = residual.T@residual/len(x)+1e-4*np.eye(4)
+    out.mkdir()
+    gng.save(str(out/'gng.npz'))
+    model.save(str(out/'gdbn.npz'))
+    (out/'provenance.json').write_text(json.dumps(dict(
+        scenario='baseline_circle', humans=5, profile='nominal', layout_offset=520000,
+        mode_features='world px,py,vx,vy,radius', dynamics='world px,py,vx,vy',
+        coordinate_contract='No robot-relative feature assignment on this inference path',
+        mode_support=[len(x) for x in pairs], model_R='fixed 0.01 I; not calibrated sensor noise',
+        raw_sha256=hashlib.sha256(b''.join(x.tobytes() for x in raw)).hexdigest()), indent=2))
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--params', type=Path, required=True)
+    parser.add_argument('--teacher-only', action='store_true')
     parser.add_argument('--out', type=Path, required=True)
-    parser.add_argument('--bc-updates', type=int, default=80)
-    parser.add_argument('--rl-steps', type=int, default=256)
-    parser.add_argument('--demo-episodes', type=int, default=4)
     args = parser.parse_args()
-    if args.out.exists():
-        raise ValueError('Use a fresh output directory; never overwrite an attempt')
-    args.out.mkdir(parents=True)
+    args.out.mkdir(exist_ok=False)
     torch.set_num_threads(1)
-    if not torch.cuda.is_available():
-        raise RuntimeError('This runner is for the requested real GPU training smoke')
-    # Do not consume the memory reserved by the user's other GPU job.
-    torch.cuda.set_per_process_memory_fraction(.20)
-    assert not any(name.startswith('crowd_nav.policy.mamba') for name in sys.modules)
-    start = time.time()
-    rows, teacher_records = collect(args.params, args.demo_episodes)
-    torch.save(rows, args.out / 'shared_demonstrations.pt')
-    demo_hash = hashlib.sha256((args.out / 'shared_demonstrations.pt').read_bytes()).hexdigest()
-    train_rows = [r for r in rows if r['episode'] < args.demo_episodes-1]
-    held_rows = [r for r in rows if r['episode'] == args.demo_episodes-1]
-    if not train_rows or not held_rows:
-        raise AssertionError('Need separate BC train and held-out episodes')
-    results = dict(scope='Minimal training/wiring only; one seed, not a performance comparison',
-                   args={k: str(v) if isinstance(v, Path) else v for k,v in vars(args).items()},
-                   demonstrations_sha256=demo_hash, demonstrations=len(train_rows),
-                   heldout_demonstrations=len(held_rows), teacher_episodes=teacher_records, arms={})
-    (args.out / 'results.json').write_text(json.dumps(results, indent=2))
-    for arm in ARMS:
-        print('START', arm, flush=True)
-        rng = np.random.default_rng(2407)
-        env = BeliefEnv(args.params, arm, seed=2407)
-        model = TD3('MultiInputPolicy', env, learning_rate=3e-4, buffer_size=5000,
-                    learning_starts=32, batch_size=32, train_freq=1, gradient_steps=1,
-                    policy_delay=2, tau=.005, gamma=.99, seed=2407, device='cuda',
-                    action_noise=NormalActionNoise(np.zeros(2), np.full(2, .1)),
-                    policy_kwargs=dict(features_extractor_class=SetEncoder, net_arch=[96, 96],
-                                       share_features_extractor=False), verbose=0)
-        observations = stack_obs([transform_observation(r['observation'], arm) for r in train_rows])
-        actions = model.policy.scale_action(np.stack([r['action'] for r in train_rows])).astype(np.float32)
-        held_obs = stack_obs([transform_observation(r['observation'], arm) for r in held_rows])
-        held_actions = model.policy.scale_action(np.stack([r['action'] for r in held_rows])).astype(np.float32)
-        before = mse(model, held_obs, held_actions)
-        model.policy.set_training_mode(True)
-        for _ in range(args.bc_updates):
-            indices = rng.integers(len(train_rows), size=64)
-            batch = obs_as_tensor({k:v[indices] for k,v in observations.items()}, model.device)
-            loss = F.mse_loss(model.actor(batch), torch.as_tensor(actions[indices], device=model.device))
-            model.actor.optimizer.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.actor.parameters(), 10.)
-            model.actor.optimizer.step()
-        model.actor_target.load_state_dict(model.actor.state_dict())
-        after = mse(model, held_obs, held_actions)
-        actor_before_rl = {k:v.detach().clone() for k,v in model.actor.state_dict().items()}
-        for r in train_rows:
-            obs = {k:v[None] for k,v in transform_observation(r['observation'], arm).items()}
-            nxt = {k:v[None] for k,v in transform_observation(r['next_observation'], arm).items()}
-            model.replay_buffer.add(obs, nxt, model.policy.scale_action(r['action'][None]),
-                                    np.array([r['reward']]), np.array([r['done']]),
-                                    [{'TimeLimit.truncated': False}])
-        bc_steps = []
-        def regularize(optimizer, positional, keyword):
-            # Called after TD3's actor backward and before its optimizer/target updates.
-            weight = .1 * max(float(model._current_progress_remaining), 0.)
-            indices = rng.integers(len(train_rows), size=32)
-            batch = obs_as_tensor({k:v[indices] for k,v in observations.items()}, model.device)
-            loss = weight * F.mse_loss(model.actor(batch), torch.as_tensor(actions[indices], device=model.device))
-            loss.backward()
-            bc_steps.append(float(loss.detach()))
-        hook = model.actor.optimizer.register_step_pre_hook(regularize)
-        model.learn(total_timesteps=args.rl_steps)
-        hook.remove()
-        if not all(torch.isfinite(p).all() for p in model.policy.parameters()):
-            raise FloatingPointError('Nonfinite model parameters')
-        change = max(float((v-actor_before_rl[k]).abs().max()) for k,v in model.actor.state_dict().items())
-        if change <= 0 or model._n_updates < 1 or not bc_steps:
-            raise AssertionError('RL failed to update actor/critics')
-        model.save(args.out / arm)
-        replay_size = model.replay_buffer.size()
-        model.policy.set_training_mode(False)
-        evaluation = evaluate(model, args.params, arm)
-        results['arms'][arm] = dict(bc_heldout_mse_before=before, bc_heldout_mse_after=after,
-            critic_updates=model._n_updates, actor_bc_updates=len(bc_steps), actor_weight_change=change,
-            replay_size=replay_size, rl_episodes=env.episode_records, evaluation=evaluation,
-            finite_parameters=True, continuous_action_dim=2)
-        results['elapsed_seconds'] = time.time()-start
-        (args.out / 'results.json').write_text(json.dumps(results, indent=2))
-        print('DONE', arm, results['arms'][arm], flush=True)
-        env.close()
-        del model
-        gc.collect()
-        torch.cuda.empty_cache()
-    results['complete'] = True
-    results['mamba_imported'] = any(name.startswith('crowd_nav.policy.mamba') for name in sys.modules)
-    assert not results['mamba_imported']
-    (args.out / 'results.json').write_text(json.dumps(results, indent=2))
-    print('ALL THREE ARMS COMPLETED', flush=True)
+    torch.cuda.set_per_process_memory_fraction(.2)
+    result = {'protocol': 'Five-human development only, fixed stages, seed 2407',
+              'gate': {'episodes':100, 'min_success':.9, 'max_collision':.02},
+              'bc_updates':3000, 'rl_started':False}
+    def save():
+        (args.out/'results.json').write_text(json.dumps(result, indent=2))
+    records, _, _ = episodes(args.params, 100, 510000)
+    result['teacher_records'] = records
+    result['teacher'] = receipt(records)
+    save()
+    if args.teacher_only:
+        return
+    # Always retain the finite development collection, even if teacher qualification fails.
+    records, _, raw = episodes(args.params, 200, 520000)
+    fit_world_models(raw, args.out/'fitted_params')
+    torch.save(raw, args.out/'fit_trajectories.pt')
+    params = args.out/'fitted_params'
+    # Replay the fixed training layouts with the newly fitted filter, not stale beliefs.
+    records, trajectories, _ = episodes(params, 200, 520000, collect=True)
+    torch.save(dict(records=records, trajectories=trajectories), args.out/'collection.pt')
+    good = [row for record, rows in zip(records, trajectories) if record['outcome']=='success' for row in rows]
+    result['accepted_bc_episodes'] = sum(r['outcome']=='success' for r in records)
+    result['rejected_bc_episodes'] = 200-result['accepted_bc_episodes']
+    result['collection_records'] = records
+    env = BeliefEnv(params)
+    model = BayesSetTD3('MultiInputPolicy', env, replay_buffer_class=CostReplay,
+        buffer_size=50000, learning_rate=3e-4, batch_size=128, seed=2407, device='cuda',
+        policy_kwargs=dict(features_extractor_class=SetEncoder, net_arch=[96,96], share_features_extractor=False))
+    observations = stack_obs([r['observation'] for r in good])
+    actions = model.policy.scale_action(np.stack([r['action'] for r in good])).astype(np.float32)
+    rng = np.random.default_rng(2407)
+    for _ in range(3000):
+        idx = rng.integers(len(good), size=128)
+        batch = obs_as_tensor({k:v[idx] for k,v in observations.items()}, model.device)
+        loss = torch.nn.functional.mse_loss(model.actor(batch), torch.as_tensor(actions[idx], device=model.device))
+        model.actor.optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.actor.parameters(), 10.)
+        model.actor.optimizer.step()
+    model.actor_target.load_state_dict(model.actor.state_dict())
+    model.save(args.out/'bc_only')
+    records, _, _ = episodes(params, 100, 530000, model)
+    result['bc_records'], result['bc'] = records, receipt(records)
+    save()
+    # Critic pretraining is allowed for diagnosis, but actor remains frozen.
+    for rows in trajectories:
+        for row in rows:
+            model.replay_buffer.add({k:v[None] for k,v in row['observation'].items()},
+                {k:v[None] for k,v in row['next_observation'].items()},
+                model.policy.scale_action(row['action'][None]), np.array([row['reward']]),
+                np.array([row['done']]), [{'collision_cost':row['collision_cost']}])
+    before = {k:v.clone() for k,v in model.actor.state_dict().items()}
+    result['critic_validation'] = supervised_warmup(model, trajectories)
+    assert all(torch.equal(before[k], v) for k,v in model.actor.state_dict().items())
+    result['warmup_actor_unchanged'] = True
+    result['warmup_updates'] = model.warmup_updates
+    (args.out/'losses.json').write_text(json.dumps(model.loss_history))
+    model.save(args.out/'supervised_warmup')
+    try:
+        if result['teacher']['success_rate'] < .9 or result['teacher']['collision_rate'] > .02:
+            raise RuntimeError('Teacher gate failed')
+        model.enable_actor(result['bc'])
+    except RuntimeError as exc:
+        result['decision'] = 'RL blocked: '+str(exc)
+    else:
+        # Separate explicit learner entry; never silently launch a long run here.
+        result['decision'] = 'Teacher/BC/held-out critic gates passed; ready for bounded RL run'
+    save()
+    print(result['teacher'], result['bc'], result['decision'], flush=True)
 
 
 if __name__ == '__main__':
-    main()
+    import sys
+    if '--online' in sys.argv:
+        sys.argv.remove('--online')
+        online_main()
+    else:
+        main()

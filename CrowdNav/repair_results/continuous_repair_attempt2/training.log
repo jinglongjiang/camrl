@@ -1,0 +1,40 @@
+Gym has been unmaintained since 2022 and does not support NumPy 2.0 amongst other critical functionality.
+Please upgrade to Gymnasium, the maintained drop-in replacement of Gym, or contact the authors of your software and request that they upgrade.
+Users of this version of Gym should be able to simply replace 'import gym' with 'import gymnasium as gym' in the vast majority of cases.
+See the migration guide at https://gymnasium.farama.org/introduction/migration_guide/ for additional information.
+[GDBN] : K=3 repair_results/params
+episodes 510000 20
+episodes 510000 40
+episodes 510000 60
+episodes 510000 80
+episodes 510000 100
+[GDBN] : K=3 repair_results/params
+episodes 520000 20
+episodes 520000 40
+episodes 520000 60
+episodes 520000 80
+episodes 520000 100
+episodes 520000 120
+episodes 520000 140
+episodes 520000 160
+episodes 520000 180
+episodes 520000 200
+[GDBN] : K=3 repair_results/continuous_repair_attempt2/fitted_params
+episodes 520000 20
+episodes 520000 40
+episodes 520000 60
+episodes 520000 80
+episodes 520000 100
+episodes 520000 120
+episodes 520000 140
+episodes 520000 160
+episodes 520000 180
+episodes 520000 200
+[GDBN] : K=3 repair_results/continuous_repair_attempt2/fitted_params
+[GDBN] : K=3 repair_results/continuous_repair_attempt2/fitted_params
+episodes 530000 20
+episodes 530000 40
+episodes 530000 60
+episodes 530000 80
+episodes 530000 100
+{'episodes': 100, 'success_rate': 0.17, 'collision_rate': 0.14} {'episodes': 100, 'success_rate': 0.08, 'collision_rate': 0.88} RL blocked: Teacher gate failed
