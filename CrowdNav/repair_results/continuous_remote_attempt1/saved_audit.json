@@ -1,0 +1,65 @@
+{
+  "python": "3.10.19",
+  "versions": {
+    "torch": "2.9.1",
+    "numpy": "1.24.4",
+    "scipy": "1.15.3",
+    "stable-baselines3": "2.7.1",
+    "gymnasium": "1.2.2"
+  },
+  "models": {
+    "no_belief": {
+      "sha256": "f6df4e7ea18d16fbca88292a5e79d3216727c54510baa508fe6ab265551b1122",
+      "repeat_load_equal": true,
+      "action": [
+        0.2451205849647522,
+        0.4304591417312622
+      ],
+      "mode_permutation_action_delta": [
+        0.0,
+        0.0
+      ]
+    },
+    "map": {
+      "sha256": "c4008fc236ced0cb59f6d69d7785a06b1373b370395b6f0bd6f40bba9a2f6bbe",
+      "repeat_load_equal": true,
+      "action": [
+        0.44217514991760254,
+        0.42710697650909424
+      ],
+      "mode_permutation_action_delta": [
+        -0.05151650309562683,
+        -0.018949151039123535
+      ]
+    },
+    "full": {
+      "sha256": "e75fc1cb55219b95bbc0cda065246ee25c7b58a6f82c0b4177d61c9274188f61",
+      "repeat_load_equal": true,
+      "action": [
+        0.3390524685382843,
+        0.31846773624420166
+      ],
+      "mode_permutation_action_delta": [
+        -0.009506434202194214,
+        -0.0006892681121826172
+      ]
+    }
+  },
+  "gpu": "NVIDIA GeForce RTX 4090",
+  "module_paths": {
+    "stable_baselines3": "/root/bayes_continuous_deps/stable_baselines3/__init__.py",
+    "crowd_nav.gdbn": "/root/bayes_set_continuous_20260914/CrowdNav/crowd_nav/gdbn.py",
+    "crowd_sim.envs.crowd_sim": "/root/bayes_set_continuous_20260914/CrowdNav/crowd_sim/envs/crowd_sim.py"
+  },
+  "mamba_imported": false,
+  "source_sha256": {
+    "crowd_nav/bayes_continuous/tests.py": "e34e3e8a7bfc078ba58271b7d18bccaaa4cb333fcad1f96366d0c0bfee0e9b87",
+    "crowd_nav/bayes_continuous/train_smoke.py": "fb6df36ea52c106d751ba56d66c0b1648f55ec9cb776dd9a9aa624bf1b7d86fa",
+    "crowd_nav/bayes_continuous/environment.py": "658bf5fd92137340449f9553010324f02d321354aa7466d04483829296b06754",
+    "crowd_nav/bayes_continuous/__init__.py": "7817cf379e8cbcf4ebe77ba38930c6cb934b41cd825374997934c8578996ce52",
+    "crowd_nav/bayes_continuous/network.py": "ac36a04e1f660010673d27752adb4c37705123902a4b9557e1e7a0a12d866778",
+    "crowd_nav/bayes_continuous/audit_saved.py": "0c3b92e9f66a23ad758f7df00b4f99b297d1e07e8b7aa88f0e9cfc02f9e505bb",
+    "crowd_nav/belief_mdp/runtime.py": "6c3ba027e8673d8bb2abc164c8e17fcbc76405fb09394c265dcd4bc9ca69e1d2",
+    "crowd_sim/envs/crowd_sim.py": "60dff6e55cbf4b1cce0300b991e3827aa7407db29257d3e42c4ad20ce0e74b81"
+  }
+}

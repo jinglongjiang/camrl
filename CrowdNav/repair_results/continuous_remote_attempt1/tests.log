@@ -1,0 +1,19 @@
+Gym has been unmaintained since 2022 and does not support NumPy 2.0 amongst other critical functionality.
+Please upgrade to Gymnasium, the maintained drop-in replacement of Gym, or contact the authors of your software and request that they upgrade.
+Users of this version of Gym should be able to simply replace 'import gym' with 'import gymnasium as gym' in the vast majority of cases.
+See the migration guide at https://gymnasium.farama.org/introduction/migration_guide/ for additional information.
+/root/bayes_continuous_deps/stable_baselines3/common/env_checker.py:316: UserWarning: Your observation humans has an unconventional shape (neither an image, nor a 1D vector). We recommend you to flatten the observation to have only a 1D vector or use a custom policy to properly process the data.
+  warnings.warn(
+/root/bayes_continuous_deps/stable_baselines3/common/env_checker.py:507: UserWarning: We recommend you to use a symmetric and normalized Box action space (range=[-1, 1]) cf. https://stable-baselines3.readthedocs.io/en/master/guide/rl_tips.html
+  warnings.warn(
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.138s
+
+OK
+[GDBN] : K=3 /root/bayes_set_continuous_20260914/CrowdNav/repair_results/params
+[GDBN] : K=3 /root/bayes_set_continuous_20260914/CrowdNav/repair_results/params
+[GDBN] : K=3 /root/bayes_set_continuous_20260914/CrowdNav/repair_results/params
+[GDBN] : K=3 /root/bayes_set_continuous_20260914/CrowdNav/repair_results/params
+[GDBN] : K=3 /root/bayes_set_continuous_20260914/CrowdNav/repair_results/params
+[GDBN] : K=3 /root/bayes_set_continuous_20260914/CrowdNav/repair_results/params

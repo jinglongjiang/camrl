@@ -55,23 +55,28 @@ from crowd_nav.bayesian_pilot.protocol import (
     PROFILES,
 )
 from crowd_nav.belief_mdp.model import DecisionFeatures
-from crowd_nav.belief_space_rl.runtime import (
-    build_frozen_mamba,
-    merged_policy_config,
-)
 from crowd_nav.contracts import (
     GRID,
     _batch_joint34_to_tokens_vectorized,
     discrete_index_to_action,
 )
 from crowd_nav.gdbn import GDBNIntegration
-from crowd_nav.policy.mamba_rl import MambaRLPolicy
 from crowd_nav.risk_models import ConstantVelocityRiskModel
 from crowd_sim.envs.crowd_sim import CrowdSim
 from crowd_sim.envs.policy.orca import ORCA
 from crowd_sim.envs.utils.action import ActionXY
 from crowd_sim.envs.utils.robot import Robot
 from crowd_sim.envs.utils.state import FullState, JointState, ObservableState
+
+
+def build_frozen_mamba(*args, **kwargs):
+    from crowd_nav.belief_space_rl.runtime import build_frozen_mamba as build
+    return build(*args, **kwargs)
+
+
+def merged_policy_config(*args, **kwargs):
+    from crowd_nav.belief_space_rl.runtime import merged_policy_config as merge
+    return merge(*args, **kwargs)
 
 
 BELIEF_MODES = (

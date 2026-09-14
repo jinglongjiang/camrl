@@ -540,7 +540,8 @@ class CrowdSim(gym.Env):
             reward += self.progress_reward * progress
             reward += self.time_penalty
             # stand penalty
-            robot_speed = norm(np.array([action.vx, action.vy], dtype=float))
+            robot_speed = (norm(np.array([action.vx, action.vy], dtype=float))
+                           if self.robot.kinematics == 'holonomic' else abs(float(action.v)))
             if robot_speed < 0.05:
                 reward += self.stand_penalty
             # discomfort
