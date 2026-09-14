@@ -380,7 +380,7 @@ def dagger_main():
     parser.add_argument('--stages', type=Path, required=True)
     parser.add_argument('--params', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
-    parser.add_argument('--rounds', type=int, default=3, choices=[3,5,10])
+    parser.add_argument('--rounds', type=int, default=3, choices=[3,5,10,15])
     parser.add_argument('--resume-dagger', type=Path)
     parser.add_argument('--epochs', type=int, default=20)
     args = parser.parse_args()
@@ -435,7 +435,7 @@ def dagger_main():
         parent_path = args.resume_dagger/'results.json'
         parent = json.loads(parent_path.read_text())
         completed = len(parent['rounds'])
-        if (completed,args.rounds) not in ((3,5),(5,10)) or parent['base_checkpoint_sha256'] != report['base_checkpoint_sha256']:
+        if (completed,args.rounds) not in ((3,5),(5,10),(10,15)) or parent['base_checkpoint_sha256'] != report['base_checkpoint_sha256']:
             raise ValueError('Unexpected DAgger parent')
         for key in ('teacher_source_sha256','environment_source_sha256'):
             if parent[key] != report[key]:

@@ -65,6 +65,24 @@ or replaced demonstrations. Cases continue at 816000..820099 in 100-case blocks.
 These adaptive development continuations must not be presented as a pre-registered
 ten-round scientific confirmation experiment.
 
+After completing the ten-round queue, `audit_saved.py --dagger-confirm` evaluates
+only the final round-10 checkpoint on 100 fresh nominal five-human cases
+940000..940099 (layout offset 940000). This checkpoint rule and case range were
+declared before seeing those outcomes. Pass `--original-collection` to the
+original BC collection; the audit rejects overlap with that collection, all
+DAgger training layouts, or development layouts. It never trains, queries the
+teacher, selects another checkpoint, or overwrites a confirmation result.
+This remains a single-training-seed student check, not Bayesian evidence.
+
+Round 10 scored 97/3/0 on development and 93/5/2 on fresh confirmation
+(success/collision/timeout), so the safety gate was not met. A separate immutable
+continuation through round 15 uses the same training settings and new student
+rollouts, without feeding confirmation trajectories into training. The final
+round-15 checkpoint is fixed in advance for cases 950000..950099. The failed
+round-10 confirmation remains evidence, not an erased pilot. These extensions
+are engineering development, not repeated significance testing or a claim of
+independent multiple-seed safety validation.
+
 ```bash
 python -m crowd_nav.bayes_continuous.train_smoke --dagger \
   --stages repair_results/student_bc_history_continued_20260914 \

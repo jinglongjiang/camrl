@@ -76,6 +76,43 @@ def audit_dagger(folder, params):
     env.close()
 
 
+def confirm_dagger(folder, params, original_collection):
+    from crowd_nav.bayes_continuous.train_smoke import episodes, receipt, dagger_artifact
+    result = json.loads((folder/'results.json').read_text())
+    final_round = result['protocol']['rounds']
+    if final_round not in (10,15) or len(result['rounds']) != final_round:
+        raise ValueError('Confirmation uses the final declared round, not a selected checkpoint')
+    output = folder/'independent_confirmation.json'
+    if output.exists():
+        raise ValueError('Never overwrite independent confirmation')
+    original = torch.load(original_collection, weights_only=False)
+    seen = {r['layout_sha256'] for r in original['records']}
+    seen.update(r['layout_sha256'] for r in result['round0']['records'])
+    for item in result['rounds']:
+        seen.update(r['layout_sha256'] for r in item['rollout_records'])
+    if final_round == 15:
+        parent_confirmation = json.loads((Path(result['extension_parent'])/'independent_confirmation.json').read_text())
+        seen.update(r['layout_sha256'] for r in parent_confirmation['records'])
+    offset = {10:940000, 15:950000}[final_round]
+    path = dagger_artifact(folder, f'round{final_round}.zip')
+    model = BayesSetTD3.load(path, device='cpu')
+    model.check_arm('no_belief')
+    before = {k:v.detach().clone() for k,v in model.actor.state_dict().items()}
+    records, _, _ = episodes(params, 100, offset, model, case_offset=offset,
+                             arm='no_belief', diagnostics=True)
+    layouts = {r['layout_sha256'] for r in records}
+    assert len(layouts)==100 and not layouts & seen
+    assert all(torch.equal(v, model.actor.state_dict()[k]) for k,v in before.items())
+    report = dict(checkpoint_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+        checkpoint_round=final_round, cases=[offset,offset+99], layout_seed_offset=offset,
+        selection='Final round fixed before confirmation; no checkpoint selection',
+        scope='One training seed; five-human nominal full-observation No-Belief student',
+        metrics=receipt(records), records=records, unique_layouts=100, previous_layout_overlap=0,
+        actor_unchanged=True, teacher_queried=False, rl_started=False)
+    output.write_text(json.dumps(report, indent=2))
+    print('INDEPENDENT CONFIRMATION', report['metrics'], flush=True)
+
+
 def audit_bc(folder, params):
     from unittest.mock import patch
     result = json.loads((folder/'results.json').read_text())
@@ -192,6 +229,8 @@ def main():
     parser.add_argument('--results', type=Path, required=True)
     parser.add_argument('--params', type=Path)
     parser.add_argument('--teacher-runs', type=Path, nargs='+')
+    parser.add_argument('--dagger-confirm', action='store_true')
+    parser.add_argument('--original-collection', type=Path)
     args = parser.parse_args()
     if args.teacher_runs:
         audit_teachers(args.teacher_runs, args.results)
@@ -199,6 +238,11 @@ def main():
     if args.params is None:
         parser.error('--params is required for checkpoint auditing')
     torch.set_num_threads(1)
+    if args.dagger_confirm:
+        if args.original_collection is None:
+            parser.error('--dagger-confirm requires --original-collection')
+        confirm_dagger(args.results,args.params,args.original_collection)
+        return
     if (args.results/'results.json').exists() and json.loads((args.results/'results.json').read_text()).get('stage')=='dagger':
         audit_dagger(args.results,args.params)
         return
