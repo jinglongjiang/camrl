@@ -1,0 +1,64 @@
+No-Belief 连续学生：DAgger 最终阶段报告
+日期：2026-09-15
+
+一、大白话结论
+不是坏透了，学生已经明显学会导航；DAgger整改有效。
+但安全门没有完全通过：新500回合碰撞率3.2%，仍高于原定2%。
+因此本轮不启动TD3、不加入Bayes，也不把“会导航”写成“已经足够安全”。
+训练、配对评估和原始数据审计均已完成，不再追加新的训练队列。
+
+二、最重要的结果：同一批500个全新布局
+方法                       成功   碰撞   超时    成功率   碰撞率
+原始BC（39000次更新）        274    222      4     54.8%    44.4%
+最终DAgger第16轮             482     16      2     96.4%     3.2%
+布局960000至960499；模型及case范围在看结果之前固定，没有选择最好看的中间模型。
+成功率提高41.6个百分点，碰撞率降低41.2个百分点。
+逐case转换：208个原碰撞变成功，4个原超时变成功；4个原成功变碰撞。
+另有12个碰撞仍碰撞、2个碰撞变超时、270个成功仍成功。
+原始BC与最终模型使用完全相同的500个物理布局，测试时均无教师接管。
+
+三、开发过程没有隐藏失败
+原开发100例：原BC 52/48/0；第3轮74/25/1；第5轮90/10/0；第10轮97/3/0。
+第11至13轮均99/1/0；第14轮98/2/0；第15轮和第16轮均99/1/0。
+以上数字依次为成功/碰撞/超时；同一开发集被反复使用，不累计当作独立证据。
+第10轮另测新100例为93/5/2；第15轮另测新100例为94/6/0，均未过安全门。
+这些负结果及所有中间模型、日志、原始数据均保留。
+第15轮六个失败case逐步重放一致；同布局冻结教师均能成功。
+这是失败子集诊断，不是总体教师成功率，也没有把这些确认轨迹加入训练。
+
+四、实际改动与训练量
+沿用现有源码文件，没有换教师、网络、动作空间、reward或BC动作损失。
+新增1维路线状态，由学生上一实际执行角速度递推；不读取教师未来计划。
+DAgger中每一步执行学生动作，教师仅标注学生到达的状态；教师记忆按回合连续保留。
+最初15轮每轮100个新学生rollout；第16轮新增1000个，四个独立CPU进程采集。
+累计2500个新训练布局，原199条成功示范的9037步永久保留。
+第16轮新增49524步，最终累计132586步；每轮20个epoch-equivalent，转向均衡采样。
+第16轮完成20720次监督更新；没有Reward/Cost Critic更新，没有TD3环境步。
+这些是DAgger、路线状态及额外数据/训练的组合效果，不是单变量因果消融。
+
+五、验收与边界
+16项契约测试通过；真实第15轮模型的串行/并行采集对照逐位一致。
+完整16轮原始数据审计通过：2500个新增布局互异，与原开发布局零重叠。
+两个早期确认集共200个布局被显式排除；最终500布局与训练、开发、早期确认均无重叠。
+路线和上一动作字段来自学生执行；No-Belief概率输入始终为零。
+教师和环境源码哈希未变；所有轮次的Reward/Cost Critic参数保持不变，RL步数为0。
+最终500回合动作限幅违规为0；这不是工作区越界统计，不作后者的声明。
+results.json中的qualified=true仅指原100例开发门；overall_verdict.json为最终总判断：未过安全门。
+只有一个训练种子，只覆盖5人、nominal、全观测；没有验证遮挡、10/20人泛化或Bayes独立价值。
+多次工程扩展已如实记录，不能冒充一次预注册科学试验或统计安全认证。
+
+六、代码、模型与复现
+仓库：jinglongjiang/camrl；分支：repair-continuous-training-20260914。
+核心DAgger：f9038de；扩大覆盖/失败诊断：97f4fa0；固定500例配对评估：1d452a7。
+最终模型：本目录round16.zip（本地和4090保留，未把权重上传Git）。
+模型SHA256：634e8106713c0c316afc77bf345615d3a6a101789f82f182853356ab57dbc086
+原始标签：本目录round16_collection.pt；前15轮对应目录保持原样。
+evidence.tar.gz收录开发结果、新500例配对记录、审计、日志和执行源码快照，不含训练权重。
+前10轮与前15轮完整记录分别在相邻目录的evidence_through10.tar.gz、evidence_through15.tar.gz。
+4090工作目录：/root/continuous_repair_20260914/CrowdNav
+Python：/root/miniconda3/envs/mamba/bin/python（仅环境名称；本模型不使用Mamba网络或教师）。
+运行前：export PYTHONPATH=/root/bayes_continuous_deps:$PWD OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1
+复现扩展：python -m crowd_nav.bayes_continuous.train_smoke --dagger --stages repair_results/student_bc_history_continued_20260914 --params repair_results/params --rounds 16 --resume-dagger repair_results/student_dagger_fifteen_20260914 --out <新的输出目录>
+审计：python -m crowd_nav.bayes_continuous.audit_saved --params repair_results/params --results <输出目录>
+确认：python -m crowd_nav.bayes_continuous.audit_saved --params repair_results/params --results <输出目录> --dagger-confirm --original-collection repair_results/student_bc_history_continued_20260914/collection.pt
+现有确认文件禁止覆盖。以上复现依赖已保留的原BC checkpoint、数据池和父级结果目录。

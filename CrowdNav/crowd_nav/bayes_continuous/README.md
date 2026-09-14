@@ -97,6 +97,16 @@ The original BC checkpoint is also evaluated on those same 500 layouts, with
 paired outcome transitions retained. This comparison measures the combined
 training/data/state changes, not a single-variable causal ablation.
 
+The completed round-16 paired confirmation yielded 482/16/2 versus original BC
+274/222/4 on 500 fresh layouts (success/collision/timeout). Thus navigation
+improved substantially, but the 3.2% collision rate failed the unchanged 2%
+safety gate. `results.json:qualified` refers only to the repeatedly used
+100-case development set (99/1/0); `overall_verdict.json` explicitly reports
+the failed fresh-case gate and forbids treating this as TD3 readiness. All
+2500 new training layouts and 132586 retained transitions passed contract
+auditing. No TD3/Bayesian-value claim is made. The final Chinese report is
+`repair_results/student_dagger_coverage_20260915/REPORT_ZH.txt`.
+
 ```bash
 python -m crowd_nav.bayes_continuous.train_smoke --dagger \
   --stages repair_results/student_bc_history_continued_20260914 \
