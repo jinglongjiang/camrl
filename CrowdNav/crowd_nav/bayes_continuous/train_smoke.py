@@ -20,23 +20,30 @@ def stack_obs(observations):
 
 class ActionHistory(gym.Wrapper):
     """Executed action, not the teacher's hidden future plan."""
-    def __init__(self, env):
+    def __init__(self, env, route=False):
         super().__init__(env)
+        self.route_enabled = route
+        self.route = 0.
         self.observation_space = gym.spaces.Dict(dict(env.observation_space.spaces,
-            robot=gym.spaces.Box(-np.inf, np.inf, (9,), np.float32)))
+            robot=gym.spaces.Box(-np.inf, np.inf, (10 if route else 9,), np.float32)))
         self.previous = np.zeros(2, np.float32)
 
     def augment(self, obs):
-        return dict(obs, robot=np.concatenate([obs['robot'], self.previous/[1.,1.2]]).astype(np.float32))
+        parts = [obs['robot'], self.previous/[1.,1.2]]
+        if self.route_enabled:
+            parts.append([self.route])
+        return dict(obs, robot=np.concatenate(parts).astype(np.float32))
 
     def reset(self, **kwargs):
         self.previous[:] = 0
+        self.route = 0.
         obs, info = self.env.reset(**kwargs)
         return self.augment(obs), info
 
     def step(self, action):
         obs, reward, terminated, truncated, info = self.env.step(action)
         self.previous = np.asarray(info['action'], np.float32).copy()
+        self.route = .7*self.route + .3*float(self.previous[1])/1.2
         return self.augment(obs), reward, terminated, truncated, info
 
 
@@ -236,9 +243,12 @@ def online_main():
 
 
 def episodes(params, count, offset, actor=None, collect=False, case_offset=0, diagnostics=False,
-             arm='full', perturbation_seed=None):
+             arm='full', perturbation_seed=None, query_teacher=False):
     env = BeliefEnv(params, seed=2407, arm=arm)
-    policy_env = ActionHistory(env) if actor is not None and actor.observation_space['robot'].shape == (9,) else env
+    width = actor.observation_space['robot'].shape[0] if actor is not None else 7
+    policy_env = ActionHistory(env, route=width==10) if width in (9,10) else env
+    if query_teacher and (actor is None or not collect):
+        raise ValueError('DAgger requires student execution and label collection')
     records, trajectories, raw = [], [], []
     perturbations = np.random.default_rng(perturbation_seed)
     for episode in range(count):
@@ -250,6 +260,17 @@ def episodes(params, count, offset, actor=None, collect=False, case_offset=0, di
         for _ in range(140):
             states.append(np.array([[h.px, h.py, h.vx, h.vy, h.radius] for h in env.world.env.humans]))
             action = env.expert_action() if actor is None else actor.predict(obs, deterministic=True)[0]
+            label, teacher_info = None, None
+            if query_teacher:
+                physical = np.array([env.world.robot.px,env.world.robot.py,env.world.robot.theta,
+                                     env.world.robot.vx,env.world.robot.vy,env.world.env.global_time])
+                planner = getattr(env.world,'_cem_teacher',None)
+                label = env.expert_action().copy()
+                teacher_info = dict(env.world.teacher_diagnostics)
+                assert planner is None or planner is env.world._cem_teacher
+                np.testing.assert_array_equal(physical, [env.world.robot.px,env.world.robot.py,
+                    env.world.robot.theta,env.world.robot.vx,env.world.robot.vy,env.world.env.global_time])
+                np.testing.assert_array_equal(states[-1], [[h.px,h.py,h.vx,h.vy,h.radius] for h in env.world.env.humans])
             if perturbation_seed is not None:
                 # Safety data only: never use these actions as BC demonstrations.
                 action = np.clip(action + perturbations.normal(0., [.3, .8]),
@@ -264,6 +285,9 @@ def episodes(params, count, offset, actor=None, collect=False, case_offset=0, di
             if collect:
                 rows.append(dict(observation=obs, next_observation=nxt, action=action,
                                  reward=reward, done=done, collision_cost=info['collision_cost']))
+                if query_teacher:
+                    np.testing.assert_array_equal(action, info['action'])
+                    rows[-1].update(teacher_action=label, teacher_diagnostics=teacher_info)
             obs = nxt
             if done:
                 info['episode_result']['layout_sha256'] = layout_hash
@@ -312,6 +336,197 @@ def collect_safety_replay(params, out, arm, count_per_split=200):
 def receipt(records):
     return dict(episodes=len(records), success_rate=np.mean([r['outcome']=='success' for r in records]),
                 collision_rate=np.mean([r['outcome']=='collision' for r in records]))
+
+
+def add_route_history(trajectories):
+    for episode in trajectories:
+        route = 0.
+        for row in episode:
+            if row['observation']['robot'].shape != (9,):
+                raise ValueError('Expected previous-action demonstration contract')
+            row['observation'] = dict(row['observation'], robot=np.append(row['observation']['robot'],route).astype(np.float32))
+            route = .7*route + .3*float(row['action'][1])/1.2
+            row['next_observation'] = dict(row['next_observation'], robot=np.append(row['next_observation']['robot'],route).astype(np.float32))
+
+
+def migrate_actor(old, new):
+    state = old.actor.state_dict()
+    target = new.actor.state_dict()
+    for key, value in state.items():
+        if value.shape != target[key].shape:
+            if not key.endswith('robot.0.weight') or target[key].shape != (value.shape[0],value.shape[1]+1):
+                raise ValueError('Unexpected actor migration: '+key)
+            target[key].zero_()
+            target[key][:,:-1].copy_(value)
+        else:
+            target[key].copy_(value)
+    new.actor.load_state_dict(target)
+    new.actor_target.load_state_dict(target)
+
+
+def dagger_artifact(folder, name):
+    path = folder/name
+    if path.exists():
+        return path
+    result = json.loads((folder/'results.json').read_text())
+    parent = Path(result['extension_parent'])
+    if hashlib.sha256((parent/'results.json').read_bytes()).hexdigest() != result['extension_parent_sha256']:
+        raise ValueError('DAgger parent changed')
+    return dagger_artifact(parent,name)
+
+
+def dagger_main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--stages', type=Path, required=True)
+    parser.add_argument('--params', type=Path, required=True)
+    parser.add_argument('--out', type=Path, required=True)
+    parser.add_argument('--rounds', type=int, default=3, choices=[3,5,10])
+    parser.add_argument('--resume-dagger', type=Path)
+    parser.add_argument('--epochs', type=int, default=20)
+    args = parser.parse_args()
+    if (args.rounds > 3) != (args.resume_dagger is not None):
+        parser.error('Extensions require a completed previous DAgger queue')
+    if args.epochs != 20:
+        parser.error('Frozen first DAgger queue uses 20 epochs per round')
+    torch.set_num_threads(1)
+    torch.cuda.set_per_process_memory_fraction(.2)
+    args.out.mkdir(exist_ok=False)
+    baseline = json.loads((args.stages/'results.json').read_text())
+    if baseline['arm'] != 'no_belief' or not baseline['train_fit']['passed']:
+        raise ValueError('DAgger requires the qualified-fit No-Belief BC starting checkpoint')
+    for key,name in [('teacher_source_sha256','teacher.py'),('environment_source_sha256','environment.py')]:
+        if hashlib.sha256((Path(__file__).parent/name).read_bytes()).hexdigest() != baseline[key]:
+            raise ValueError('Frozen teacher/environment changed')
+    env = ActionHistory(BeliefEnv(args.params, arm='no_belief'), route=True)
+    old = BayesSetTD3.load(args.stages/'bc_only.zip', device='cuda')
+    model = BayesSetTD3('MultiInputPolicy',env,replay_buffer_class=CostReplay, buffer_size=50000,
+        learning_rate=3e-4,batch_size=128,seed=2407,device='cuda',learning_starts=0,
+        train_freq=(1,'step'),gradient_steps=1,policy_delay=2,tau=.005,gamma=.99,
+        action_noise=NormalActionNoise(np.zeros(2),.1*np.ones(2)),
+        policy_kwargs=dict(features_extractor_class=SetEncoder,features_extractor_kwargs=dict(features_dim=192),
+                           net_arch=dict(pi=[256,256],qf=[96,96]),share_features_extractor=False))
+    migrate_actor(old,model)
+    model.belief_arm = 'no_belief'
+    model.stage_metadata = dict(arm='no_belief',stage='dagger',robot_fields=10,route_decay=.7,train_humans=5)
+    collection = torch.load(args.stages/'collection.pt', weights_only=False)
+    add_route_history(collection['trajectories'])
+    permanent = [row for rec,ep in zip(collection['records'],collection['trajectories']) if rec['outcome']=='success' for row in ep]
+    migration_error = 0.
+    for start in range(0,len(permanent),256):
+        obs = stack_obs([r['observation'] for r in permanent[start:start+256]])
+        old_obs = dict(obs,robot=obs['robot'][:,:9])
+        migration_error = max(migration_error,float(np.max(np.abs(old.predict(old_obs,deterministic=True)[0]-model.predict(obs,deterministic=True)[0]))))
+    if migration_error > 1e-5:
+        raise AssertionError('Migration changed initial policy')
+    report = dict(arm='no_belief',stage='dagger',rounds=[],rl_started=False,teacher_frozen=True,
+        base_checkpoint_sha256=hashlib.sha256((args.stages/'bc_only.zip').read_bytes()).hexdigest(),
+        teacher_source_sha256=baseline['teacher_source_sha256'], environment_source_sha256=baseline['environment_source_sha256'],
+        protocol=dict(rounds=3,rollouts_per_round=100,epochs_per_round=20,seed=2407,
+            validation_cases=[30000,30099],student_execution_probability=1.,route_decay=.7,
+            optimizer='BC Adam reset once after input expansion; no critic updates',sampler='equal left/straight/right, omega threshold .2',
+            loss='normalized Lv+2*Lomega',scope='five-human nominal development, not independent confirmation'),
+        migration_max_action_difference=migration_error,original_demo_steps=len(permanent))
+    def save():
+        (args.out/'results.json').write_text(json.dumps(report,indent=2))
+    save()
+    del old
+    start_round = 1
+    if args.resume_dagger:
+        parent_path = args.resume_dagger/'results.json'
+        parent = json.loads(parent_path.read_text())
+        completed = len(parent['rounds'])
+        if (completed,args.rounds) not in ((3,5),(5,10)) or parent['base_checkpoint_sha256'] != report['base_checkpoint_sha256']:
+            raise ValueError('Unexpected DAgger parent')
+        for key in ('teacher_source_sha256','environment_source_sha256'):
+            if parent[key] != report[key]:
+                raise ValueError('DAgger parent uses different teacher/environment')
+        model = BayesSetTD3.load(dagger_artifact(args.resume_dagger,f'round{completed}.zip'),env=env,device='cuda')
+        model.check_arm('no_belief')
+        for i in range(1,completed+1):
+            prior = torch.load(dagger_artifact(args.resume_dagger,f'round{i}_collection.pt'),weights_only=False)
+            permanent.extend(r for ep in prior['trajectories'] for r in ep)
+        report = parent
+        report.setdefault('initial_protocol',dict(parent['protocol']))
+        report['protocol'] = dict(parent['protocol'],rounds=args.rounds,extension=f'{args.rounds-completed} additional rounds, same settings, no outcome filtering')
+        report['extension_parent'] = str(args.resume_dagger.resolve())
+        report['extension_parent_sha256'] = hashlib.sha256(parent_path.read_bytes()).hexdigest()
+        report['extension_checkpoint_sha256'] = hashlib.sha256(dagger_artifact(args.resume_dagger,f'round{completed}.zip').read_bytes()).hexdigest()
+        report['qualified'] = False
+        report['decision'] = 'DAgger extension in progress'
+        zero = report['round0']['records']
+        start_round = completed+1
+    else:
+        zero,_,_ = episodes(args.params,100,530000,model,case_offset=30000,arm='no_belief',diagnostics=True)
+        report['round0'] = dict(metrics=receipt(zero),records=zero)
+    save()
+    print('ROUND 0',receipt(zero),flush=True)
+    validation_hashes = {r['layout_sha256'] for r in zero}
+    seen = {r['layout_sha256'] for r in collection['records']} | validation_hashes
+    for prior in report['rounds']:
+        seen.update(r['layout_sha256'] for r in prior['rollout_records'])
+    rng = np.random.default_rng(2407)
+    if args.resume_dagger:
+        # The sampling stream is part of the supervised optimizer checkpoint.
+        if hasattr(model,'dagger_rng_state'):
+            rng.bit_generator.state = model.dagger_rng_state
+        else:
+            for prior in report['rounds']:
+                targets = np.stack([r.get('teacher_action',r['action']) for r in permanent[:prior['permanent_steps']]])
+                groups = [np.flatnonzero(targets[:,1]<-.2),np.flatnonzero(np.abs(targets[:,1])<=.2),np.flatnonzero(targets[:,1]>.2)]
+                for _ in range(prior['supervised_updates']):
+                    idx = np.concatenate([rng.choice(g,n,replace=True) for g,n in zip(groups,[43,42,43])])
+                    rng.shuffle(idx)
+            report['sampler_resume'] = 'Reconstructed exact original seed/strata/update sequence'
+    for round_id in range(start_round,args.rounds+1):
+        records,trajectories,_ = episodes(args.params,100,810000+round_id*1000,model,
+            collect=True,case_offset=810000+round_id*1000,arm='no_belief',query_teacher=True)
+        hashes = {r['layout_sha256'] for r in records}
+        if len(hashes)!=100 or hashes & seen:
+            raise AssertionError('DAgger layouts overlap existing training/development data')
+        seen |= hashes
+        added = [r for ep in trajectories for r in ep]
+        torch.save(dict(records=records,trajectories=trajectories,arm='no_belief',
+                        contract='action=student execution; teacher_action=supervision only'),args.out/f'round{round_id}_collection.pt')
+        permanent.extend(added)
+        obs = stack_obs([r['observation'] for r in permanent])
+        if np.any(obs['humans'][:,:,5:]):
+            raise AssertionError('Belief entered No-Belief input')
+        labels = np.stack([r.get('teacher_action',r['action']) for r in permanent])
+        actions = model.policy.scale_action(labels).astype(np.float32)
+        groups = [np.flatnonzero(labels[:,1]<-.2),np.flatnonzero(np.abs(labels[:,1])<=.2),np.flatnonzero(labels[:,1]>.2)]
+        updates = args.epochs*int(np.ceil(len(permanent)/128))
+        losses = []
+        model.actor.train()
+        for update in range(updates):
+            idx = np.concatenate([rng.choice(g,n,replace=True) for g,n in zip(groups,[43,42,43])])
+            rng.shuffle(idx)
+            batch = obs_as_tensor({k:v[idx] for k,v in obs.items()},model.device)
+            residual = (model.actor(batch)-torch.as_tensor(actions[idx],device=model.device)).square()
+            loss = residual[:,0].mean()+2*residual[:,1].mean()
+            model.actor.optimizer.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.actor.parameters(),10.)
+            model.actor.optimizer.step()
+            if (update+1)%500==0:
+                losses.append(dict(update=update+1,weighted_loss=float(loss.detach())))
+                print('DAGGER BC',round_id,losses[-1],flush=True)
+        model.actor_target.load_state_dict(model.actor.state_dict())
+        model.dagger_rng_state = rng.bit_generator.state
+        model.save(args.out/f'round{round_id}')
+        validation,_,_ = episodes(args.params,100,530000,model,case_offset=30000,arm='no_belief',diagnostics=True)
+        if {r['layout_sha256'] for r in validation} != validation_hashes:
+            raise AssertionError('Development layouts changed')
+        report['rounds'].append(dict(round=round_id,rollout=receipt(records),rollout_records=records,
+            added_steps=len(added),permanent_steps=len(permanent),original_steps_retained=report['original_demo_steps'],
+            supervised_updates=updates,losses=losses,metrics=receipt(validation),records=validation,
+            train_fit_diagnostic=fit_metrics(model,obs,labels),
+            label_execution_difference_fraction=float(np.mean([np.max(np.abs(r['action']-r['teacher_action']))>1e-5 for r in added]))))
+        save()
+        print('ROUND',round_id,receipt(validation),flush=True)
+    report['qualified'] = bool(report['rounds'][-1]['metrics']['success_rate']>=.9 and report['rounds'][-1]['metrics']['collision_rate']<=.02)
+    report['decision'] = 'Fixed DAgger queue complete; TD3 and Bayes unchanged'
+    save()
+    env.close()
 
 
 def fit_world_models(raw, out):
@@ -525,7 +740,10 @@ def main():
 
 if __name__ == '__main__':
     import sys
-    if '--online' in sys.argv:
+    if '--dagger' in sys.argv:
+        sys.argv.remove('--dagger')
+        dagger_main()
+    elif '--online' in sys.argv:
         sys.argv.remove('--online')
         online_main()
     else:

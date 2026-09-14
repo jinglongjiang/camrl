@@ -15,6 +15,42 @@ PARAMS = Path(__file__).resolve().parents[2] / 'repair_results/params'
 
 
 class Contracts(unittest.TestCase):
+    def test_route_uses_execution_not_expert_label(self):
+        from crowd_nav.bayes_continuous.train_smoke import ActionHistory, add_route_history
+        env = ActionHistory(BeliefEnv(PARAMS,arm='no_belief'),route=True)
+        obs,_ = env.reset(seed=42)
+        self.assertEqual(obs['robot'].shape,(10,))
+        self.assertEqual(obs['robot'][-1],0.)
+        nxt,*_ = env.step(np.array([.2,.6],np.float32))
+        self.assertAlmostEqual(float(nxt['robot'][-1]),.15)
+        rows = [[dict(observation=dict(obs,robot=obs['robot'][:9]),
+            next_observation=dict(nxt,robot=nxt['robot'][:9]),action=np.array([.2,.6],np.float32),
+            teacher_action=np.array([1.,-1.2],np.float32))]]
+        add_route_history(rows)
+        np.testing.assert_array_equal(rows[0][0]['next_observation']['robot'],nxt['robot'])
+        last,*_ = env.step(np.array([.2,-.6],np.float32))
+        self.assertAlmostEqual(float(last['robot'][-1]),-.045)
+        env.close()
+
+    def test_dagger_query_does_not_drive_robot(self):
+        from crowd_nav.bayes_continuous.train_smoke import ActionHistory, episodes
+        env = ActionHistory(BeliefEnv(PARAMS,arm='no_belief'),route=True)
+        class Student:
+            observation_space = env.observation_space
+            def predict(self, obs, deterministic=True):
+                return np.array([.3,.1],np.float32),None
+        ordinary,rows,_ = episodes(PARAMS,1,91234,Student(),collect=True,case_offset=91324,arm='no_belief',diagnostics=True)
+        labelled,annotated,_ = episodes(PARAMS,1,91234,Student(),collect=True,case_offset=91324,arm='no_belief',diagnostics=True,query_teacher=True)
+        self.assertEqual(ordinary[0]['outcome'],labelled[0]['outcome'])
+        self.assertEqual(len(rows[0]),len(annotated[0]))
+        for a,b in zip(rows[0],annotated[0]):
+            np.testing.assert_array_equal(a['action'],b['action'])
+            for key in a['next_observation']:
+                np.testing.assert_array_equal(a['next_observation'][key],b['next_observation'][key])
+            self.assertIn('teacher_action',b)
+        self.assertTrue(any(not np.array_equal(r['action'],r['teacher_action']) for r in annotated[0]))
+        env.close()
+
     def test_executed_action_history_and_collection_alignment(self):
         from crowd_nav.bayes_continuous.train_smoke import ActionHistory, augment_collection
         env = ActionHistory(BeliefEnv(PARAMS, arm='no_belief'))

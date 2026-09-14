@@ -31,6 +31,55 @@ not reset training or select a checkpoint using navigation results. The second
 development run uses a cumulative 60000-update limit without changing capacity.
 The old 30000..30099 cases remain development validation, not fresh confirmation.
 
+## Student-Executed DAgger
+
+`train_smoke.py --dagger` starts from the saved 39000-update No-Belief actor.
+One route scalar is appended: `r_next = 0.7*r + 0.3*executed_omega/1.2`.
+Its initial input weights are zero. The old actor is migrated without widening
+the encoder or hidden layers; initial action differences must be <=1e-5.
+Round 0 is re-evaluated before training. The actor optimizer is reset once for
+the expanded input; all subsequent DAgger rounds share that optimizer.
+
+Three fixed rounds each collect 100 new five-human nominal student rollouts
+(cases 811000..811099, 812000..812099, 813000..813099). At every visited state,
+the unchanged teacher is queried with its plan memory retained across steps.
+Only the student action executes. Dataset `action` is that executed action;
+`teacher_action` is the separate supervision target. Route state uses execution,
+never the teacher label. Failed student trajectories are retained and labelled.
+The original 9037 expert transitions remain in the permanent dataset.
+
+Each round trains 20 epoch-equivalents on the cumulative dataset, retaining
+the existing turn-balanced sampler and weighted action loss. It then evaluates
+the same 100 development cases. Training RMSE is diagnostic, not a gate.
+All three rounds run regardless of intermediate scores. No TD3, cost-critic
+training, Bayes refit or high-density testing is performed.
+The declared two-round continuation uses `--rounds 5 --resume-dagger <first-run>`
+with a fresh output directory. It restores round 3's actor and optimizer,
+retains the entire accumulated pool and continues the sampler stream. Cases
+814000..814099 and 815000..815099 remain distinct from previous rounds. The
+original three-round report is immutable; continuation is recorded separately.
+After round 5 reached 90 successes but still 10 collisions, a further unchanged
+block through round 10 was declared. Use `--rounds 10 --resume-dagger <five-run>`.
+Artifacts resolve through hash-checked parent manifests, with no discarded rounds
+or replaced demonstrations. Cases continue at 816000..820099 in 100-case blocks.
+These adaptive development continuations must not be presented as a pre-registered
+ten-round scientific confirmation experiment.
+
+```bash
+python -m crowd_nav.bayes_continuous.train_smoke --dagger \
+  --stages repair_results/student_bc_history_continued_20260914 \
+  --params repair_results/params --out repair_results/student_dagger_20260914
+python -m crowd_nav.bayes_continuous.audit_saved \
+  --params repair_results/params --results repair_results/student_dagger_20260914
+```
+
+The query contract is checked by rolling out the same student with and without
+teacher queries and comparing executed actions and subsequent observations.
+Saved audits check route alignment, label/execution separation, layout splits,
+retained demonstration counts and unchanged reward/cost critic weights.
+Improvement is a development result, not proof that distribution shift was the
+sole failure cause or that a Bayesian mechanism has been demonstrated.
+
 Current changes relative to dcc4fe5:
 
 - Existing unicycle CEM controller reused in teacher.py; projected ORCA and the

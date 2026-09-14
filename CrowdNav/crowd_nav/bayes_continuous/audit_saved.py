@@ -14,6 +14,68 @@ from crowd_nav.bayes_continuous.environment import BeliefEnv, ARMS
 from crowd_nav.bayes_continuous.algorithm import BayesSetTD3
 
 
+def audit_dagger(folder, params):
+    from crowd_nav.bayes_continuous.train_smoke import ActionHistory, dagger_artifact
+    result = json.loads((folder/'results.json').read_text())
+    if len(result['rounds']) != result['protocol']['rounds']:
+        raise ValueError('Incomplete fixed DAgger queue')
+    env = ActionHistory(BeliefEnv(params,arm='no_belief'),route=True)
+    validation_hashes = {r['layout_sha256'] for r in result['round0']['records']}
+    seen = set(validation_hashes)
+    summaries, critic_hashes = [], []
+    cumulative = 9037
+    def source_path(name):
+        return dagger_artifact(folder,name)
+    for item in result['rounds']:
+        i = item['round']
+        data = torch.load(source_path(f'round{i}_collection.pt'),weights_only=False)
+        layouts = {r['layout_sha256'] for r in data['records']}
+        assert len(layouts)==100 and not layouts & seen
+        seen |= layouts
+        steps, disagreements = 0,0
+        feasibility = {0:0,1:0,2:0}
+        for ep in data['trajectories']:
+            prev,route = np.zeros(2),0.
+            for row in ep:
+                obs,nxt = row['observation'],row['next_observation']
+                np.testing.assert_allclose(obs['robot'][-3:-1],prev/[1.,1.2],atol=1e-6)
+                np.testing.assert_allclose(obs['robot'][-1],route,atol=1e-6)
+                assert not np.any(obs['humans'][:,5:])
+                assert env.action_space.contains(row['action']) and env.action_space.contains(row['teacher_action'])
+                route = .7*route+.3*float(row['action'][1])/1.2
+                np.testing.assert_allclose(nxt['robot'][-1],route,atol=1e-6)
+                np.testing.assert_allclose(nxt['robot'][-3:-1],row['action']/[1.,1.2],atol=1e-6)
+                prev = row['action']
+                steps += 1
+                disagreements += int(np.max(np.abs(row['action']-row['teacher_action']))>1e-5)
+                feasibility[int(row['teacher_diagnostics']['feasibility_class'])] += 1
+        assert steps == item['added_steps'] and item['original_steps_retained']==9037
+        cumulative += steps
+        assert cumulative == item['permanent_steps']
+        assert {r['layout_sha256'] for r in item['records']} == validation_hashes
+        model = BayesSetTD3.load(source_path(f'round{i}.zip'),env=env,device='cpu')
+        model.check_arm('no_belief')
+        assert model.num_timesteps==0 and model._n_updates==0 and model.warmup_updates==0
+        def digest(module):
+            return hashlib.sha256(b''.join(v.detach().cpu().numpy().tobytes() for v in module.state_dict().values())).hexdigest()
+        critic_hashes.append((digest(model.critic),digest(model.cost_critic)))
+        counts = {k:sum(r['outcome']==k for r in item['records']) for k in ('success','collision','timeout')}
+        summaries.append(dict(round=i,**counts,student_steps=steps,label_action_disagreements=disagreements,
+            teacher_feasibility_class_counts=feasibility,
+            actual_overlap_episodes=sum(any(s['actual_clearance']<0 for s in r['trace']) for r in item['records']),
+            checkpoint_sha256=hashlib.sha256(source_path(f'round{i}.zip').read_bytes()).hexdigest()))
+    assert len(set(critic_hashes))==1
+    for key,name in [('teacher_source_sha256','teacher.py'),('environment_source_sha256','environment.py')]:
+        assert hashlib.sha256((Path(__file__).parent/name).read_bytes()).hexdigest()==result[key]
+    report = dict(rounds=summaries,route_tracks_student_not_teacher=True,original_9037_steps_retained=True,
+        unique_new_layouts=len(seen)-len(validation_hashes),development_overlap=0,
+        reward_and_cost_critics_unchanged_between_rounds=True,rl_steps=0,
+        scope='five-human nominal development; not evidence of Bayesian value or independent generalization')
+    (folder/'saved_audit.json').write_text(json.dumps(report,indent=2))
+    print(json.dumps(report,indent=2))
+    env.close()
+
+
 def audit_bc(folder, params):
     from unittest.mock import patch
     result = json.loads((folder/'results.json').read_text())
@@ -137,6 +199,9 @@ def main():
     if args.params is None:
         parser.error('--params is required for checkpoint auditing')
     torch.set_num_threads(1)
+    if (args.results/'results.json').exists() and json.loads((args.results/'results.json').read_text()).get('stage')=='dagger':
+        audit_dagger(args.results,args.params)
+        return
     if (args.results/'bc_only.zip').exists():
         audit_bc(args.results, args.params)
         return
