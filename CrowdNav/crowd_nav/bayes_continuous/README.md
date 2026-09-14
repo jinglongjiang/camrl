@@ -4,6 +4,8 @@ Current entry is `train_smoke.py`. It owns teacher qualification, collection,
 five-human model refitting, BC-only evaluation, supervised critic warm-up and
 the gated online entry (`--online`). Do not create separate entry scripts for
 each stage. Only `teacher.py` and `algorithm.py` are added functional modules.
+The default stage now stops after BC evaluation, even on success. The frozen
+teacher qualification receipt is mandatory; the teacher is not re-tuned.
 
 Current changes relative to dcc4fe5:
 
@@ -28,21 +30,30 @@ Current changes relative to dcc4fe5:
   active entry. Cost critic is a soft penalty, not certified safe control.
 - BC only uses successful teacher episodes; all failures remain in raw data
   and critic data. BC-only runs 100 distinct five-human development episodes.
-- Critics warm up on Monte Carlo labels from complete episodes, with a held-out
-  20-episode check. Actor must remain bitwise unchanged during warm-up.
+- Reward critic warm-up uses complete teacher episodes and a 20-episode holdout.
+  Cost warm-up requires separate safety trajectories, with at least 20 collision
+  and 20 non-collision episodes in each split. Missing positives fail closed.
+  Sigmoid cost heads represent undiscounted collision reachability, using the
+  maximum of both heads for bootstrapping and actor penalties. Actor parameters
+  must remain bitwise unchanged during warm-up. Class-enriched validation is
+  not evidence of calibration under the deployment state distribution.
+- TD3 explicitly uses learning_starts=0, normalized Gaussian action noise 0.1,
+  one step per update, policy_delay=2, tau=0.005, gamma=0.99. It is NOT started
+  by the BC-only experiment. All checkpoints and receipts record the arm;
+  mismatched online arms are rejected.
 - Actor RL requires teacher and BC success >=90%, collision <=2%, 100 episodes,
   1000 warm-up updates and a passed held-out critic check. These are development
   thresholds, not statistical safety certificates. Long RL is not auto-started.
 
 ```bash
 python -m crowd_nav.bayes_continuous.tests
-python -m crowd_nav.bayes_continuous.train_smoke --params repair_results/params --out repair_results/new_development
+python -m crowd_nav.bayes_continuous.train_smoke --params repair_results/params --arm no_belief --teacher-receipt repair_results/teacher_qualification/teacher_summary.json --out repair_results/new_development
 # Qualification-only audit, same fixed 100 development layouts:
 python -m crowd_nav.bayes_continuous.train_smoke --params repair_results/params --out repair_results/new_teacher_audit --teacher-only
 # Fixed qualification reproduction, not new independent data:
 python -m crowd_nav.bayes_continuous.train_smoke --params repair_results/params --out repair_results/reproduce_teacher_confirmation --teacher-only --evaluation-episodes 200 --case-offset 700001
 # Refuses failed stage receipts:
-python -m crowd_nav.bayes_continuous.train_smoke --online --stages repair_results/new_development --out repair_results/new_online --steps 10000
+python -m crowd_nav.bayes_continuous.train_smoke --online --arm no_belief --stages repair_results/new_development --out repair_results/new_online --steps 10000
 ```
 
 Layout generation uses test_case, not the filter/layout_seed. Current collection
@@ -56,6 +67,9 @@ Nonstationary training probability defaults to zero (nominal acquisition).
 The online CLI can explicitly schedule a fixed nonstationary mixture while
 keeping five humans. No 10/20-human layout is used for current model selection.
 Full observations remain an explicit scope limitation, not occlusion sensing.
+No-Belief masks every belief input before BC and evaluation, and does not refit
+GDBN. The old filter fixture runs only behind that masked interface, not as an
+input to the student. MAP/FULL refit on the same five-human training cases.
 Old checkpoints with nine ego inputs are incompatible; they are not hot-loaded.
 
 ## Historical dcc4fe5 Smoke (Not the Current Training Protocol)

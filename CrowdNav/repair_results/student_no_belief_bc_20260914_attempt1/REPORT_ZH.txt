@@ -1,0 +1,55 @@
+4090学生BC验收报告（2026-09-14）
+
+结论：教师保持合格并冻结；这次No-Belief学生未通过BC导航验收。
+没有启动Critic warm-up、TD3、MAP/FULL训练或高密度测试。
+
+一、固定协议与实际结果
+环境：5人、baseline_circle、nominal、全观测、非响应行人。
+网络：原Set Encoder + 连续Actor；没有Mamba、时序网络或80动作网格。
+训练种子2407；采集case 20000--20199；验证case 30000--30099。
+教师采集200回合：199成功、0碰撞、1超时。
+BC仅使用199个成功回合的9037步；超时回合保留在collection.pt但不用于模仿。
+BC按原定3000次更新完成，没有中途选最优checkpoint。
+独立BC验证100回合：24成功、76碰撞、0超时。
+门槛：成功率至少90%，碰撞率至多2%。实际24%/76%，FAIL。
+200个训练布局与100个验证布局各自互异，两组物理布局哈希交集为0。
+这100个布局是开发验证，不再当作未来未经查看的确认集。
+
+二、已经确认的断点
+保存后重载动作逐位一致，checkpoint的arm确认为no_belief。
+训练输入的模式概率与熵全部为0，没有把FULL误当No-Belief。
+9037个训练示范上的物理动作MSE：速度0.01650、角速度0.25826。
+对应RMSE约0.128 m/s、0.508 rad/s。
+教师角速度标准差0.605；学生在同一训练输入上仅0.323 rad/s。
+验证时低速（v<0.1）步比例为0，76个碰撞回合均存在实际扫掠重叠。
+因此不是“主要冻结不走”，也不是单纯的碰撞标记错误。
+训练样本上的转向拟合已经不足，问题不只出现在验证场景。
+转向变化缩小与MSE回归平均化相容，但本次未证明其为唯一原因；
+示范覆盖、教师规划记忆、表示与优化仍需在学生侧区分，不能直接宣布架构无效。
+没有运行RL，所以这次失败不能归因于随机Critic带坏Actor。
+这是No-Belief测试，也不能用它否定Bayesian posterior的价值。
+
+三、学生代码修复
+在原algorithm.py、train_smoke.py、tests.py、audit_saved.py中修改，未新建算法模块。
+TD3显式配置：learning_starts=0，归一化高斯动作噪声标准差0.1，
+train_freq=(1,step)，gradient_steps=1，policy_delay=2，tau=0.005，gamma=0.99。
+保存后检查确认第0步采样走Actor，不调用随机action_space.sample。
+碰撞critic两头用sigmoid，target与Actor都取两头概率的最大值。
+碰撞到达target为c+(1-c)*(1-done)*p_next，不乘gamma，不存在负风险奖励。
+安全warm-up独立接收risk train/validation；每组至少20碰撞与20非碰撞轨迹，
+重复布局与跨组重叠拒绝；没有正样本就失败，不能用全零MSE验收。
+已提供单独安全/扰动教师轨迹采集函数，仅用于cost，禁止用于BC。
+安全真实采集、AUROC/Brier验收本轮未执行，不能声称安全critic已经合格。
+--arm进入环境、结果、checkpoint与stage metadata；online不匹配直接报错。
+默认入口现在完成BC即结束，不会自动进入Critic训练或TD3。
+
+四、边界与交付
+教师和环境源码哈希与原合格200回合一致；没有改教师、reward、Set Encoder或GDBN。
+碰撞审计是原生报告与实际扫掠重叠的并集。
+动作范围检查不等于工作区边界、加速度或真实硬件安全认证。
+仅一个训练种子、5人全观测开发测试；没有泛化、遮挡或贝叶斯贡献结论。
+results.json保存完整逐回合记录及轨迹；saved_audit.json保存输入/重载/误差审计。
+collection.pt与bc_only.zip已保留在本机和4090，权重不提交Git。
+executed_source.tar.gz是本次实际运行源码；随后补充的独立安全采集辅助函数
+未参与本次BC，最终代码与实际运行归档分别保留，不混淆哈希。
+本阶段按批准的“BC-only，到这里停止”结束；TD3仍禁止启动。

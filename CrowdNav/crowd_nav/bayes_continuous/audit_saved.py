@@ -11,6 +11,67 @@ import numpy as np
 import torch
 from stable_baselines3 import TD3
 from crowd_nav.bayes_continuous.environment import BeliefEnv, ARMS
+from crowd_nav.bayes_continuous.algorithm import BayesSetTD3
+
+
+def audit_bc(folder, params):
+    from unittest.mock import patch
+    result = json.loads((folder/'results.json').read_text())
+    arm = result['arm']
+    env = BeliefEnv(params, arm)
+    model = BayesSetTD3.load(folder/'bc_only.zip', env=env, device='cpu')
+    model.check_arm(arm)
+    assert model.learning_starts == 0 and model.gradient_steps == 1
+    assert model.policy_delay == 2 and model.tau == .005 and model.gamma == .99
+    assert model.train_freq.frequency == 1 and model.train_freq.unit.value == 'step'
+    np.testing.assert_allclose(model.action_noise._sigma, [.1, .1])
+    assert model.stage_metadata['arm'] == arm and not model.actor_enabled
+    obs, _ = env.reset(seed=2407)
+    model._last_obs = {k:v[None] for k,v in obs.items()}
+    with patch.object(model.action_space, 'sample', side_effect=AssertionError('Random warmup used')):
+        action, _ = model._sample_action(model.learning_starts, action_noise=None)
+    np.testing.assert_array_equal(action[0], model.predict(obs, deterministic=True)[0])
+    collection = torch.load(folder/'collection.pt', weights_only=False)
+    train_hashes = {r['layout_sha256'] for r in collection['records']}
+    val_hashes = {r['layout_sha256'] for r in result['bc_records']}
+    assert len(train_hashes)==200 and len(val_hashes)==100 and not train_hashes & val_hashes
+    rows = [x for rec, ep in zip(collection['records'], collection['trajectories'])
+            if rec['outcome']=='success' for x in ep]
+    squared, predictions = [], []
+    for start in range(0, len(rows), 256):
+        batch = rows[start:start+256]
+        inputs = {k:np.stack([r['observation'][k] for r in batch]) for k in batch[0]['observation']}
+        if arm == 'no_belief':
+            assert not np.any(inputs['humans'][:,:,5:])
+        pred, _ = model.predict(inputs, deterministic=True)
+        target = np.stack([r['action'] for r in batch])
+        squared.extend((pred-target)**2)
+        predictions.extend(pred)
+    records = result['bc_records']
+    outcomes = {key:sum(r['outcome']==key for r in records) for key in ('success','collision','timeout')}
+    actions = np.array([step['action'] for r in records for step in r['trace']])
+    audit = dict(arm=arm, outcomes=outcomes, training_outcomes={key:sum(r['outcome']==key
+        for r in collection['records']) for key in outcomes}, training_steps=len(rows),
+        training_action_mse_physical=np.mean(squared, axis=0).tolist(),
+        training_teacher_action_std=np.std([r['action'] for r in rows], axis=0).tolist(),
+        training_prediction_std=np.std(predictions, axis=0).tolist(),
+        validation_action_std=actions.std(0).tolist(),
+        validation_slow_step_fraction=float(np.mean(actions[:,0]<.1)),
+        validation_actual_overlap_episodes=sum(any(s['actual_clearance']<0 for s in r['trace']) for r in records),
+        zero_random_warmup_verified=True, checkpoint_arm_verified=True,
+        checkpoint_sha256=hashlib.sha256((folder/'bc_only.zip').read_bytes()).hexdigest(),
+        train_unique=200, validation_unique=100, layout_overlap=0,
+        actor_enabled=model.actor_enabled, warmup_updates=model.warmup_updates,
+        rl_started=result['rl_started'], gpu=torch.cuda.get_device_name(0),
+        module_paths={name:getattr(sys.modules[name], '__file__', None) for name in
+            ('stable_baselines3', 'crowd_nav.gdbn', 'crowd_sim.envs.crowd_sim')},
+        versions={p:importlib.metadata.version(p) for p in ('torch','numpy','scipy','stable-baselines3','gymnasium')})
+    assert actions[:,0].min()>=0 and actions[:,0].max()<=1+1e-6 and np.abs(actions[:,1]).max()<=1.2+1e-6
+    assert not any(name.startswith('crowd_nav.policy.mamba') for name in sys.modules)
+    assert not any(name == 'mamba_ssm' or name.startswith('mamba_ssm.') for name in sys.modules)
+    (folder/'saved_audit.json').write_text(json.dumps(audit, indent=2))
+    print(json.dumps(audit, indent=2))
+    env.close()
 
 
 def audit_teachers(paths, destination):
@@ -73,6 +134,9 @@ def main():
     if args.params is None:
         parser.error('--params is required for checkpoint auditing')
     torch.set_num_threads(1)
+    if (args.results/'bc_only.zip').exists():
+        audit_bc(args.results, args.params)
+        return
     report = {'python': platform.python_version(), 'versions': {}, 'models': {}}
     for package in ('torch', 'numpy', 'scipy', 'stable-baselines3', 'gymnasium'):
         report['versions'][package] = importlib.metadata.version(package)

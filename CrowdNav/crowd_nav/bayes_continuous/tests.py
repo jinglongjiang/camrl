@@ -15,6 +15,18 @@ PARAMS = Path(__file__).resolve().parents[2] / 'repair_results/params'
 
 
 class Contracts(unittest.TestCase):
+    def test_cost_probability_and_empty_safety_gate(self):
+        from crowd_nav.bayes_continuous.train_smoke import supervised_warmup
+        from types import SimpleNamespace
+        values = BayesSetTD3.collision_probability((torch.tensor([[-100.], [0.]]),
+                                                    torch.tensor([[100.], [-100.]])))
+        torch.testing.assert_close(values, torch.tensor([[1.], [.5]]))
+        with self.assertRaises(ValueError):
+            supervised_warmup(SimpleNamespace(), [])
+        negatives = [[{'collision_cost':0.}] for _ in range(100)]
+        with self.assertRaises(ValueError):
+            supervised_warmup(SimpleNamespace(), [], risk_train=negatives, risk_valid=negatives)
+
     def test_actual_motion_collision_cannot_be_hidden_by_native_check(self):
         env = BeliefEnv(PARAMS)
         env.reset(seed=91)
@@ -55,6 +67,10 @@ class Contracts(unittest.TestCase):
         model = BayesSetTD3('MultiInputPolicy', env, replay_buffer_class=CostReplay,
             buffer_size=100, device='cpu', policy_kwargs=dict(features_extractor_class=SetEncoder,
             net_arch=[32], share_features_extractor=False), seed=2)
+        model.belief_arm = 'full'
+        model.check_arm('full')
+        with self.assertRaises(ValueError):
+            model.check_arm('no_belief')
         obs, _ = env.reset(seed=9)
         for i in range(8):
             model.replay_buffer.add({k:v[None] for k,v in obs.items()},
@@ -77,6 +93,7 @@ class Contracts(unittest.TestCase):
             model.save(Path(folder)/'checkpoint')
             restored = BayesSetTD3.load(Path(folder)/'checkpoint', device='cpu')
             self.assertEqual(restored.warmup_updates, 1000)
+            restored.check_arm('full')
             self.assertFalse(restored.actor_enabled)
             self.assertTrue(restored.critic_validation['passed'])
             np.testing.assert_array_equal(model.predict(obs)[0], restored.predict(obs)[0])

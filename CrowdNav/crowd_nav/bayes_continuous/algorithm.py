@@ -29,6 +29,14 @@ class CostReplay(DictReplayBuffer):
 
 
 class BayesSetTD3(TD3):
+    def check_arm(self, arm):
+        if getattr(self, 'belief_arm', None) != arm:
+            raise ValueError('Checkpoint and requested belief arm differ')
+
+    @staticmethod
+    def collision_probability(heads):
+        return torch.cat([torch.sigmoid(q) for q in heads], 1).max(1, keepdim=True).values
+
     def _setup_model(self):
         super()._setup_model()
         self.cost_critic = copy.deepcopy(self.critic)
@@ -70,10 +78,10 @@ class BayesSetTD3(TD3):
                                noise.clamp(-self.target_noise_clip, self.target_noise_clip)).clamp(-1, 1)
                 next_q = torch.cat(self.critic_target(data.next_observations, next_action), 1).min(1, keepdim=True).values
                 target = data.rewards + (1-data.dones)*self.gamma*next_q
-                next_cost = torch.cat(self.cost_target(data.next_observations, next_action), 1).max(1, keepdim=True).values
-                cost_target = data.costs + (1-data.dones)*next_cost.clamp(0, 1)
+                next_cost = self.collision_probability(self.cost_target(data.next_observations, next_action))
+                cost_target = data.costs + (1-data.costs)*(1-data.dones)*next_cost
             reward_loss = sum(F.smooth_l1_loss(q, target) for q in self.critic(data.observations, data.actions))
-            cost_loss = sum(F.smooth_l1_loss(q, cost_target) for q in self.cost_critic(data.observations, data.actions))
+            cost_loss = sum(F.binary_cross_entropy_with_logits(q, cost_target) for q in self.cost_critic(data.observations, data.actions))
             for optimizer, loss in [(self.critic.optimizer, reward_loss), (self.cost_optimizer, cost_loss)]:
                 optimizer.zero_grad()
                 loss.backward()
@@ -86,7 +94,7 @@ class BayesSetTD3(TD3):
                     raise RuntimeError('Permanent BC data required')
                 actions = self.actor(data.observations)
                 qr = -self.critic.q1_forward(data.observations, actions).mean()
-                qc = self.cost_critic.q1_forward(data.observations, actions).mean()*self.cost_weight
+                qc = self.collision_probability(self.cost_critic(data.observations, actions)).mean()*self.cost_weight
                 indices = np.random.randint(len(self.demo_actions), size=batch_size)
                 obs = obs_as_tensor({k:v[indices] for k,v in self.demo_observations.items()}, self.device)
                 bc = self.bc_weight*F.mse_loss(self.actor(obs),
