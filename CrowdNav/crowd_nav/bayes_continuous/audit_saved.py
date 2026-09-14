@@ -13,11 +13,65 @@ from stable_baselines3 import TD3
 from crowd_nav.bayes_continuous.environment import BeliefEnv, ARMS
 
 
+def audit_teachers(paths, destination):
+    report = {'scope':'five-human nominal full observation; empirical qualification, not a safety guarantee',
+              'runs':{}, 'final_layout_overlap_with_previous':0}
+    previous = set()
+    for path in paths:
+        data = json.loads(path.read_text())
+        records = data['teacher_records']
+        layouts = {r['layout_sha256'] for r in records}
+        if len(layouts) != len(records):
+            raise AssertionError('Duplicate physical layouts within an evaluation')
+        actions = np.asarray([s['action'] for r in records for s in r['trace']])
+        timings = [s['planner']['elapsed_ms'] for r in records for s in r['trace']]
+        if actions[:,0].min() < -1e-6 or actions[:,0].max() > 1.+1e-6 or np.abs(actions[:,1]).max() > 1.2+1e-6:
+            raise AssertionError('Teacher exceeded actuator limits')
+        max_accel = max(float(np.abs(np.diff([0.]+[s['action'][0] for s in r['trace']])).max()/.25) for r in records)
+        if max_accel > 2.+1e-5:
+            raise AssertionError('Teacher exceeded its acceleration limit')
+        summary = {event:sum(r['outcome']==event for r in records) for event in ('success','collision','timeout')}
+        summary.update(episodes=len(records), case_min=min(r['test_case'] for r in records),
+            case_max=max(r['test_case'] for r in records), unique_layouts=len(layouts),
+            max_speed=float(actions[:,0].max()), max_abs_omega=float(np.abs(actions[:,1]).max()),
+            max_acceleration=max_accel, planner_p50_ms=float(np.median(timings)),
+            planner_p95_ms=float(np.percentile(timings,95)),
+            teacher_source_sha256=data['teacher_source_sha256'],
+            environment_source_sha256=data.get('environment_source_sha256'),
+            collision_rule=data.get('collision_rule','native only'),
+            results_sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+        summary['point_gate_passed'] = (len(records)>=100 and summary['success']/len(records)>=.9
+                                        and summary['collision']/len(records)<=.02)
+        if 'actual_clearance' in records[0]['trace'][0]:
+            summary['actual_overlap_episodes'] = sum(any(s['actual_clearance'] < 0 for s in r['trace']) for r in records)
+            summary['native_collision_episodes'] = sum(r['trace'][-1]['native_outcome']=='collision' for r in records)
+        report['runs'][path.parent.name] = summary
+        overlap = len(previous & layouts)
+        previous.update(layouts)
+    report['final_layout_overlap_with_previous'] = overlap
+    report['final_code_matches_current'] = all(hashlib.sha256((Path(__file__).parent/name).read_bytes()).hexdigest()==summary[key]
+        for name,key in [('teacher.py','teacher_source_sha256'), ('environment.py','environment_source_sha256')])
+    report['final_qualified'] = (summary['point_gate_passed'] and overlap == 0 and
+                                 'actual' in summary['collision_rule'] and report['final_code_matches_current'])
+    destination.mkdir(exist_ok=True)
+    output = destination/'teacher_summary.json'
+    if output.exists():
+        raise ValueError('Never overwrite a qualification report')
+    output.write_text(json.dumps(report, indent=2))
+    print(json.dumps(report, indent=2))
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--results', type=Path, required=True)
-    parser.add_argument('--params', type=Path, required=True)
+    parser.add_argument('--params', type=Path)
+    parser.add_argument('--teacher-runs', type=Path, nargs='+')
     args = parser.parse_args()
+    if args.teacher_runs:
+        audit_teachers(args.teacher_runs, args.results)
+        return
+    if args.params is None:
+        parser.error('--params is required for checkpoint auditing')
     torch.set_num_threads(1)
     report = {'python': platform.python_version(), 'versions': {}, 'models': {}}
     for package in ('torch', 'numpy', 'scipy', 'stable-baselines3', 'gymnasium'):

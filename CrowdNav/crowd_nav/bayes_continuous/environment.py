@@ -1,5 +1,6 @@
 """Current observations -> recursive belief -> continuous unicycle actions."""
 from pathlib import Path
+from dataclasses import replace
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
@@ -84,6 +85,7 @@ class BeliefEnv(gym.Env):
             raise ValueError('Held-out profile cannot enter training')
         case = int(options.get('test_case', self.rng.integers(9000)))
         self.world.reset(layout_seed, profile, case)
+        self.world._cem_teacher = None
         # Human agents remain holonomic; only the robot changes executor.
         self.world.robot.kinematics = 'unicycle'
         self.filter.reset(seed=layout_seed)
@@ -134,8 +136,22 @@ class BeliefEnv(gym.Env):
             raise ValueError('Out-of-bounds continuous action')
         before_heading = float(self.world.robot.theta)
         before_position = np.array([self.world.robot.px, self.world.robot.py])
+        human_before = np.asarray([[h.px, h.py] for h in self.world.env.humans]).reshape(-1, 2)
         dt = self.world.env.time_step
         result = self.world.step(ActionRot(float(action[0]), float(action[1]*dt)))
+        native_outcome = result.outcome
+        actual_clearance = float('inf')
+        if len(human_before):
+            human_after = np.asarray([[h.px,h.py] for h in self.world.env.humans])
+            relative_start = human_before-before_position
+            relative_end = human_after-np.array([self.world.robot.px,self.world.robot.py])
+            delta = relative_end-relative_start
+            fraction = np.clip(-(relative_start*delta).sum(1)/np.maximum((delta*delta).sum(1), 1e-12), 0., 1.)
+            actual_clearance = float(np.min(np.linalg.norm(relative_start+fraction[:,None]*delta,axis=1)
+                -np.array([h.radius for h in self.world.env.humans])-self.world.robot.radius))
+            if actual_clearance < 0 and result.outcome != 'collision':
+                result = replace(result, outcome='collision', done=True,
+                                 reward=float(self.world.env.collision_penalty))
         expected_heading = (before_heading + action[1]*dt) % (2*np.pi)
         expected_position = before_position + action[0]*dt*np.array([np.cos(expected_heading), np.sin(expected_heading)])
         if not np.allclose([self.world.robot.px, self.world.robot.py], expected_position, atol=1e-6):
@@ -145,7 +161,8 @@ class BeliefEnv(gym.Env):
         self._teacher_cache = None
         obs = self._observation()
         info = {'outcome': result.outcome, 'dmin': result.dmin, 'action': action.copy(),
-                'collision_cost': float(result.outcome == 'collision')}
+                'collision_cost': float(result.outcome == 'collision'),
+                'actual_clearance': actual_clearance, 'native_outcome': native_outcome}
         if result.done:
             self._done = True
             record = dict(layout_seed=self.layout_seed, test_case=self.case, outcome=result.outcome,

@@ -7,7 +7,11 @@ each stage. Only `teacher.py` and `algorithm.py` are added functional modules.
 
 Current changes relative to dcc4fe5:
 
-- Direct bounded unicycle rollout teacher; projected ORCA is no longer used.
+- Existing unicycle CEM controller reused in teacher.py; projected ORCA and the
+  simplified constant-turn teacher are no longer used. Seven core classes are
+  copied unchanged from bayes_occ_mpc (source hashes in teacher.py).
+  Adapter configuration: 512 candidates, four iterations, 16 steps, v<=1 m/s,
+  omega<=1.2 rad/s, a<=2 m/s^2, 0.50 m development-calibrated human buffer.
 - Fixed scaling (position 10 m, velocity 2 m/s, radius 0.3 m), seven ego inputs,
   robot-conditioned attention plus max pooling, no heading or explicit count.
 - Balanced uniform mode prior and deterministic per-episode filter RNG.
@@ -15,6 +19,11 @@ Current changes relative to dcc4fe5:
   no robot-action coupling. This fixes a coordinate contract, not calibration.
 - Corrected terminal order is opt-in for this environment, preserving legacy
   experiment semantics. Timeout is now at step 140; post-terminal step rejects.
+- Collision qualification uses the union of native collision reports and swept
+  overlap of actually executed robot/human segments. Native checks use previous
+  human velocity, so an additional check is necessary; no native collision is
+  forgiven. The copied planner's `first_physical_clearance` diagnostic includes
+  its configured margin and must not be mistaken for measured body clearance.
 - Explicit TD3 reward/BC/collision-cost objectives. No optimizer hooks in the
   active entry. Cost critic is a soft penalty, not certified safe control.
 - BC only uses successful teacher episodes; all failures remain in raw data
@@ -30,9 +39,18 @@ python -m crowd_nav.bayes_continuous.tests
 python -m crowd_nav.bayes_continuous.train_smoke --params repair_results/params --out repair_results/new_development
 # Qualification-only audit, same fixed 100 development layouts:
 python -m crowd_nav.bayes_continuous.train_smoke --params repair_results/params --out repair_results/new_teacher_audit --teacher-only
+# Fixed qualification reproduction, not new independent data:
+python -m crowd_nav.bayes_continuous.train_smoke --params repair_results/params --out repair_results/reproduce_teacher_confirmation --teacher-only --evaluation-episodes 200 --case-offset 700001
 # Refuses failed stage receipts:
 python -m crowd_nav.bayes_continuous.train_smoke --online --stages repair_results/new_development --out repair_results/new_online --steps 10000
 ```
+
+Layout generation uses test_case, not the filter/layout_seed. Current collection
+uses cases 20000..20199, BC validation 30000..30099. Teacher development uses
+0..99; a fresh qualification run must pass an unused `--case-offset`. Results
+store initial physical-layout hashes. Earlier dcc4fe5/960ddda claims of layout
+independence based only on different layout_seed offsets are withdrawn.
+`--evaluation-episodes` defaults to 100; smaller probes cannot qualify a teacher.
 
 Nonstationary training probability defaults to zero (nominal acquisition).
 The online CLI can explicitly schedule a fixed nonstationary mixture while

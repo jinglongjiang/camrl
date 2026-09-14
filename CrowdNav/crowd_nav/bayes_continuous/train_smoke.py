@@ -74,8 +74,13 @@ def online_main():
     parser.add_argument('--nonstationary-probability', type=float, default=0.)
     args = parser.parse_args()
     results = json.loads((args.stages/'results.json').read_text())
-    if results['teacher']['success_rate'] < .9 or results['teacher']['collision_rate'] > .02:
+    if (results['teacher']['episodes'] < 100 or results['teacher']['success_rate'] < .9 or
+            results['teacher']['collision_rate'] > .02):
         raise RuntimeError('Unqualified teacher: RL is forbidden')
+    for name, key in [('teacher.py','teacher_source_sha256'), ('environment.py','environment_source_sha256')]:
+        current = hashlib.sha256((Path(__file__).parent/name).read_bytes()).hexdigest()
+        if results.get(key) != current:
+            raise RuntimeError('Stage receipt does not match current teacher/environment')
     if not 0 <= args.nonstationary_probability <= 1:
         raise ValueError('Invalid training profile probability')
     torch.set_num_threads(1)
@@ -102,22 +107,33 @@ def online_main():
     (args.out/'losses.json').write_text(json.dumps(model.loss_history))
 
 
-def episodes(params, count, offset, actor=None, collect=False):
+def episodes(params, count, offset, actor=None, collect=False, case_offset=0, diagnostics=False):
     env = BeliefEnv(params, seed=2407)
     records, trajectories, raw = [], [], []
     for episode in range(count):
-        obs, _ = env.reset(options={'layout_seed': offset+episode, 'test_case': episode,
+        obs, _ = env.reset(options={'layout_seed': offset+episode, 'test_case': case_offset+episode,
                                     'profile': 'nominal'})
-        rows, states = [], []
+        rows, states, trace = [], [], []
+        layout_hash = hashlib.sha256(np.asarray([[h.px,h.py,h.gx,h.gy,h.radius,h.v_pref]
+            for h in env.world.env.humans], dtype=np.float64).tobytes()).hexdigest()
         for _ in range(140):
             states.append(np.array([[h.px, h.py, h.vx, h.vy, h.radius] for h in env.world.env.humans]))
             action = env.expert_action() if actor is None else actor.predict(obs, deterministic=True)[0]
+            before = [env.world.robot.px, env.world.robot.py, env.world.robot.theta]
             nxt, reward, done, _, info = env.step(action)
+            if diagnostics:
+                trace.append(dict(robot=before, humans=states[-1].tolist(), action=action.tolist(),
+                                  clearance=float(info['dmin']),
+                                  actual_clearance=float(info['actual_clearance']), native_outcome=info['native_outcome'],
+                                  planner=getattr(env.world, 'teacher_diagnostics', {})))
             if collect:
                 rows.append(dict(observation=obs, next_observation=nxt, action=action,
                                  reward=reward, done=done, collision_cost=info['collision_cost']))
             obs = nxt
             if done:
+                info['episode_result']['layout_sha256'] = layout_hash
+                if diagnostics:
+                    info['episode_result']['trace'] = trace
                 records.append(info['episode_result'])
                 break
         else:
@@ -184,6 +200,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--params', type=Path, required=True)
     parser.add_argument('--teacher-only', action='store_true')
+    parser.add_argument('--case-offset', type=int, default=0)
+    parser.add_argument('--evaluation-episodes', type=int, default=100)
     parser.add_argument('--out', type=Path, required=True)
     args = parser.parse_args()
     args.out.mkdir(exist_ok=False)
@@ -194,19 +212,24 @@ def main():
               'bc_updates':3000, 'rl_started':False}
     def save():
         (args.out/'results.json').write_text(json.dumps(result, indent=2))
-    records, _, _ = episodes(args.params, 100, 510000)
+    result['teacher_source_sha256'] = hashlib.sha256((Path(__file__).parent/'teacher.py').read_bytes()).hexdigest()
+    result['environment_source_sha256'] = hashlib.sha256((Path(__file__).parent/'environment.py').read_bytes()).hexdigest()
+    result['collision_rule'] = 'union of native detection and actual swept overlap'
+    result['case_offset'] = args.case_offset
+    records, _, _ = episodes(args.params, args.evaluation_episodes, 510000,
+                             case_offset=args.case_offset, diagnostics=True)
     result['teacher_records'] = records
     result['teacher'] = receipt(records)
     save()
     if args.teacher_only:
         return
     # Always retain the finite development collection, even if teacher qualification fails.
-    records, _, raw = episodes(args.params, 200, 520000)
+    records, _, raw = episodes(args.params, 200, 520000, case_offset=20000)
     fit_world_models(raw, args.out/'fitted_params')
     torch.save(raw, args.out/'fit_trajectories.pt')
     params = args.out/'fitted_params'
     # Replay the fixed training layouts with the newly fitted filter, not stale beliefs.
-    records, trajectories, _ = episodes(params, 200, 520000, collect=True)
+    records, trajectories, _ = episodes(params, 200, 520000, collect=True, case_offset=20000)
     torch.save(dict(records=records, trajectories=trajectories), args.out/'collection.pt')
     good = [row for record, rows in zip(records, trajectories) if record['outcome']=='success' for row in rows]
     result['accepted_bc_episodes'] = sum(r['outcome']=='success' for r in records)
@@ -229,7 +252,7 @@ def main():
         model.actor.optimizer.step()
     model.actor_target.load_state_dict(model.actor.state_dict())
     model.save(args.out/'bc_only')
-    records, _, _ = episodes(params, 100, 530000, model)
+    records, _, _ = episodes(params, 100, 530000, model, case_offset=30000)
     result['bc_records'], result['bc'] = records, receipt(records)
     save()
     # Critic pretraining is allowed for diagnosis, but actor remains frozen.

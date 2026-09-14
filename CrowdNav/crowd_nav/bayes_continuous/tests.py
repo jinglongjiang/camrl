@@ -1,6 +1,7 @@
 import sys
 import unittest
 import tempfile
+from unittest.mock import patch
 from pathlib import Path
 import numpy as np
 import torch
@@ -8,11 +9,47 @@ from stable_baselines3.common.env_checker import check_env
 from crowd_nav.bayes_continuous.environment import BeliefEnv, project_orca, transform_observation
 from crowd_nav.bayes_continuous.network import SetEncoder
 from crowd_nav.bayes_continuous.algorithm import BayesSetTD3, CostReplay
+from crowd_nav.belief_mdp.runtime import StepResult
 
 PARAMS = Path(__file__).resolve().parents[2] / 'repair_results/params'
 
 
 class Contracts(unittest.TestCase):
+    def test_actual_motion_collision_cannot_be_hidden_by_native_check(self):
+        env = BeliefEnv(PARAMS)
+        env.reset(seed=91)
+        r, h = env.world.robot, env.world.env.humans[0]
+        h.px, h.py = r.px+.8, r.py
+        def motion(_):
+            h.px, h.py = r.px+.4, r.py
+            return StepResult('running', 0., False, .2)
+        with patch.object(env.world, 'step', side_effect=motion):
+            _, reward, done, _, info = env.step(np.zeros(2, np.float32))
+        self.assertTrue(done)
+        self.assertEqual(info['outcome'], 'collision')
+        self.assertEqual(info['native_outcome'], 'running')
+        self.assertLess(info['actual_clearance'], 0)
+        self.assertEqual(reward, env.world.env.collision_penalty)
+
+    def test_teacher_uses_observations_not_human_goals(self):
+        env = BeliefEnv(PARAMS)
+        env.reset(seed=91)
+        expected = env.expert_action()
+        env._teacher_cache = None
+        env.world._cem_teacher = None
+        for h in env.world.env.humans:
+            h.gx, h.gy = 10000., -10000.
+        np.testing.assert_array_equal(expected, env.expert_action())
+
+    def test_layout_split_uses_case_not_filter_seed(self):
+        env = BeliefEnv(PARAMS)
+        def layout(seed, case):
+            env.reset(seed=seed, options={'test_case':case})
+            return np.array([[h.px,h.py,h.gx,h.gy] for h in env.world.env.humans])
+        first = layout(1, 81)
+        np.testing.assert_array_equal(first, layout(2, 81))
+        self.assertFalse(np.array_equal(first, layout(1, 82)))
+
     def test_explicit_critic_and_stage_contract(self):
         env = BeliefEnv(PARAMS)
         model = BayesSetTD3('MultiInputPolicy', env, replay_buffer_class=CostReplay,
