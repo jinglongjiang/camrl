@@ -236,7 +236,7 @@ def dagger_online_smoke(args, stages):
         model.action_noise = NormalActionNoise(np.zeros(2), .1*np.ones(2))
         model.actor_enabled = False
         report['execution'] = dict(learning_starts=model.learning_starts,
-            train_freq=list(model.train_freq), gradient_steps=model.gradient_steps,
+            train_freq=[model.train_freq.frequency, model.train_freq.unit.value], gradient_steps=model.gradient_steps,
             policy_delay=model.policy_delay, tau=model.tau, gamma=model.gamma,
             normalized_action_noise_std=.1)
         if (model.gradient_steps, model.policy_delay, model.tau, model.gamma) != (1, 2, .005, .99):
