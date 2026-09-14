@@ -30,7 +30,7 @@ def audit_dagger(folder, params):
         i = item['round']
         data = torch.load(source_path(f'round{i}_collection.pt'),weights_only=False)
         layouts = {r['layout_sha256'] for r in data['records']}
-        assert len(layouts)==100 and not layouts & seen
+        assert len(layouts)==item.get('rollout_count',100) and not layouts & seen
         seen |= layouts
         steps, disagreements = 0,0
         feasibility = {0:0,1:0,2:0}
@@ -80,7 +80,7 @@ def confirm_dagger(folder, params, original_collection):
     from crowd_nav.bayes_continuous.train_smoke import episodes, receipt, dagger_artifact
     result = json.loads((folder/'results.json').read_text())
     final_round = result['protocol']['rounds']
-    if final_round not in (10,15) or len(result['rounds']) != final_round:
+    if final_round not in (10,15,16) or len(result['rounds']) != final_round:
         raise ValueError('Confirmation uses the final declared round, not a selected checkpoint')
     output = folder/'independent_confirmation.json'
     if output.exists():
@@ -90,27 +90,71 @@ def confirm_dagger(folder, params, original_collection):
     seen.update(r['layout_sha256'] for r in result['round0']['records'])
     for item in result['rounds']:
         seen.update(r['layout_sha256'] for r in item['rollout_records'])
-    if final_round == 15:
-        parent_confirmation = json.loads((Path(result['extension_parent'])/'independent_confirmation.json').read_text())
-        seen.update(r['layout_sha256'] for r in parent_confirmation['records'])
-    offset = {10:940000, 15:950000}[final_round]
+    parent_result = result
+    while 'extension_parent' in parent_result:
+        parent_folder = Path(parent_result['extension_parent'])
+        if (parent_folder/'independent_confirmation.json').exists():
+            parent_confirmation = json.loads((parent_folder/'independent_confirmation.json').read_text())
+            seen.update(r['layout_sha256'] for r in parent_confirmation['records'])
+        parent_result = json.loads((parent_folder/'results.json').read_text())
+    offset = {10:940000, 15:950000, 16:960000}[final_round]
+    count = 500 if final_round==16 else 100
     path = dagger_artifact(folder, f'round{final_round}.zip')
     model = BayesSetTD3.load(path, device='cpu')
     model.check_arm('no_belief')
     before = {k:v.detach().clone() for k,v in model.actor.state_dict().items()}
-    records, _, _ = episodes(params, 100, offset, model, case_offset=offset,
+    records, _, _ = episodes(params, count, offset, model, case_offset=offset,
                              arm='no_belief', diagnostics=True)
     layouts = {r['layout_sha256'] for r in records}
-    assert len(layouts)==100 and not layouts & seen
+    assert len(layouts)==count and not layouts & seen
     assert all(torch.equal(v, model.actor.state_dict()[k]) for k,v in before.items())
     report = dict(checkpoint_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
-        checkpoint_round=final_round, cases=[offset,offset+99], layout_seed_offset=offset,
+        checkpoint_round=final_round, cases=[offset,offset+count-1], layout_seed_offset=offset,
         selection='Final round fixed before confirmation; no checkpoint selection',
         scope='One training seed; five-human nominal full-observation No-Belief student',
-        metrics=receipt(records), records=records, unique_layouts=100, previous_layout_overlap=0,
+        metrics=receipt(records), records=records, unique_layouts=count, previous_layout_overlap=0,
         actor_unchanged=True, teacher_queried=False, rl_started=False)
     output.write_text(json.dumps(report, indent=2))
     print('INDEPENDENT CONFIRMATION', report['metrics'], flush=True)
+
+
+def diagnose_dagger(folder, params):
+    from crowd_nav.bayes_continuous.train_smoke import episodes, dagger_artifact
+    confirmation = json.loads((folder/'independent_confirmation.json').read_text())
+    path = dagger_artifact(folder, f"round{confirmation['checkpoint_round']}.zip")
+    model = BayesSetTD3.load(path, device='cpu')
+    output = folder/'failure_diagnosis.json'
+    if output.exists():
+        raise ValueError('Do not overwrite failure diagnosis')
+    cases = []
+    for original in confirmation['records']:
+        if original['outcome'] == 'success':
+            continue
+        replay, trajectories, _ = episodes(params, 1, original['layout_seed'], model,
+            collect=True, case_offset=original['test_case'], diagnostics=True,
+            arm='no_belief', query_teacher=True)
+        assert replay[0]['layout_sha256'] == original['layout_sha256']
+        assert replay[0]['outcome'] == original['outcome']
+        assert len(replay[0]['trace']) == len(original['trace'])
+        for actual, expected in zip(replay[0]['trace'], original['trace']):
+            for key in ('robot','humans','action','actual_clearance'):
+                np.testing.assert_allclose(actual[key], expected[key], atol=1e-6, rtol=0)
+        teacher, _, _ = episodes(params, 1, original['layout_seed'],
+            case_offset=original['test_case'], diagnostics=True, arm='no_belief')
+        assert teacher[0]['layout_sha256'] == original['layout_sha256']
+        rows = trajectories[0]
+        tail = [dict(step=j, student_action=row['action'].tolist(),
+                     teacher_action=row['teacher_action'].tolist(),
+                     teacher_diagnostics=row['teacher_diagnostics'],
+                     actual_clearance=replay[0]['trace'][j]['actual_clearance'])
+                for j,row in enumerate(rows) if j>=len(rows)-16]
+        item = dict(test_case=original['test_case'], student_outcome=original['outcome'],
+                    teacher_outcome=teacher[0]['outcome'], replay_exact=True,
+                    final_16_steps=tail, teacher_record=teacher[0])
+        cases.append(item)
+        print('DIAGNOSE',item['test_case'],item['student_outcome'],item['teacher_outcome'],flush=True)
+    output.write_text(json.dumps(dict(cases=cases, training_updates=0,
+        excluded_from_training=True, scope='Selected failed confirmation cases; not an overall teacher success-rate estimate'),indent=2))
 
 
 def audit_bc(folder, params):
@@ -230,6 +274,7 @@ def main():
     parser.add_argument('--params', type=Path)
     parser.add_argument('--teacher-runs', type=Path, nargs='+')
     parser.add_argument('--dagger-confirm', action='store_true')
+    parser.add_argument('--dagger-diagnose', action='store_true')
     parser.add_argument('--original-collection', type=Path)
     args = parser.parse_args()
     if args.teacher_runs:
@@ -238,6 +283,9 @@ def main():
     if args.params is None:
         parser.error('--params is required for checkpoint auditing')
     torch.set_num_threads(1)
+    if args.dagger_diagnose:
+        diagnose_dagger(args.results,args.params)
+        return
     if args.dagger_confirm:
         if args.original_collection is None:
             parser.error('--dagger-confirm requires --original-collection')

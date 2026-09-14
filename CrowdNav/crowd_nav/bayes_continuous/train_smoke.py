@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import multiprocessing
 from pathlib import Path
 import numpy as np
 import torch
@@ -375,12 +376,32 @@ def dagger_artifact(folder, name):
     return dagger_artifact(parent,name)
 
 
+def dagger_rollout_worker(task):
+    params, checkpoint, count, offset = task
+    torch.set_num_threads(1)
+    actor = BayesSetTD3.load(checkpoint, device='cpu')
+    records, trajectories, _ = episodes(params,count,offset,actor,collect=True,
+        case_offset=offset,arm='no_belief',query_teacher=True)
+    return records, trajectories
+
+
+def collect_dagger_parallel(params, checkpoint, count, offset, workers=4, chunk_size=25):
+    tasks = [(params,checkpoint,min(chunk_size,count-i),offset+i) for i in range(0,count,chunk_size)]
+    records, trajectories = [], []
+    with multiprocessing.get_context('spawn').Pool(workers) as pool:
+        for rec, rows in pool.imap(dagger_rollout_worker,tasks):
+            records.extend(rec)
+            trajectories.extend(rows)
+            print('DAgger collection',len(records),'/',count,flush=True)
+    return records, trajectories
+
+
 def dagger_main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--stages', type=Path, required=True)
     parser.add_argument('--params', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
-    parser.add_argument('--rounds', type=int, default=3, choices=[3,5,10,15])
+    parser.add_argument('--rounds', type=int, default=3, choices=[3,5,10,15,16])
     parser.add_argument('--resume-dagger', type=Path)
     parser.add_argument('--epochs', type=int, default=20)
     args = parser.parse_args()
@@ -435,7 +456,7 @@ def dagger_main():
         parent_path = args.resume_dagger/'results.json'
         parent = json.loads(parent_path.read_text())
         completed = len(parent['rounds'])
-        if (completed,args.rounds) not in ((3,5),(5,10),(10,15)) or parent['base_checkpoint_sha256'] != report['base_checkpoint_sha256']:
+        if (completed,args.rounds) not in ((3,5),(5,10),(10,15),(15,16)) or parent['base_checkpoint_sha256'] != report['base_checkpoint_sha256']:
             raise ValueError('Unexpected DAgger parent')
         for key in ('teacher_source_sha256','environment_source_sha256'):
             if parent[key] != report[key]:
@@ -464,6 +485,19 @@ def dagger_main():
     seen = {r['layout_sha256'] for r in collection['records']} | validation_hashes
     for prior in report['rounds']:
         seen.update(r['layout_sha256'] for r in prior['rollout_records'])
+    if args.rounds==16:
+        excluded = set()
+        ancestor = args.resume_dagger
+        while ancestor is not None:
+            if (ancestor/'independent_confirmation.json').exists():
+                confirmation = json.loads((ancestor/'independent_confirmation.json').read_text())
+                excluded.update(r['layout_sha256'] for r in confirmation['records'])
+            previous = json.loads((ancestor/'results.json').read_text())
+            ancestor = Path(previous['extension_parent']) if 'extension_parent' in previous else None
+        if excluded & seen:
+            raise AssertionError('Earlier confirmation overlaps training/development layouts')
+        seen |= excluded
+        report['excluded_confirmation_layouts'] = len(excluded)
     rng = np.random.default_rng(2407)
     if args.resume_dagger:
         # The sampling stream is part of the supervised optimizer checkpoint.
@@ -478,10 +512,17 @@ def dagger_main():
                     rng.shuffle(idx)
             report['sampler_resume'] = 'Reconstructed exact original seed/strata/update sequence'
     for round_id in range(start_round,args.rounds+1):
-        records,trajectories,_ = episodes(args.params,100,810000+round_id*1000,model,
-            collect=True,case_offset=810000+round_id*1000,arm='no_belief',query_teacher=True)
+        rollout_count = 1000 if round_id==16 else 100
+        if round_id==16:
+            report['protocol']['large_coverage_round'] = dict(round=16,rollouts=1000,workers=4,
+                inference_device='cpu',epochs=20,other_settings_unchanged=True)
+            records,trajectories = collect_dagger_parallel(args.params,
+                dagger_artifact(args.resume_dagger,'round15.zip'),rollout_count,826000)
+        else:
+            records,trajectories,_ = episodes(args.params,rollout_count,810000+round_id*1000,model,
+                collect=True,case_offset=810000+round_id*1000,arm='no_belief',query_teacher=True)
         hashes = {r['layout_sha256'] for r in records}
-        if len(hashes)!=100 or hashes & seen:
+        if len(hashes)!=rollout_count or hashes & seen:
             raise AssertionError('DAgger layouts overlap existing training/development data')
         seen |= hashes
         added = [r for ep in trajectories for r in ep]
@@ -516,7 +557,7 @@ def dagger_main():
         validation,_,_ = episodes(args.params,100,530000,model,case_offset=30000,arm='no_belief',diagnostics=True)
         if {r['layout_sha256'] for r in validation} != validation_hashes:
             raise AssertionError('Development layouts changed')
-        report['rounds'].append(dict(round=round_id,rollout=receipt(records),rollout_records=records,
+        report['rounds'].append(dict(round=round_id,rollout_count=rollout_count,rollout=receipt(records),rollout_records=records,
             added_steps=len(added),permanent_steps=len(permanent),original_steps_retained=report['original_demo_steps'],
             supervised_updates=updates,losses=losses,metrics=receipt(validation),records=validation,
             train_fit_diagnostic=fit_metrics(model,obs,labels),

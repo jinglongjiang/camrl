@@ -15,6 +15,32 @@ PARAMS = Path(__file__).resolve().parents[2] / 'repair_results/params'
 
 
 class Contracts(unittest.TestCase):
+    def test_parallel_dagger_matches_serial(self):
+        from crowd_nav.bayes_continuous.train_smoke import ActionHistory, dagger_rollout_worker, collect_dagger_parallel
+        torch.set_num_threads(1)
+        env = ActionHistory(BeliefEnv(PARAMS,arm='no_belief'),route=True)
+        model = BayesSetTD3('MultiInputPolicy',env,buffer_size=100,device='cpu',
+            policy_kwargs=dict(features_extractor_class=SetEncoder,
+                features_extractor_kwargs=dict(features_dim=96),net_arch=[32,32]))
+        with torch.no_grad():
+            for parameter in model.actor.parameters():
+                parameter.zero_()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)/'student.zip'
+            model.save(path)
+            serial, a = dagger_rollout_worker((PARAMS,path,2,838000))
+            parallel, b = collect_dagger_parallel(PARAMS,path,2,838000,workers=2,chunk_size=1)
+        self.assertEqual([(r['layout_sha256'],r['outcome'],r['steps']) for r in serial],
+                         [(r['layout_sha256'],r['outcome'],r['steps']) for r in parallel])
+        for left,right in zip(a,b):
+            self.assertEqual(len(left),len(right))
+            for x,y in zip(left,right):
+                for key in ('action','teacher_action'):
+                    np.testing.assert_allclose(x[key],y[key],atol=1e-6,rtol=0)
+                for key in x['observation']:
+                    np.testing.assert_array_equal(x['observation'][key],y['observation'][key])
+        env.close()
+
     def test_route_uses_execution_not_expert_label(self):
         from crowd_nav.bayes_continuous.train_smoke import ActionHistory, add_route_history
         env = ActionHistory(BeliefEnv(PARAMS,arm='no_belief'),route=True)

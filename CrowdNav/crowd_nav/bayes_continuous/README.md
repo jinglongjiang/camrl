@@ -83,6 +83,17 @@ round-10 confirmation remains evidence, not an erased pilot. These extensions
 are engineering development, not repeated significance testing or a claim of
 independent multiple-seed safety validation.
 
+Round 15 reached 99/1/0 on development but 94/6/0 on its fresh confirmation.
+Exact failed-case replay succeeded, and the frozen teacher solved all six
+selected failed layouts. These diagnostic trajectories never enter training.
+The declared coverage extension (`--rounds 16 --resume-dagger <fifteen-run>`)
+collects 1000 new student episodes at 826000..826999 with four independent CPU
+workers, then performs the same 20 epoch-equivalents with unchanged actor/loss.
+Original demonstrations and all prior DAgger data remain. Both earlier
+confirmation sets are explicitly excluded. Round 16, not a selected earlier
+checkpoint, is evaluated once on 500 new cases 960000..960499. Serial/parallel
+collection equivalence is checked before running the extension.
+
 ```bash
 python -m crowd_nav.bayes_continuous.train_smoke --dagger \
   --stages repair_results/student_bc_history_continued_20260914 \
