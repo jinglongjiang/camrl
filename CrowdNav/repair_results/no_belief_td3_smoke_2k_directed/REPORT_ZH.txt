@@ -1,0 +1,119 @@
+No-Belief连续控制：定向安全数据与Critic预热完整报告
+结果记录日期：2026-09-15
+
+一、最终结论
+定向安全采集成功，训练、验证各获得30条碰撞后缀及30条非碰撞轨迹。
+Actor冻结下完成1000次Critic预热；Reward Critic达到既定损失门槛，
+Cost Critic未达到既定门槛，程序以blocked_critic_gate停止。
+TD3在线环境步数为0，没有进行RL后导航评价，也没有新的成功率成绩。
+原round16 Actor未被训坏；保存检查点中的Actor和Actor target均与原版逐张量完全相同。
+本次只能评价安全数据构建及Critic初始化，不能评价Bayes价值或RL最终可行性。
+
+二、固定版本和实验范围
+仓库：jinglongjiang/camrl
+分支：repair-continuous-training-20260914
+运行代码提交：5af4ebb（本报告后续提交不改变该实验代码）
+机器：远程4090，45.126.120.6
+运行目录：/root/continuous_repair_20260914/CrowdNav
+入口：crowd_nav.bayes_continuous.train_smoke --online
+模型：repair_results/student_dagger_coverage_20260915/round16.zip
+模型SHA256：634e8106713c0c316afc77bf345615d3a6a101789f82f182853356ab57dbc086
+协议：No-Belief、5人、baseline_circle、nominal、seed=2407。
+robot输入10维，包含上一执行动作和route state；无Mamba，未启动MAP/FULL。
+未修改教师、DAgger模型、Actor网络、Bayes模型或Cost Critic公式。
+历史96.4%属于此前500回合独立评价，不是此次测试结果。
+
+三、计划与实际完成情况
+步骤                                      实际情况
+定向安全采集，每组30正+30负                完成
+Actor冻结，Reward/Cost Critic预热1000次    完成
+Critic验收                                未通过Cost部分
+RL前100回合开发评价                       未执行
+TD3第1000步及配套评价                     未执行
+TD3第2000步及配套评价                     未执行
+正式长训练                                未启动、未授权自动启动
+
+四、安全数据怎么采
+负样本：round16正常执行，保留成功/超时轨迹。
+正样本：round16正常执行到最近行人的表面净空小于1米后，切换定向危险动作；
+每步重新寻找最近行人，以v=1及限制在[-1.2,1.2]的转向角速度朝其运动。
+只保存切换后的后缀，最多15步；未碰撞的危险尝试丢弃，不混入负样本。
+未触发危险控制就结束的尝试同样不作为正样本。
+没有硬编码必须先安全行驶40步，触发由净空决定。
+每个分组最多300次尝试；训练test_case从40000起、验证从50000起。
+layout_seed为540000+test_case。每次尝试都用新的case。
+使用同一ActionHistory(route=True)，历史由实际执行动作更新。
+危险数据只供Cost Critic，不进入BC、DAgger或Reward/普通TD3 replay。
+
+五、采集结果及原始数据复核
+分组       尝试数   保留碰撞   保留非碰撞   丢弃   碰撞后缀步数   安全步数
+训练       61       30         30          1      155            1593
+验证       62       30         30          2      197            1515
+总计       123      60         60          3      352            3108
+
+本地已保存两个.pt原始数据文件以及逐次尝试JSON。
+对远程原始.pt额外只读复核：
+- 训练和验证各60个不同的保留布局，跨组保留布局哈希交集为0。
+- 所有正样本都只含危险控制后缀，最后一步确实发生碰撞并终止。
+- 训练碰撞后缀长度为3至15步，验证为2至13步。
+- 所有保存的当前/下一状态robot输入均为10维。
+- 原代码采集时还对全部尝试检查了物理布局哈希重复。
+- 17项契约测试通过，含新增的后缀截取、30/30配额与跨组隔离测试。
+
+六、Critic预热数值结果
+指标                                      预热前       预热后       原门槛/判定
+Reward双头Huber损失之和（20回合留出）      0.637097     0.004141     <=0.2，通过
+Cost双头sigmoid MSE之和（安全验证集）      0.496868     0.104868     <=0.04，失败
+Cost碰撞样本MSE（双头概率取max）           未记录       0.402326     <=0.04，失败
+Cost非碰撞样本MSE（同上）                  未记录       0.006657     <=0.04，通过
+Cost Brier（同上，全验证步）               未记录       0.052187     描述性指标
+Cost AUROC（同上，全验证步）               未记录       0.906974     >0.5，通过
+碰撞样本预测概率均值                       未记录       0.501752     描述性指标
+非碰撞样本预测概率均值                     未记录       0.018202     描述性指标
+
+注意：双头MSE之和和取max后的Brier不是同一个指标，不能互相替换。
+以上为按transition统计的验证指标，未给出按布局聚类的置信区间。
+AUROC约0.907说明存在区分信号，不等于概率值已校准，更不等于安全保证。
+门槛未放宽，未因为某项好看就绕过整体验收。
+
+七、Actor及在线训练状态独立核对
+直接读取原round16.zip和新critic_warmup.zip的policy.pth及data：
+- actor.*共16个张量：全部torch.equal。
+- actor_target.*共16个张量：全部torch.equal。
+- 原模型warmup_updates=0，新检查点warmup_updates=1000。
+- 两个检查点num_timesteps均为0，_n_updates均为0，actor_enabled均为False。
+这里_n_updates计数的是在线训练路径，不代表预热未更新Critic。
+因此可以确认：只进行了Critic监督预热，没有Actor RL更新。
+
+八、现在能解释到哪一步
+已确认的问题不再是没有碰撞样本，而是Cost Critic对碰撞类拟合仍不足。
+新的可核查疑点：回合数平衡不等于训练步数平衡。
+训练碰撞类只占155/1748，约8.87%；安全步约为碰撞步的10.28倍。
+现有supervised_warmup按合并后的transition均匀抽样，因此大多数梯度来自安全类。
+这与“安全类误差低、碰撞类误差高”一致，但尚未通过对照证明它是唯一根因。
+不能据此断言只要加权或多训就一定通过。
+
+另一边界：正样本标注的是持续危险控制下最终发生碰撞，负样本来自正常学生策略。
+这些标签不是同一个固定学生策略下的无偏碰撞到达概率；截取后缀避免了安全前缀
+被整段标1，却没有消除后续控制策略不同的问题。因此即便该验收通过，也只说明
+这种初始化任务上的拟合通过，不能直接宣布部署碰撞概率校准或安全性成立。
+
+九、建议的下一步（仅建议，本次没有追加执行）
+先固定现有数据及Actor，检查按类别均衡抽取transition对Cost Critic的影响，
+同时保留原均匀抽样作为对照，不降低门槛，不因验证结果反复增加样本找通过。
+若要把Cost Critic解释为当前策略的碰撞到达概率，还需单独核对行为策略与
+Bellman后续策略的一致性；本次人工危险标签不能替代这一核对。
+当前不应宣布TD3失败，也不应未经Critic验收直接开放Actor训练。
+
+十、本地证据与远程对应
+本地根目录：/home/abc/workspace/bayes_set_continuous/CrowdNav/repair_results/
+no_belief_td3_smoke_2k_directed/REPORT_ZH.txt：本报告。
+no_belief_td3_smoke_2k_directed/status.json：原始最终状态和完整指标。
+no_belief_td3_smoke_2k_directed/critic_warmup.zip：预热检查点，本地保留，不上传Git。
+no_belief_td3_smoke_2k_directed.launch.log：原始启动及阶段日志。
+safety_no_belief_directed/receipt.json：配额与尝试数。
+safety_no_belief_directed/train_attempts.json、validation_attempts.json：全部123次尝试。
+safety_no_belief_directed/train.pt、validation.pt：原始轨迹，本地保留，不上传Git。
+Git保存报告、轻量JSON、日志和哈希清单；二进制数据已从远程取回本地，不依赖仅远程留存。
+本地关键文件SHA256与远程逐项一致，见本目录SHA256SUMS.txt。
+本次报告整理没有重训、改变门槛或启动新的实验。

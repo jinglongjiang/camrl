@@ -1,0 +1,23 @@
+{
+  "protocol": "directed_suffix_v1",
+  "target_per_class": 30,
+  "max_attempts_per_split": 300,
+  "trigger_surface_clearance": 1.0,
+  "intervention_steps": 15,
+  "use": "cost_critic_only_not_BC_DAgger_or_reward_replay",
+  "scope": "Outcome-stratified intervention data, not deployment calibration",
+  "train": {
+    "positive_trajectories": 30,
+    "negative_trajectories": 30,
+    "attempts": 61,
+    "adequate": true,
+    "quota_complete": true
+  },
+  "validation": {
+    "positive_trajectories": 30,
+    "negative_trajectories": 30,
+    "attempts": 62,
+    "adequate": true,
+    "quota_complete": true
+  }
+}

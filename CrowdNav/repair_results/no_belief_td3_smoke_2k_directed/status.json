@@ -1,0 +1,81 @@
+{
+  "stage": "blocked_critic_gate",
+  "arm": "no_belief",
+  "seed": 2407,
+  "robot_fields": 10,
+  "train_humans": 5,
+  "profile": "nominal",
+  "requested_steps": 2000,
+  "diagnostic_only": true,
+  "independent_safety_gate_waived": false,
+  "formal_training_authorized": false,
+  "checkpoint_sha256": "634e8106713c0c316afc77bf345615d3a6a101789f82f182853356ab57dbc086",
+  "execution": {
+    "learning_starts": 0,
+    "train_freq": [
+      1,
+      "step"
+    ],
+    "gradient_steps": 1,
+    "policy_delay": 2,
+    "tau": 0.005,
+    "gamma": 0.99,
+    "normalized_action_noise_std": 0.1
+  },
+  "safety_path": "repair_results/safety_no_belief_directed",
+  "safety_counts": {
+    "protocol": "directed_suffix_v1",
+    "target_per_class": 30,
+    "max_attempts_per_split": 300,
+    "trigger_surface_clearance": 1.0,
+    "intervention_steps": 15,
+    "use": "cost_critic_only_not_BC_DAgger_or_reward_replay",
+    "scope": "Outcome-stratified intervention data, not deployment calibration",
+    "train": {
+      "positive_trajectories": 30,
+      "negative_trajectories": 30,
+      "attempts": 61,
+      "adequate": true,
+      "quota_complete": true
+    },
+    "validation": {
+      "positive_trajectories": 30,
+      "negative_trajectories": 30,
+      "attempts": 62,
+      "adequate": true,
+      "quota_complete": true
+    }
+  },
+  "critic": {
+    "before": [
+      0.6370972394943237,
+      0.49686819314956665
+    ],
+    "after": [
+      0.00414128415286541,
+      0.10486812889575958
+    ],
+    "heldout_episodes": 20,
+    "actor_unchanged": true,
+    "safety_metrics": {
+      "positive_mse": 0.40232616662979126,
+      "negative_mse": 0.006656997371464968,
+      "brier": 0.05218668654561043,
+      "auroc": 0.9069742507245648,
+      "positive_mean": 0.5017522573471069,
+      "negative_mean": 0.018202245235443115,
+      "scope": "transition metrics on separate, class-enriched trajectory validation; not deployment calibration"
+    },
+    "safety_episode_counts": {
+      "train": {
+        "positive": 30,
+        "negative": 30
+      },
+      "validation": {
+        "positive": 30,
+        "negative": 30
+      }
+    },
+    "passed": false
+  }
+}

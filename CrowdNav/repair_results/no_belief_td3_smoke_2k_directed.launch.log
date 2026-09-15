@@ -1,0 +1,133 @@
+Gym has been unmaintained since 2022 and does not support NumPy 2.0 amongst other critical functionality.
+Please upgrade to Gymnasium, the maintained drop-in replacement of Gym, or contact the authors of your software and request that they upgrade.
+Users of this version of Gym should be able to simply replace 'import gym' with 'import gymnasium as gym' in the vast majority of cases.
+See the migration guide at https://gymnasium.farama.org/introduction/migration_guide/ for additional information.
+TD3_SMOKE initializing
+[GDBN] : K=3 repair_results/params
+TD3_SMOKE safety_collection
+[GDBN] : K=3 repair_results/params
+SAFETY_DIRECTED train 1 0 1
+SAFETY_DIRECTED train 2 1 1
+SAFETY_DIRECTED train 3 1 2
+SAFETY_DIRECTED train 4 2 2
+SAFETY_DIRECTED train 5 2 3
+SAFETY_DIRECTED train 6 3 3
+SAFETY_DIRECTED train 7 3 4
+SAFETY_DIRECTED train 8 4 4
+SAFETY_DIRECTED train 9 4 5
+SAFETY_DIRECTED train 10 5 5
+SAFETY_DIRECTED train 11 5 6
+SAFETY_DIRECTED train 12 6 6
+SAFETY_DIRECTED train 13 6 7
+SAFETY_DIRECTED train 14 7 7
+SAFETY_DIRECTED train 15 7 8
+SAFETY_DIRECTED train 16 8 8
+SAFETY_DIRECTED train 17 8 9
+SAFETY_DIRECTED train 18 9 9
+SAFETY_DIRECTED train 19 9 10
+SAFETY_DIRECTED train 20 10 10
+SAFETY_DIRECTED train 21 10 11
+SAFETY_DIRECTED train 22 11 11
+SAFETY_DIRECTED train 23 11 12
+SAFETY_DIRECTED train 24 12 12
+SAFETY_DIRECTED train 25 12 13
+SAFETY_DIRECTED train 26 13 13
+SAFETY_DIRECTED train 27 13 14
+SAFETY_DIRECTED train 28 14 14
+SAFETY_DIRECTED train 29 14 15
+SAFETY_DIRECTED train 30 15 15
+SAFETY_DIRECTED train 31 15 16
+SAFETY_DIRECTED train 32 16 16
+SAFETY_DIRECTED train 33 16 17
+SAFETY_DIRECTED train 34 17 17
+SAFETY_DIRECTED train 35 17 18
+SAFETY_DIRECTED train 36 18 18
+SAFETY_DIRECTED train 37 18 19
+SAFETY_DIRECTED train 38 19 19
+SAFETY_DIRECTED train 39 19 20
+SAFETY_DIRECTED train 40 20 20
+SAFETY_DIRECTED train 41 20 21
+SAFETY_DIRECTED train 42 21 21
+SAFETY_DIRECTED train 43 21 22
+SAFETY_DIRECTED train 44 22 22
+SAFETY_DIRECTED train 45 22 23
+SAFETY_DIRECTED train 46 23 23
+SAFETY_DIRECTED train 47 23 24
+SAFETY_DIRECTED train 48 24 24
+SAFETY_DIRECTED train 49 24 25
+SAFETY_DIRECTED train 50 25 25
+SAFETY_DIRECTED train 51 25 26
+SAFETY_DIRECTED train 52 26 26
+SAFETY_DIRECTED train 53 26 27
+SAFETY_DIRECTED train 54 27 27
+SAFETY_DIRECTED train 55 27 28
+SAFETY_DIRECTED train 56 28 28
+SAFETY_DIRECTED train 57 28 29
+SAFETY_DIRECTED train 58 29 29
+SAFETY_DIRECTED train 59 29 30
+SAFETY_DIRECTED train 60 29 30
+SAFETY_DIRECTED train 61 30 30
+SAFETY_DIRECTED validation 1 0 1
+SAFETY_DIRECTED validation 2 1 1
+SAFETY_DIRECTED validation 3 1 2
+SAFETY_DIRECTED validation 4 2 2
+SAFETY_DIRECTED validation 5 2 3
+SAFETY_DIRECTED validation 6 3 3
+SAFETY_DIRECTED validation 7 3 4
+SAFETY_DIRECTED validation 8 4 4
+SAFETY_DIRECTED validation 9 4 5
+SAFETY_DIRECTED validation 10 5 5
+SAFETY_DIRECTED validation 11 5 6
+SAFETY_DIRECTED validation 12 6 6
+SAFETY_DIRECTED validation 13 6 7
+SAFETY_DIRECTED validation 14 7 7
+SAFETY_DIRECTED validation 15 7 8
+SAFETY_DIRECTED validation 16 8 8
+SAFETY_DIRECTED validation 17 8 9
+SAFETY_DIRECTED validation 18 9 9
+SAFETY_DIRECTED validation 19 9 10
+SAFETY_DIRECTED validation 20 10 10
+SAFETY_DIRECTED validation 21 10 11
+SAFETY_DIRECTED validation 22 11 11
+SAFETY_DIRECTED validation 23 11 12
+SAFETY_DIRECTED validation 24 12 12
+SAFETY_DIRECTED validation 25 12 13
+SAFETY_DIRECTED validation 26 13 13
+SAFETY_DIRECTED validation 27 13 14
+SAFETY_DIRECTED validation 28 14 14
+SAFETY_DIRECTED validation 29 14 15
+SAFETY_DIRECTED validation 30 15 15
+SAFETY_DIRECTED validation 31 15 16
+SAFETY_DIRECTED validation 32 16 16
+SAFETY_DIRECTED validation 33 16 17
+SAFETY_DIRECTED validation 34 17 17
+SAFETY_DIRECTED validation 35 17 18
+SAFETY_DIRECTED validation 36 18 18
+SAFETY_DIRECTED validation 37 18 19
+SAFETY_DIRECTED validation 38 19 19
+SAFETY_DIRECTED validation 39 19 20
+SAFETY_DIRECTED validation 40 20 20
+SAFETY_DIRECTED validation 41 20 21
+SAFETY_DIRECTED validation 43 20 22
+SAFETY_DIRECTED validation 44 21 22
+SAFETY_DIRECTED validation 45 21 23
+SAFETY_DIRECTED validation 46 22 23
+SAFETY_DIRECTED validation 47 22 24
+SAFETY_DIRECTED validation 48 23 24
+SAFETY_DIRECTED validation 49 23 25
+SAFETY_DIRECTED validation 50 24 25
+SAFETY_DIRECTED validation 51 24 26
+SAFETY_DIRECTED validation 52 25 26
+SAFETY_DIRECTED validation 54 26 26
+SAFETY_DIRECTED validation 55 26 27
+SAFETY_DIRECTED validation 56 27 27
+SAFETY_DIRECTED validation 57 27 28
+SAFETY_DIRECTED validation 58 28 28
+SAFETY_DIRECTED validation 59 28 29
+SAFETY_DIRECTED validation 60 29 29
+SAFETY_DIRECTED validation 61 29 30
+SAFETY_DIRECTED validation 62 30 30
+TD3_SMOKE safety_collection
+TD3_SMOKE critic_warmup_1000_actor_frozen
+TD3_SMOKE critic_warmup_complete
+TD3_SMOKE blocked_critic_gate
