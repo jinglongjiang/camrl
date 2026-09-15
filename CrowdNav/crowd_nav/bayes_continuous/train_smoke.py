@@ -1600,9 +1600,124 @@ def main():
     env.close()
 
 
+def scratch_baseline_main():
+    """Independent standard RL baselines; no transfer or auxiliary losses."""
+    import random
+    import time
+    import traceback
+    import stable_baselines3 as sb3
+    from stable_baselines3.common.callbacks import BaseCallback
+    from stable_baselines3.common.logger import configure
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--algo', choices=['td3', 'ppo'], required=True)
+    parser.add_argument('--params', type=Path, default=Path('repair_results/params'))
+    parser.add_argument('--out', type=Path, required=True)
+    parser.add_argument('--steps', type=int, default=100000)
+    parser.add_argument('--eval-every', type=int, default=10000)
+    parser.add_argument('--eval-count', type=int, default=100)
+    parser.add_argument('--device', default='cpu')
+    args = parser.parse_args()
+    args.out.mkdir(parents=True, exist_ok=False)
+    torch.set_num_threads(1)
+    started = time.time()
+    report = dict(algorithm=args.algo, seed=2407, arm='no_belief', humans=5,
+        profile='nominal', robot_fields=10, requested_steps=args.steps,
+        reward_changed=False, pretrained_weights=False, old_replay=False,
+        auxiliary_losses=False, device=args.device, sb3_version=sb3.__version__,
+        evaluations=[], status='initializing', single_seed_development_only=True,
+        ppo_budget_note='Completes the last 2048-step rollout: 100000 requested gives 100352 actual steps.')
+    def save():
+        report['elapsed_seconds'] = time.time()-started
+        tmp = args.out/'status.tmp'
+        tmp.write_text(json.dumps(report, indent=2))
+        tmp.replace(args.out/'status.json')
+    class NominalEnv(BeliefEnv):
+        def reset(self, *, seed=None, options=None):
+            options = dict(options or {})
+            options['profile'] = 'nominal'
+            # Disjoint layout seeds from the fixed development evaluation.
+            if 'layout_seed' not in options:
+                options['layout_seed'] = 20000000 + int(self.rng.integers(10000000))
+            return super().reset(seed=seed, options=options)
+    env = ActionHistory(NominalEnv(args.params, arm='no_belief', seed=2407), route=True)
+    model = None
+    try:
+        common = dict(features_extractor_class=SetEncoder,
+            features_extractor_kwargs=dict(features_dim=192))
+        if args.algo == 'td3':
+            model = sb3.TD3('MultiInputPolicy', env, learning_rate=3e-4,
+                buffer_size=100000, learning_starts=5000, batch_size=256,
+                gamma=.99, tau=.005, policy_delay=2, train_freq=(1, 'step'),
+                gradient_steps=1, action_noise=NormalActionNoise(np.zeros(2), .1*np.ones(2)),
+                policy_kwargs=dict(common, net_arch=dict(pi=[256,256], qf=[96,96]),
+                    share_features_extractor=False), seed=2407, device=args.device)
+        else:
+            model = sb3.PPO('MultiInputPolicy', env, learning_rate=3e-4,
+                n_steps=2048, batch_size=256, n_epochs=10, gamma=.99,
+                gae_lambda=.95, clip_range=.2,
+                policy_kwargs=dict(common, net_arch=dict(pi=[256,256], vf=[96,96]),
+                    share_features_extractor=False), seed=2407, device=args.device)
+        assert model.observation_space['robot'].shape == (10,)
+        assert not hasattr(model, 'cost_critic')
+        report['policy_kwargs'] = str(model.policy_kwargs)
+        report['source_sha256'] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+        model.set_logger(configure(str(args.out), ['csv']))
+        def evaluate(step):
+            # A separate evaluation environment must not change training RNG streams.
+            rng = (random.getstate(), np.random.get_state(), torch.get_rng_state(),
+                   torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None)
+            training_mode = model.policy.training
+            try:
+                records, _, _ = episodes(args.params, args.eval_count, 910000,
+                    actor=model, case_offset=81000, arm='no_belief')
+            finally:
+                random.setstate(rng[0]); np.random.set_state(rng[1]); torch.set_rng_state(rng[2])
+                if rng[3] is not None:
+                    torch.cuda.set_rng_state_all(rng[3])
+                model.policy.set_training_mode(training_mode)
+            result = dict(steps=step, records=records,
+                success=sum(r['outcome']=='success' for r in records),
+                collision=sum(r['outcome']=='collision' for r in records),
+                timeout=sum(r['outcome']=='timeout' for r in records))
+            (args.out/f'eval_{step}.json').write_text(json.dumps(result, indent=2))
+            report['evaluations'].append({k:v for k,v in result.items() if k!='records'})
+            model.save(args.out/f'checkpoint_{step}')
+            save()
+            print('EVAL', report['evaluations'][-1], flush=True)
+        class Progress(BaseCallback):
+            def _on_step(self):
+                step = self.num_timesteps
+                for info in self.locals.get('infos', []):
+                    if 'episode_result' in info:
+                        with (args.out/'train_episodes.jsonl').open('a') as stream:
+                            stream.write(json.dumps(dict(info['episode_result'], global_step=step))+'\n')
+                if step % 1000 == 0:
+                    report.update(status='training', actual_steps=step)
+                    save()
+                    print('PROGRESS', args.algo, step, round(time.time()-started, 1), flush=True)
+                if step % args.eval_every == 0:
+                    evaluate(step)
+                return True
+        save()
+        model.learn(total_timesteps=args.steps, callback=Progress(), log_interval=10)
+        if not report['evaluations'] or report['evaluations'][-1]['steps'] != model.num_timesteps:
+            evaluate(model.num_timesteps)
+        report.update(status='complete', actual_steps=model.num_timesteps)
+        save()
+    except Exception:
+        report.update(status='error', error=traceback.format_exc())
+        save()
+        raise
+    finally:
+        env.close()
+
+
 if __name__ == '__main__':
     import sys
-    if '--critic-audit' in sys.argv:
+    if '--scratch-baseline' in sys.argv:
+        sys.argv.remove('--scratch-baseline')
+        scratch_baseline_main()
+    elif '--critic-audit' in sys.argv:
         sys.argv.remove('--critic-audit')
         critic_audit_main()
     elif '--native-td3' in sys.argv:

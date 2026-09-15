@@ -1,0 +1,33 @@
+从零 TD3 / PPO 并行验证启动记录（2026-09-15）
+
+清理：仅远程4090系统盘。清理APT下载缓存、pip缓存19.1MB、
+归档systemd日志648.3MB（保留约150MB）。剩余空间由5.5MB增至约1.1GB。
+未删除模型、实验数据、Conda环境或正在运行的其他任务。
+
+实现：只在现有train_smoke.py增加 --scratch-baseline 入口。
+原生SB3 2.7.1 TD3 / PPO；无预训练权重、旧replay、Cost或BC损失。
+No-Belief，5人baseline_circle，nominal，原reward，10维robot输入。
+相同SetEncoder 192维、policy MLP [256,256]；TD3 Q / PPO V为[96,96]。
+两个算法各自从零、单种子2407；不是多种子正式科学确认。
+训练layout_seed位于20000000至29999999，开发集910000至910099；
+开发test_case 81000至81099。开发评估保存并恢复全局随机流。
+
+TD3：GPU，100000步，buffer100000，learning_starts5000，batch256，
+lr3e-4，gamma.99，tau.005，policy_delay2，每步一次更新，noise.1。
+PPO：CPU，与TD3并行，不争用已高负载GPU；100000请求步，
+完成2048步rollout后实际100352步；batch256、epochs10、lr3e-4、
+gamma.99、GAE.95、clip.2。标准PPO连续Gaussian策略。
+每10000步两者均在固定100回合开发集评估；PPO最终另评100352步。
+保存逐训练回合、开发逐回合、状态、CSV loss和checkpoint。
+不因中途低成功率停止，不改reward，不按结果追加预算。
+
+入口验收：现有20项测试通过；PPO完成2048步及2回合评估；
+TD3完成5100步（含探索结束后的100次训练）及2回合评估。
+这两个小测试均0成功/0碰撞/2超时，只证明链路运行，不代表性能。
+
+正式结果目录：
+远程 /root/continuous_repair_20260914/CrowdNav/repair_results/scratch_td3_100k
+远程 /root/continuous_repair_20260914/CrowdNav/repair_results/scratch_ppo_100k
+本地同名目录位于本报告旁。日志为目录名加.launch.log。
+启动时确认TD3已超过5000步、PPO已超过2000步，均无异常。
+训练尚未完成；不能将此启动记录当最终结果报告。
