@@ -466,6 +466,44 @@ class GaussianTransferTests(unittest.TestCase):
         self.assertIsNot(model.policy.pi_features_extractor,model.policy.vf_features_extractor)
         env.close()
 
+    def test_ppo_belief_columns_can_learn_from_zero_initialization(self):
+        from stable_baselines3 import PPO
+        from crowd_nav.bayes_continuous.network import DaggerGaussianPolicy
+        from crowd_nav.bayes_continuous.train_smoke import ActionHistory
+        env=ActionHistory(BeliefEnv(PARAMS,arm='full'),route=True)
+        model=PPO(DaggerGaussianPolicy,env,n_steps=8,batch_size=8,device='cpu',
+            policy_kwargs=dict(features_extractor_class=SetEncoder,
+                features_extractor_kwargs=dict(features_dim=192),
+                net_arch=dict(pi=[256,256],vf=[96,96]),activation_fn=torch.nn.ReLU,
+                share_features_extractor=False))
+        obs,_=env.reset(seed=2407)
+        batch={k:torch.as_tensor(v)[None] for k,v in obs.items()}
+        first=model.policy.pi_features_extractor.human[0]
+        with torch.no_grad(): first.weight[:,5:9].zero_()
+        no_belief={k:v.clone() for k,v in batch.items()}
+        no_belief['humans'][:,:,5:9]=0
+        mean=model.policy.get_distribution(batch).distribution.mean
+        torch.testing.assert_close(mean,model.policy.get_distribution(no_belief).distribution.mean)
+        mean.sum().backward()
+        self.assertGreater(float(first.weight.grad[:,5:9].abs().max()),0.)
+        self.assertFalse(hasattr(model,'cost_critic'))
+        self.assertFalse(hasattr(model,'replay_buffer'))
+        env.close()
+
+    def test_ppo_training_seed_and_profile_contract(self):
+        from crowd_nav.bayes_continuous.train_smoke import BeliefPPOEnv, ActionHistory
+        env=ActionHistory(BeliefPPOEnv(PARAMS,'full','train_nonstationary'),route=True)
+        a,ia=env.reset(seed=2407)
+        env.step(np.array([.5,.2]))
+        b,ib=env.reset(seed=2407)
+        self.assertEqual(ia,ib)
+        for key in a: np.testing.assert_array_equal(a[key],b[key])
+        self.assertTrue(80000000<=ia['layout_seed']<81000000)
+        self.assertEqual(env.unwrapped.train_profile,'train_nonstationary')
+        self.assertEqual(len(env.unwrapped.world.env.humans),5)
+        env.close()
+        with self.assertRaises(ValueError): BeliefPPOEnv(PARAMS,'full','heldout_nonstationary')
+
 
 if __name__ == '__main__':
     torch.set_num_threads(1)
