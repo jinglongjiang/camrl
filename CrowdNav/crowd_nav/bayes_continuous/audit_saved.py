@@ -1024,6 +1024,230 @@ def type_oracle_audit(args):
     (root/'summary.json').write_text(json.dumps(summary,indent=2));print(summary,flush=True)
 
 
+def failure_evidence_case(task):
+    """Paired invisible-human counterfactuals; no learned weights are updated."""
+    from stable_baselines3 import PPO
+    from crowd_nav.bayes_continuous.train_smoke import ActionHistory
+    from crowd_nav.bayes_continuous.teacher import PlannerObservation, UnicycleConfig, UnicycleCEMMPC
+    params, source, spec = task
+    torch.set_num_threads(1)
+    if spec['profile']=='nominal':
+        from crowd_nav.bayes_continuous.train_smoke import dagger_artifact
+        model=BayesSetTD3.load(dagger_artifact(Path('repair_results/student_dagger_coverage_20260915'),'round16.zip'),device='cpu')
+    else:
+        model = PPO.load(source, device='cpu')
+    env = ActionHistory(BeliefEnv(params, arm='no_belief'), route=True)
+    def reset():
+        observation, _ = env.reset(options=dict(layout_seed=spec['layout'], test_case=spec['case'], profile=spec['profile']))
+        assert not env.unwrapped.world.robot.visible
+        return observation
+    def humans():
+        return np.asarray([[h.px,h.py,h.vx,h.vy,h.radius] for h in env.unwrapped.world.env.humans], np.float64)
+    obs = reset(); frames=[]; actions=[]; hashes=[]
+    for t in range(140):
+        frames.append(humans()); hashes.append(reciprocity_state(env,obs)['state_hash'])
+        action = model.predict(obs, deterministic=True)[0]
+        if spec.get('trace'):
+            expected=spec['trace'][t]
+            np.testing.assert_allclose(humans(),expected['humans'],atol=2e-5,rtol=0)
+            np.testing.assert_allclose(action,expected['action'],atol=2e-5,rtol=0)
+        if spec.get('truth_file'):
+            # These files are audit-only and never enter either legal selector.
+            if t==0: recorded=np.load(spec['truth_file'])['truth']
+            np.testing.assert_allclose(humans()[:,:4],recorded[t],atol=2e-5,rtol=0)
+        actions.append(action.copy())
+        obs,_,done,truncated,info=env.step(action)
+        if done or truncated: break
+    assert not spec.get('expected') or info['outcome']==spec['expected']
+    baseline=info['outcome']; length=len(actions)
+    if spec['fresh']:
+        available=[t for t in (16,32) if t<length]
+        # Fixed time, independent of future outcomes, for the confirmation set.
+        anchors=[available[0]] if available else []
+    else:
+        anchors=sorted(set(max(3,length-k) for k in (8,16))) if baseline=='collision' else [64,112]
+        anchors=[t for t in anchors if t<length]
+    def replay(t):
+        o=reset()
+        for a in actions[:t]:
+            o,_,d,tr,_=env.step(a)
+            assert not (d or tr)
+        assert reciprocity_state(env,o)['state_hash']==hashes[t]
+        return o
+    records=[]
+    planner=UnicycleCEMMPC(UnicycleConfig(horizon=8,omega_max=1.2,human_margin=.50))
+    for t in anchors:
+        obs=replay(t); world=env.unwrapped.world; robot=world.robot; current=humans()
+        po=PlannerObservation(np.array([robot.px,robot.py]),np.array([robot.vx,robot.vy]),robot.radius,
+            np.array([robot.gx,robot.gy]),current,None,None,None,None,None,None,None,None,'diagnostic',robot.theta)
+        initial=actions[t]
+        bank=[np.clip(initial+np.array([dv,dw]),[0,-1.2],[1,1.2]) for dv in (-.2,0,.2) for dw in (-.4,0,.4)]
+        bank.append(np.array([0.,0.]))
+        samples=np.repeat(np.asarray(bank)[:,None,:],8,axis=1); samples[:,:,1]*=.25
+        controls,velocities,positions=planner._rollout(samples,po)
+        executable=controls.copy(); executable[:,:,1]/=.25
+        times=np.arange(1,9)*.25
+        cv=current[:,None,:2]+current[:,None,2:4]*times[None,:,None]
+        acceleration=(frames[t][:,2:4]-frames[t-3][:,2:4])/.75
+        norms=np.linalg.norm(acceleration,axis=1,keepdims=True)
+        acceleration*=np.minimum(1.,1./np.maximum(norms,1e-12))
+        # Fixed one-second acceleration decay, rather than unbounded extrapolation.
+        history=cv+acceleration[:,None,:]*(times-1+np.exp(-times))[None,:,None]
+        future=[]
+        for k in range(8):
+            world.scheduler.advance(world.policies)
+            people=world.env.humans
+            ha=[h.act([other.get_observable_state() for other in people if other is not h]) for h in people]
+            for h,a in zip(people,ha): h.step(a)
+            world.env.global_time+=.25
+            future.append(humans()[:,:2].copy())
+        oracle=np.stack(future,axis=1)
+        selections={}; forecasts={}
+        for name,pred in [('current',cv),('history',history),('oracle',oracle)]:
+            po.human_segment_start=np.concatenate([current[:,None,:2],pred[:,:-1]],axis=1)
+            po.human_segment_end=pred
+            clearance=planner._human_clearance(velocities,po)
+            costs=planner._cost(velocities,po,positions,clearance,None,None)
+            selections[name]=int(np.argmin(costs))
+            forecasts[name]=dict(costs=costs.tolist(),min_clearance=clearance.min(axis=(1,2)).tolist(),
+                endpoint_error=float(np.linalg.norm(pred[:,-1]-oracle[:,-1],axis=1).mean()))
+        branches=[]
+        for j in range(11):
+            o=replay(t); ret=0.; minimum=100.; steps=0
+            for k in range(140-t):
+                a=executable[j,k].astype(np.float32) if j<10 and k<8 else model.predict(o,deterministic=True)[0]
+                o,r,d,tr,inf=env.step(a); ret+=(.99**k)*r; steps+=1
+                minimum=min(minimum,float(inf['actual_clearance']))
+                if k<8: np.testing.assert_allclose(humans()[:,:2],oracle[:,k],atol=2e-6,rtol=0)
+                if d or tr: break
+            assert d or tr
+            branches.append(dict(candidate=j,return_value=float(ret),outcome=inf['outcome'],steps=steps,min_clearance=minimum))
+        assert branches[10]['outcome']==baseline
+        best=int(np.argmax([b['return_value'] for b in branches]))
+        records.append(dict(step=t,selections=selections,forecasts=forecasts,branches=branches,best_return_candidate=best,
+                            controls=executable.tolist(),state_hash=hashes[t]))
+    env.close()
+    return dict(case=spec['case'],layout=spec['layout'],profile=spec['profile'],fresh=spec['fresh'],baseline=baseline,
+                baseline_steps=length,replay_exact=True,human_future_verified=True,anchors=records)
+
+
+def failure_evidence_audit(args):
+    import multiprocessing
+    root=args.results;root.mkdir(parents=True,exist_ok=False)
+    source=Path('repair_results/dagger_ppo_nominal_20260915/initial.zip')
+    original=Path('repair_results/student_dagger_coverage_20260915/independent_confirmation.json')
+    nonstationary=Path('repair_results/incremental_information_disjoint_20260915')
+    protocol=dict(purpose='Locate missing-information evidence, not train or design Bayes',
+        discovery='all failures in original 500 nominal and 200 nonstationary audit episodes',
+        anchors='collision: 8/16 steps before termination; timeout:64/112',
+        candidates='3x3 actor-local dv +/- .2 and omega +/- .4, plus stop; projected by existing unicycle planner; execute 8 steps then frozen actor',
+        selectors='same existing cost, margin .50: CV, four-frame acceleration clipped 1m/s2 and decayed 1s, exact human future',
+        retrospective_upper_bound='best realized return in same finite bank plus feedback baseline; not a global upper bound',
+        fresh_confirmation='50 nominal +50 train_nonstationary, layout=case=971000..971099; fixed step16 if reached',
+        history_evidence_gate='fresh paired History-Current return improvement 95% episode bootstrap lower bound >0 and no excess collisions',
+        limitation='Oracle future may include unpredictable scheduler draws; privileged value alone is not learnable information or Bayesian necessity',
+        training_updates=0,code_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        actors='nominal uses original round16; nonstationary uses original PPO-initial checkpoint; no cross-profile actor comparison',
+        actor_sha256=hashlib.sha256(source.read_bytes()).hexdigest())
+    (root/'protocol.json').write_text(json.dumps(protocol,indent=2))
+    specs=[]
+    for r in json.loads(original.read_text())['records']:
+        if r['outcome']!='success': specs.append(dict(case=r['test_case'],layout=r['layout_seed'],profile='nominal',fresh=False,expected=r['outcome'],trace=r['trace']))
+    for i,r in enumerate(json.loads((nonstationary/'audit_episodes.json').read_text())):
+        if r['outcome']!='success': specs.append(dict(case=130000+i,layout=84000000+i,profile='train_nonstationary',fresh=False,expected=r['outcome'],truth_file=str(nonstationary/f'audit_episode_{i:03d}.npz')))
+    specs.extend(dict(case=971000+i,layout=971000+i,profile='nominal' if i<50 else 'train_nonstationary',fresh=True) for i in range(100))
+    all_results=[]
+    with multiprocessing.get_context('spawn').Pool(4) as pool:
+        for result in pool.imap(failure_evidence_case,[(str(args.params),str(source),s) for s in specs]):
+            all_results.append(result)
+            (root/f"case_{result['case']}.json").write_text(json.dumps(result,indent=2))
+            print('EVIDENCE',len(all_results),len(specs),result['case'],result['baseline'],flush=True)
+    summary={}
+    rng=np.random.default_rng(2407)
+    for split in ('discovery','fresh'):
+        cases=[r for r in all_results if r['fresh']==(split=='fresh')]
+        out=dict(cases=len(cases),eligible=sum(bool(r['anchors']) for r in cases))
+        for arm in ('current','history','oracle','best'):
+            picked=[];deltas=[]
+            for r in cases:
+                for a in r['anchors']:
+                    b=a['branches'][a['best_return_candidate'] if arm=='best' else a['selections'][arm]]
+                    picked.append(b)
+                    deltas.append(b['return_value']-a['branches'][10]['return_value'])
+            out[arm]=dict(anchor_count=len(picked),success=sum(b['outcome']=='success' for b in picked),
+                collision=sum(b['outcome']=='collision' for b in picked),timeout=sum(b['outcome']=='timeout' for b in picked),
+                mean_return_gain_vs_actor=float(np.mean(deltas)))
+        differences=[];excess=0
+        for r in cases:
+            ds=[]
+            for a in r['anchors']:
+                c=a['branches'][a['selections']['current']];h=a['branches'][a['selections']['history']]
+                ds.append(h['return_value']-c['return_value'])
+                excess+=int(h['outcome']=='collision')-int(c['outcome']=='collision')
+            if ds:differences.append(np.mean(ds))
+        boot=np.mean(rng.choice(differences,(10000,len(differences))),axis=1)
+        ci=np.quantile(boot,[.025,.975]).tolist()
+        out['history_vs_current']=dict(mean=float(np.mean(differences)),ci95=ci,excess_collision_anchors=excess,passed=bool(ci[0]>0 and excess<=0))
+        summary[split]=out
+    (root/'summary.json').write_text(json.dumps(summary,indent=2))
+    print(json.dumps(summary,indent=2),flush=True)
+
+
+def failure_evidence_integrity(root, params):
+    """Post-run provenance and physical-layout audit, without changing selectors."""
+    from collections import Counter
+    from crowd_nav.bayes_continuous.train_smoke import ActionHistory, dagger_artifact
+    rows=[json.loads(p.read_text()) for p in sorted(root.glob('case_*.json'))]
+    assert len(rows)==129
+    old=json.loads(Path('repair_results/student_dagger_coverage_20260915/independent_confirmation.json').read_text())['records']
+    previous={r['layout_sha256'] for r in old}
+    for split in ('train','validation','audit'):
+        records=json.loads((Path('repair_results/incremental_information_disjoint_20260915')/(split+'_episodes.json')).read_text())
+        previous.update(r['layout_sha256'] for r in records)
+    env=ActionHistory(BeliefEnv(params,arm='no_belief'),route=True)
+    hashes=[]
+    for r in rows:
+        if not r['fresh']:continue
+        env.reset(options=dict(layout_seed=r['layout'],test_case=r['case'],profile=r['profile']))
+        w=env.unwrapped.world
+        human=np.asarray([[h.px,h.py,h.gx,h.gy,h.radius,h.v_pref] for h in w.env.humans],np.float64)
+        joint=np.concatenate([human,np.asarray([[w.robot.px,w.robot.py,w.robot.gx,w.robot.gy,w.robot.radius,w.robot.theta]])])
+        hh=hashlib.sha256(human.tobytes()).hexdigest();jh=hashlib.sha256(joint.tobytes()).hexdigest()
+        assert hh not in previous and jh not in previous
+        hashes.append(dict(case=r['case'],human_hash=hh,joint_hash=jh))
+    assert len({x['human_hash'] for x in hashes})==100
+    env.close()
+    report=dict(total_cases=len(rows),anchors=sum(len(r['anchors']) for r in rows),
+        branches=sum(len(a['branches']) for r in rows for a in r['anchors']),
+        branch_environment_steps=sum(b['steps'] for r in rows for a in r['anchors'] for b in a['branches']),
+        independent_fresh_layouts=100,overlap_with_previous_1200=0,layout_hashes=hashes,
+        actor_hashes={str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in [
+            dagger_artifact(Path('repair_results/student_dagger_coverage_20260915'),'round16.zip'),
+            Path('repair_results/dagger_ppo_nominal_20260915/initial.zip')]},
+        frozen_mainline={str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in [
+            Path('crowd_nav/bayes_continuous/train_smoke.py'),Path('crowd_nav/bayes_continuous/network.py')]},
+        ineligible=[dict(case=r['case'],outcome=r['baseline'],steps=r['baseline_steps']) for r in rows if not r['anchors']],
+        strata={})
+    for fresh in (False,True):
+        for profile in ('nominal','train_nonstationary'):
+            subset=[r for r in rows if r['fresh']==fresh and r['profile']==profile]
+            entry=dict(cases=len(subset),baseline=dict(Counter(r['baseline'] for r in subset)),arms={})
+            for arm in ('current','history','oracle','best'):
+                outcomes=[];gains=[];rescued=[]
+                for r in subset:
+                    success=False
+                    if not r['anchors']:outcomes.append(r['baseline']);continue
+                    for a in r['anchors']:
+                        b=a['branches'][a['best_return_candidate'] if arm=='best' else a['selections'][arm]]
+                        outcomes.append(b['outcome']);gains.append(b['return_value']-a['branches'][10]['return_value'])
+                        success|=b['outcome']=='success'
+                    if success and r['baseline']!='success':rescued.append(r['case'])
+                entry['arms'][arm]=dict(outcomes=dict(Counter(outcomes)),mean_return_gain=float(np.mean(gains)),rescued_cases=rescued)
+            report['strata'][f'{fresh}_{profile}']=entry
+    (root/'integrity.json').write_text(json.dumps(report,indent=2))
+    print(json.dumps({k:v for k,v in report.items() if k!='layout_hashes'},indent=2))
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--results', type=Path, required=True)
@@ -1037,6 +1261,7 @@ def main():
     parser.add_argument('--reciprocity-audit', action='store_true')
     parser.add_argument('--reciprocity-resume', action='store_true')
     parser.add_argument('--type-oracle', action='store_true')
+    parser.add_argument('--failure-evidence', action='store_true')
     args = parser.parse_args()
     if args.information_ridge:
         information_ridge_audit(args.results)
@@ -1047,6 +1272,9 @@ def main():
     if args.params is None:
         parser.error('--params is required for checkpoint auditing')
     torch.set_num_threads(1)
+    if args.failure_evidence:
+        failure_evidence_audit(args)
+        return
     if args.type_oracle:
         type_oracle_audit(args)
         return
