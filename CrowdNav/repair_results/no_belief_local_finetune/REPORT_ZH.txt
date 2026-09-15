@@ -1,0 +1,105 @@
+空Replay、局部探索与低学习率TD3微调：完整结果
+
+一、结论
+完成3000步冻结Actor在线探索及3000次Critic-only更新，随后完成1000步微调。
+解冻前基线：99成功、1碰撞、0超时。
+微调1000步后：46成功、31碰撞、23超时。
+触发预定SR<80%停止规则，未执行第二个1000步。总环境采集步数为4000。
+本版没有像前版那样跌到0%成功率，但仍严重损害已有导航能力，不能判为通过。
+本轮没有改变reward，没有Cost、BC或DAgger loss，没有追加MAP/FULL。
+
+二、运行代码
+仓库：jinglongjiang/camrl
+分支：repair-continuous-training-20260914
+运行提交：5291af8
+仍在现有train_smoke.py内实现，入口--native-td3 --finetune。
+FineTuneTD3仅覆写_update_learning_rate，让SB3每次训练重设学习率时仍保持
+Actor=3e-5、Critic=3e-4。FineTuneTD3.train就是TD3.train，未改原生TD3损失或更新公式。
+没有新风险头、Cost Critic、BC正则、Mamba或离散动作网格。
+19项契约测试通过，新增测试实际运行原生train验证两种学习率不会被覆盖。
+
+三、固定协议
+5人、baseline_circle、nominal、seed=2407、10维robot输入及route state。
+Actor源为原始round16.zip，只迁移Actor与Actor target，不迁移Critic或optimizer。
+源SHA256：634e8106713c0c316afc77bf345615d3a6a101789f82f182853356ab57dbc086
+Replay容量10000，从空开始；旧teacher/DAgger/demo预填充为0。
+冻结期3000步，每步先执行Actor动作加标准差0.1的归一化高斯噪声并裁剪，再
+把实际transition放入Replay，进行一次双Reward Critic Bellman MSE更新。
+冻结期只更新Critic及其target，Actor无梯度更新，结束后逐张量不变断言通过。
+保留3000条实际transition；未另采安全干预数据。
+微调：Actor lr=3e-5，Critic lr=3e-4，policy_delay=10，gamma=.99，tau=.005，
+batch=128，1环境步对应1 Critic更新，使用原生TD3探索和target smoothing。
+未修改环境、reward、教师、SetEncoder或Bayes。
+
+四、冻结阶段实际情况
+Replay由0增长至3000。
+3000步中完成62个episode：59成功、3碰撞；另可能存在未结束的episode，
+因此不能把这62回合当成固定样本规模的独立性能评价。
+Actor逐张量未变；末批Critic训练损失为0.003486。
+这不是验证集损失，不代表Q对未执行动作的反事实预测已准确。
+保存frozen_actor_3000.zip及frozen_transitions.pt。
+然后进行固定100回合、无探索噪声的基线评价：99/1/0，原导航能力保持。
+
+五、解冻前速度扫描
+从3000条Replay状态用独立固定随机种子抽取500个不同状态，不改变训练随机流。
+保持Actor当前输出的omega不变，对v=0,.1,...,1扫描min(Q1,Q2)。
+最优速度落在1.0的状态：499/500（99.8%）。
+另1个状态最优速度为0.1；其他速度档为0。
+这是强烈的满速偏好证据，但不是“梯度错误”的直接证明：没有对每个候选动作
+运行相同后续策略的实际return对照，Q偏好本身不能充当反事实真值。
+完整500x11的Q值、样本索引及Actor动作保存于speed_probe.json。
+
+六、闭环结果
+阶段                          成功        碰撞        超时
+冻结3000步后基线              99/100      1/100       0/100
+解冻后微调1000步              46/100      31/100      23/100
+解冻后微调2000步              未执行（已触发80%停止规则）
+
+相同开发case：30000..30099；layout_seed=530000..530099。
+两组100个layout_seed、test_case、物理布局SHA256逐一一致。
+配对变化：46个原成功保持成功；30个原成功变碰撞；23个原成功变超时；
+原来的1个碰撞仍然碰撞。动作边界违规计数两组均为0。
+这不是工作区边界的额外认证，也不是全新独立测试集。
+原96.4%来自之前500回合独立评价，本轮不能将其与开发100回合直接混算。
+
+七、保存检查点复核
+rl_1000.zip记录num_timesteps=1000、_n_updates=1000、policy_delay=10。
+前面的3000步手动冻结采集单独登记，不包含在这个num_timesteps字段内。
+原生Actor更新为100次，而上一版1000步更新500次。
+实际保存的Actor optimizer lr=0.00003，Critic optimizer lr=0.0003。
+检查点不含任何cost文件，原生train未加入其他损失。
+训练记录、原模型、旧失败队列均未覆盖。
+
+八、与上一版的区别及解释边界
+上一版：预填充50000旧数据、1000次离线预热、Actor lr=3e-4、policy_delay=2，
+训练1000步后0成功/19碰撞/81超时。
+本版：空Replay、3000步局部探索+Critic-only、Actor lr=3e-5、policy_delay=10，
+微调1000步后46成功/31碰撞/23超时。
+本版成功率较高，但碰撞更多；多个协议因素同时改变，不能把差异单独归因于
+Replay、局部探索或学习率中某一项，也不能宣称全面改善或统计显著收益。
+可以确定：Actor在解冻前正常，解冻后的Reward-only TD3更新仍产生显著的实际退化。
+仍不能确定：Q外推、reward、短时域训练或其他因素谁是唯一根因。
+本版失败不自动证明reward有错；满速Q扫描也不构成这一因果证明。
+按冻结协议到此停止，不继续降低学习率、加步数、换reward或新增模块。
+若另行开展下一轮，应先核对Q动作排序与固定后续策略实际return的一致性，
+再决定是否改变reward；本报告没有启动这项额外实验。
+
+九、本地与远程文件
+本地：/home/abc/workspace/bayes_set_continuous/CrowdNav/repair_results/no_belief_local_finetune/
+远程：/root/continuous_repair_20260914/CrowdNav/repair_results/no_belief_local_finetune/
+REPORT_ZH.txt：本报告。
+status.json：参数、冻结损失、冻结回合、速度扫描汇总、基线及微调结果。
+baseline_episodes.json、evaluation_1000.json：100回合配对原始记录。
+training_episodes.json：训练完成回合记录。
+speed_probe.json：500状态的速度扫描原值。
+frozen_transitions.pt：3000条局部探索transition，已取回本地，不上传Git。
+frozen_actor_3000.zip、rl_1000.zip：模型已取回本地，不上传Git。
+相邻no_belief_local_finetune.launch.log：完整阶段日志。
+SHA256SUMS.txt：远程原文件哈希；下载后在本地校验。
+Git同步报告、JSON、日志及清单。原始round16和旧结果保留。
+
+复现命令（换用不存在的输出目录）：
+cd /root/continuous_repair_20260914/CrowdNav
+PYTHONPATH=/root/bayes_continuous_deps:$PWD OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 \
+ /root/miniconda3/envs/mamba/bin/python -m crowd_nav.bayes_continuous.train_smoke \
+ --native-td3 --finetune --out repair_results/no_belief_local_finetune_reproduction

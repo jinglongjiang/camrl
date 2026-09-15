@@ -1,0 +1,28 @@
+Gym has been unmaintained since 2022 and does not support NumPy 2.0 amongst other critical functionality.
+Please upgrade to Gymnasium, the maintained drop-in replacement of Gym, or contact the authors of your software and request that they upgrade.
+Users of this version of Gym should be able to simply replace 'import gym' with 'import gymnasium as gym' in the vast majority of cases.
+See the migration guide at https://gymnasium.farama.org/introduction/migration_guide/ for additional information.
+LOCAL_TD3 initializing
+[GDBN] : K=3 repair_results/params
+LOCAL_TD3 frozen_actor_local_collection_3000
+LOCAL_FROZEN 500 0.001526082050986588
+LOCAL_FROZEN 1000 0.011760467663407326
+LOCAL_FROZEN 1500 0.0031317530665546656
+LOCAL_FROZEN 2000 0.0033107169438153505
+LOCAL_FROZEN 2500 0.0041503808461129665
+LOCAL_FROZEN 3000 0.0034860121086239815
+LOCAL_TD3 frozen_baseline_evaluation
+[GDBN] : K=3 repair_results/params
+episodes 530000 20
+episodes 530000 40
+episodes 530000 60
+episodes 530000 80
+episodes 530000 100
+LOCAL_TD3 finetune_to_1000
+[GDBN] : K=3 repair_results/params
+episodes 530000 20
+episodes 530000 40
+episodes 530000 60
+episodes 530000 80
+episodes 530000 100
+LOCAL_TD3 stopped_below_80_percent
