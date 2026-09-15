@@ -631,7 +631,9 @@ def reciprocity_audit(args):
     """Frozen diagnostic only; never updates a navigation policy or old GDBN."""
     import multiprocessing, time, copy
     from scipy.special import expit
-    start=time.time();root=args.results;root.mkdir(parents=True,exist_ok=False)
+    start=time.time();root=args.results
+    resume=getattr(args,'reciprocity_resume',False)
+    root.mkdir(parents=True,exist_ok=resume)
     source='repair_results/dagger_ppo_nominal_20260915/initial.zip'
     protocol=dict(stage='frozen_before_collection',robot_visible=True,
         intervention_profile='nominal',persistent_type_prior=.5,
@@ -654,8 +656,18 @@ def reciprocity_audit(args):
                     'Fixed behavior policy, binary simulator types, not real-human evidence',
                     'Terminal branches masked; no invented post-terminal motion',
                     'Finite diagnostic regressors; failure is not information-theoretic equivalence'])
-    (root/'protocol.json').write_text(json.dumps(protocol,indent=2))
+    if resume:
+        protocol=json.loads((root/'protocol.json').read_text())
+        assert protocol['source_sha256']==hashlib.sha256(Path(source).read_bytes()).hexdigest()
+        (root/'implementation_repair.json').write_text(json.dumps(dict(
+            reason='Zero valid future targets for some terminated episodes caused division by zero; apply one shared mask across every arm',
+            no_new_data=True,no_gate_change=True,
+            resumed_code_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()),indent=2))
+    else:
+        (root/'protocol.json').write_text(json.dumps(protocol,indent=2))
     def collect(split,gate=False):
+        if resume:
+            return torch.load(root/(split+'_raw.pt'),weights_only=False)
         tasks=[(str(args.params),source,protocol['case_starts'][split]+i,gate)
                for i in range(protocol['counts'][split])]
         with multiprocessing.get_context('spawn').Pool(6) as pool:
@@ -750,6 +762,13 @@ def reciprocity_audit(args):
     train=datasets['train'];xmu=train[0].mean(0);xsd=np.maximum(train[0].std(0),.01)
     ymu=np.sum(train[1]*train[2],0)/train[2].sum(0)
     ysd=np.maximum(np.sqrt(np.sum((train[1]-ymu)**2*train[2],0)/train[2].sum(0)),.01)
+    audit_ids=datasets['audit'][3];audit_mask=datasets['audit'][2]
+    eligible=np.array([i for i in range(len(raw['audit']))
+                       if audit_mask[audit_ids==i][:,[0,1,4,5]].sum()>0])
+    (root/'target_availability.json').write_text(json.dumps(dict(
+        total_audit_episodes=len(raw['audit']),eligible_episodes=len(eligible),
+        no_valid_future_cases=[e['case'] for i,e in enumerate(raw['audit']) if i not in eligible],
+        reason='No observed 1/2-second target; same inclusion for all arms, no outcome-based model selection'),indent=2))
     results={};episode_scores={}
     for arm in ('current','history','map','full'):
         tensors={}
@@ -783,7 +802,7 @@ def reciprocity_audit(args):
             y=datasets['audit'][1];m=datasets['audit'][2];ids=datasets['audit'][3]
             cols=np.array([0,1,4,5]);sq=(pred[:,cols]-y[:,cols])**2;mm=m[:,cols]
             scores=np.array([(sq[ids==i]*mm[ids==i]).sum()/mm[ids==i].sum()
-                             for i in range(len(raw['audit']))])
+                             for i in eligible])
             assert np.isfinite(scores).all()
             episode_scores[arm].append(scores)
             metrics=dict(seed=seed,validation_loss=bestloss,selected_update=beststep,
@@ -822,6 +841,7 @@ def main():
     parser.add_argument('--information-audit', action='store_true')
     parser.add_argument('--information-ridge', action='store_true')
     parser.add_argument('--reciprocity-audit', action='store_true')
+    parser.add_argument('--reciprocity-resume', action='store_true')
     args = parser.parse_args()
     if args.information_ridge:
         information_ridge_audit(args.results)
@@ -832,7 +852,7 @@ def main():
     if args.params is None:
         parser.error('--params is required for checkpoint auditing')
     torch.set_num_threads(1)
-    if args.reciprocity_audit:
+    if args.reciprocity_audit or args.reciprocity_resume:
         reciprocity_audit(args)
         return
     if args.information_audit:
