@@ -374,6 +374,24 @@ class Contracts(unittest.TestCase):
 
 
 class GaussianTransferTests(unittest.TestCase):
+    def test_information_probe_features_are_causal_and_masked(self):
+        from crowd_nav.bayes_continuous.audit_saved import information_features,information_arm
+        rng=np.random.default_rng(5)
+        frames=[dict(robot=rng.normal(size=10).astype(np.float32),
+            humans=rng.normal(size=(5,9)).astype(np.float32),
+            oracle=rng.normal(size=(5,8)).astype(np.float32)) for _ in range(8)]
+        x,o=information_features(frames,3,2)
+        causal,_=information_features(frames[:4],3,2)
+        np.testing.assert_array_equal(x,causal)
+        np.testing.assert_array_equal(x[10:15],frames[3]['humans'][2,:5])
+        for arm in ['current','history','map','full','oracle']:
+            z=information_arm(x[None],o[None],arm)
+            self.assertEqual(z.shape,(1,180))
+            np.testing.assert_array_equal(z[0,:35],x[:35])
+            if arm!='history':self.assertFalse(z[:,35:140].any())
+            if arm!='oracle':self.assertFalse(z[:,160:].any())
+            if arm=='current':self.assertFalse(z[:,35:].any())
+
     def test_standalone_actor_has_no_critic_and_can_learn(self):
         from crowd_nav.bayes_continuous.network import ContinuousSetActor
         from crowd_nav.bayes_continuous.train_smoke import ActionHistory

@@ -14,6 +14,260 @@ from crowd_nav.bayes_continuous.environment import BeliefEnv, ARMS
 from crowd_nav.bayes_continuous.algorithm import BayesSetTD3
 
 
+def information_features(frames, t, person):
+    """Causal, target-first ordering, shared across all four history frames."""
+    now=frames[t]; xy=now['humans'][:,:2]
+    others=[i for i in np.argsort(np.linalg.norm(xy-xy[person],axis=1)) if i!=person]
+    order=[person]+others
+    def physical(frame):
+        return np.concatenate([frame['robot'],frame['humans'][order,:5].ravel()])
+    x=np.zeros(180,np.float32)
+    x[:35]=physical(now)
+    x[35:140]=np.concatenate([physical(frames[t-j]) for j in (1,2,3)])
+    x[140:160]=now['humans'][order,5:9].ravel()
+    oracle=now['oracle'][order].ravel()
+    return x,oracle
+
+
+def information_arm(x, oracle, arm):
+    out=np.zeros_like(x);out[:,:35]=x[:,:35]
+    if arm=='history':out[:,35:140]=x[:,35:140]
+    elif arm=='full':out[:,140:160]=x[:,140:160]
+    elif arm=='map':
+        p=x[:,140:160].reshape(-1,5,4)
+        q=np.zeros_like(p);q[:,:,:3]=np.eye(3,dtype=np.float32)[p[:,:,:3].argmax(-1)]
+        out[:,140:160]=q.reshape(-1,20)
+    elif arm=='oracle':out[:,140:180]=oracle
+    elif arm!='current':raise ValueError(arm)
+    return out
+
+
+def information_episode(task):
+    from stable_baselines3 import PPO
+    from crowd_nav.bayes_continuous.train_smoke import ActionHistory
+    from crowd_nav.bayes_continuous.environment import transform_observation
+    from crowd_nav.bayesian_pilot.protocol import MODE_TO_ID
+    params,source,split,index,layout=task
+    torch.set_num_threads(1)
+    env=ActionHistory(BeliefEnv(params,arm='full'),route=True)
+    policy=PPO.load(source,device='cpu')
+    case_start=dict(train=110000,validation=120000,audit=130000,smoke=150000)[split]
+    obs,_=env.reset(options=dict(layout_seed=layout,test_case=case_start+index,profile='train_nonstationary'))
+    world=env.unwrapped.world
+    layout_hash=hashlib.sha256(np.asarray([[h.px,h.py,h.gx,h.gy,h.radius,h.v_pref]
+        for h in world.env.humans]+[[world.robot.px,world.robot.py,world.robot.gx,
+        world.robot.gy,world.robot.radius,world.robot.theta]],dtype=np.float64).tobytes()).hexdigest()
+    frames=[]
+    for step in range(141):
+        humans=env.unwrapped.world.env.humans
+        truth=np.array([[h.px,h.py,h.vx,h.vy] for h in humans],np.float64)
+        oracle=np.zeros((5,8),np.float32)
+        events=env.unwrapped.world.scheduler.events
+        for i,e in enumerate(events):
+            oracle[i,MODE_TO_ID[e.mode]]=1
+            oracle[i,5:]=[e.remaining/7.,e.scale,e.turn_radians]
+        frames.append(dict(robot=obs['robot'].copy(),humans=obs['humans'][:5].copy(),
+            truth=truth,theta=env.unwrapped.world.robot.theta,oracle=oracle,
+            klda=np.array(env.unwrapped.filter.get_all_klda()[:5],np.float32)))
+        if step and done:break
+        action=policy.predict(transform_observation(obs,'no_belief'),deterministic=True)[0]
+        obs,_,done,_,info=env.step(action)
+    else:raise AssertionError('Episode exceeds legal horizon')
+    rows=[]
+    for t in range(3,len(frames)-1):
+        c,s=np.cos(frames[t]['theta']),np.sin(frames[t]['theta'])
+        rotation=np.array([[c,s],[-s,c]])
+        for person in range(5):
+            x,oracle=information_features(frames,t,person)
+            y=np.zeros((4,4),np.float32);valid=np.zeros(4,np.float32)
+            for j,h in enumerate((1,2,4,8)):
+                if t+h>=len(frames):continue
+                current=frames[t]['truth'][person];future=frames[t+h]['truth'][person]
+                y[j,:2]=rotation@((future[:2]-current[:2])/(h*.25)-current[2:])/2
+                y[j,2:]=rotation@(future[2:]-current[2:])/2
+                valid[j]=1
+            rows.append((x,oracle,y.ravel(),valid,t,person))
+    result=dict(info['episode_result'],split=split,layout_sha256=layout_hash,frames=len(frames),
+                events=dict(env.unwrapped.world.scheduler.counts))
+    env.close()
+    return result,frames,rows
+
+
+def information_audit(args):
+    """Frozen representation audit; only diagnostic predictors are trained."""
+    import copy,multiprocessing,time
+    root=args.results;root.mkdir(parents=True,exist_ok=False)
+    source=Path('repair_results/dagger_ppo_nominal_20260915/initial.zip')
+    protocol=dict(counts=dict(train=400,validation=100,audit=200),
+        seed_starts=dict(train=82000000,validation=83000000,audit=84000000),
+        case_starts=dict(train=110000,validation=120000,audit=130000),
+        profile='train_nonstationary',humans=5,horizons_steps=[1,2,4,8],dt=.25,
+        arms=['current','history','map','full','oracle'],
+        neural_seeds=[2407,4807,7207],updates=6000,batch=512,lr=.001,
+        predictor='180-128-128-32: diagonal Gaussian residual mean/log-std',
+        checkpoint_selection='lowest validation masked NLL, every 1000 updates',
+        primary='mean episode Gaussian NLL, horizons 4/8, averaged across three predictor seeds',
+        gate='FULL gain >= .02 nats/dimension and simultaneous 98.333% bootstrap lower bound > 0 vs Current/History/MAP; >=2/3 seed directions positive',
+        positive_control='Oracle current event type/remaining/strength, never available to policy',
+        terminal_censoring='per-horizon mask; no post-terminal invented labels',
+        initialization_source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+        audit_code_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        frozen_params={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in args.params.glob('*.npz')},
+        no_ppo_training=True,no_input_change=True,no_formal_heldout=True)
+    (root/'protocol.json').write_text(json.dumps(protocol,indent=2))
+    started=time.time();data={};seen_layouts=set()
+    for split,count in protocol['counts'].items():
+        records=[];xs=[];os=[];ys=[];ms=[];ids=[];steps=[];persons=[]
+        tasks=[(str(args.params),str(source),split,i,protocol['seed_starts'][split]+i) for i in range(count)]
+        with multiprocessing.get_context('spawn').Pool(6) as pool:
+            for record,frames,rows in pool.imap(information_episode,tasks):
+                if record['layout_sha256'] in seen_layouts:
+                    raise AssertionError('Physical layout duplication: abort before predictor training')
+                seen_layouts.add(record['layout_sha256'])
+                ep=len(records);records.append(record)
+                for x,o,y,m,t,person in rows:
+                    xs.append(x);os.append(o);ys.append(y);ms.append(m);ids.append(ep);steps.append(t);persons.append(person)
+                # Record event truth only for audit, separate from legal feature tensors.
+                np.savez_compressed(root/f'{split}_episode_{ep:03d}.npz',
+                    truth=np.stack([f['truth'] for f in frames]),
+                    posterior=np.stack([f['humans'][:,5:9] for f in frames]),
+                    oracle=np.stack([f['oracle'] for f in frames]),
+                    klda=np.stack([f['klda'] for f in frames]))
+                if len(records)%25==0:print('COLLECT',split,len(records),flush=True)
+        data[split]=dict(x=np.stack(xs),oracle=np.stack(os),y=np.stack(ys),mask=np.stack(ms),
+                         episode=np.array(ids),step=np.array(steps),person=np.array(persons))
+        np.savez_compressed(root/f'{split}_features.npz',**data[split])
+        (root/f'{split}_episodes.json').write_text(json.dumps(records,indent=2))
+    print('COLLECTION_COMPLETE',round(time.time()-started,1),flush=True)
+    device='cuda' if torch.cuda.is_available() else 'cpu'
+    torch.set_num_threads(1)
+    ymean=np.zeros(16,np.float32);yscale=np.ones(16,np.float32)
+    for h in range(4):
+        v=data['train']['y'][data['train']['mask'][:,h]>0,h*4:h*4+4]
+        ymean[h*4:h*4+4]=v.mean(0);yscale[h*4:h*4+4]=np.maximum(v.std(0),.02)
+    def score(model,bundle):
+        model.eval();parts=[];preds=[]
+        with torch.no_grad():
+            for start in range(0,len(bundle['x']),4096):
+                x,y,m=(bundle[k][start:start+4096] for k in ('x','y','mask'))
+                out=model(x);mu,ls=out[:,:16],out[:,16:].clamp(-5,3)
+                nll=.5*((y-mu)*(-ls).exp()).square()+ls+.5*np.log(2*np.pi)
+                parts.append(nll.cpu().numpy().reshape(-1,4,4).mean(-1));preds.append(mu.cpu().numpy())
+        model.train()
+        return np.concatenate(parts),np.concatenate(preds)
+    results={};episode_scores={}
+    for arm in protocol['arms']:
+        raw={s:information_arm(d['x'],d['oracle'],arm) for s,d in data.items()}
+        mean=raw['train'].mean(0);scale=np.maximum(raw['train'].std(0),.01)
+        tensors={s:dict(x=torch.as_tensor((raw[s]-mean)/scale,device=device),
+            y=torch.as_tensor((d['y']-ymean)/yscale,device=device),
+            mask=torch.as_tensor(d['mask'],device=device)) for s,d in data.items()}
+        results[arm]=[];episode_scores[arm]=[]
+        for seed in protocol['neural_seeds']:
+            torch.manual_seed(seed);rng=np.random.default_rng(seed)
+            model=torch.nn.Sequential(torch.nn.Linear(180,128),torch.nn.ReLU(),
+                torch.nn.Linear(128,128),torch.nn.ReLU(),torch.nn.Linear(128,32)).to(device)
+            opt=torch.optim.Adam(model.parameters(),lr=.001);best=float('inf');best_state=None
+            curve=[]
+            for update in range(6000):
+                idx=rng.integers(len(raw['train']),size=512)
+                x,y,m=(tensors['train'][k][idx] for k in ('x','y','mask'))
+                out=model(x);mu,ls=out[:,:16],out[:,16:].clamp(-5,3)
+                loss=((.5*((y-mu)*(-ls).exp()).square()+ls).reshape(-1,4,4).mean(-1)*m).sum()/m.sum()
+                if not torch.isfinite(loss):raise AssertionError('Nonfinite predictor training')
+                opt.zero_grad();loss.backward();torch.nn.utils.clip_grad_norm_(model.parameters(),10);opt.step()
+                if (update+1)%1000==0:
+                    nll,_=score(model,tensors['validation']);mask=data['validation']['mask']
+                    val=float((nll*mask).sum()/mask.sum());curve.append([update+1,val])
+                    if val<best:best=val;best_state=copy.deepcopy(model.state_dict())
+                    print('FIT',arm,seed,update+1,round(val,4),flush=True)
+            model.load_state_dict(best_state);nll,pred=score(model,tensors['audit'])
+            pred=pred*yscale+ymean;errors=(pred-data['audit']['y']).reshape(-1,4,4)
+            position=np.linalg.norm(errors[:,:,:2],axis=-1)*np.array([.5,1.,2.,4.])
+            velocity=np.linalg.norm(errors[:,:,2:],axis=-1)*2
+            mask=data['audit']['mask'];eps=data['audit']['episode']
+            scores=np.stack([np.divide((nll[eps==e]*mask[eps==e]).sum(0),mask[eps==e].sum(0),
+                out=np.full(4,np.nan),where=mask[eps==e].sum(0)>0) for e in range(200)])
+            episode_scores[arm].append(scores)
+            results[arm].append(dict(seed=seed,validation_curve=curve,best_validation_nll=best,
+                audit_nll=(nll*mask).sum(0).tolist(),audit_counts=mask.sum(0).tolist(),
+                position_error=((position*mask).sum(0)/mask.sum(0)).tolist(),
+                velocity_error=((velocity*mask).sum(0)/mask.sum(0)).tolist()))
+            torch.save(dict(state=best_state,xmean=mean,xscale=scale,ymean=ymean,yscale=yscale),root/f'{arm}_{seed}.pt')
+            np.savez_compressed(root/f'{arm}_{seed}_audit.npz',nll=nll,position_error=position,
+                                velocity_error=velocity,episode_scores=scores)
+        (root/'predictor_results.json').write_text(json.dumps(results,indent=2))
+    rng=np.random.default_rng(9017);comparisons={}
+    full=np.nanmean(np.asarray(episode_scores['full'])[:,:,2:],axis=-1)
+    eligible=np.isfinite(full).all(0);full=full[:,eligible]
+    idx=rng.integers(eligible.sum(),size=(20000,int(eligible.sum())))
+    for arm in ['current','history','map','oracle']:
+        competitor=np.nanmean(np.asarray(episode_scores[arm])[:,:,2:],axis=-1)[:,eligible]
+        differences=competitor-full;d=differences.mean(0)
+        interval=np.quantile(d[idx].mean(1),[.0083333333,.9916666667]).tolist()
+        comparisons[arm]=dict(full_nll_gain=float(d.mean()),simultaneous_interval=interval,
+            positive_seeds=int((differences.mean(1)>0).sum()),
+            passed=bool(d.mean()>=.02 and interval[0]>0 and (differences.mean(1)>0).sum()>=2))
+    passed=all(comparisons[a]['passed'] for a in ['current','history','map'])
+    summary=dict(stage='complete',prediction_gate=passed,comparisons=comparisons,
+        eligible_audit_episodes=int(eligible.sum()),
+        elapsed_seconds=time.time()-started,decision_test_started=False,
+        verdict='eligible_for_separate_decision_protocol' if passed else 'no_approval_for_long_PPO_on_this_evidence',
+        limitation='Finite diagonal-Gaussian probe; a failure is not proof of information-theoretic equivalence.')
+    (root/'summary.json').write_text(json.dumps(summary,indent=2));print(json.dumps(summary),flush=True)
+
+
+def information_ridge_audit(root):
+    """Secondary fixed linear mean probe; does not replace the frozen NLL gate."""
+    protocol=dict(reason='Cross-check Gaussian variance overfitting, not rescue a failed primary gate',
+        arms=['current','history','map','full','oracle'],
+        alpha=[.0001,.001,.01,.1,1.],selection='minimum validation standardized masked MSE',
+        model='same 180 inputs plus intercept, linear residual predictor',
+        predictor_training='train split only',variance_calibration='validation split only',
+        original_gate_unchanged=True)
+    if (root/'ridge_results.json').exists():raise ValueError('Do not overwrite a completed secondary audit')
+    (root/'ridge_protocol.json').write_text(json.dumps(protocol,indent=2))
+    data={s:dict(np.load(root/f'{s}_features.npz')) for s in ['train','validation','audit']}
+    ym=np.zeros(16);ys=np.ones(16)
+    for h in range(4):
+        y=data['train']['y'][data['train']['mask'][:,h]>0,h*4:h*4+4]
+        ym[h*4:h*4+4]=y.mean(0);ys[h*4:h*4+4]=np.maximum(y.std(0),.02)
+    results={}
+    for arm in protocol['arms']:
+        raw={s:information_arm(d['x'],d['oracle'],arm).astype(np.float64) for s,d in data.items()}
+        mean=raw['train'].mean(0);scale=np.maximum(raw['train'].std(0),.01)
+        x={s:np.column_stack([(v-mean)/scale,np.ones(len(v))]) for s,v in raw.items()}
+        y={s:(d['y']-ym)/ys for s,d in data.items()}
+        grams=[];cross=[]
+        for h in range(4):
+            mask=data['train']['mask'][:,h]>0;a=x['train'][mask];b=y['train'][mask,h*4:h*4+4]
+            grams.append(a.T@a/len(a));cross.append(a.T@b/len(a))
+        best=float('inf');best_beta=None;curve=[]
+        for alpha in protocol['alpha']:
+            penalty=np.eye(181)*alpha;penalty[-1,-1]=0
+            beta=np.concatenate([np.linalg.solve(g+penalty,c) for g,c in zip(grams,cross)],axis=1)
+            error=(x['validation']@beta-y['validation']).reshape(-1,4,4)
+            mask=data['validation']['mask'];loss=float((np.mean(error**2,axis=-1)*mask).sum()/mask.sum())
+            curve.append([alpha,loss])
+            if loss<best:best=loss;best_beta=beta;chosen=alpha
+        calibration=(x['validation']@best_beta-y['validation']).reshape(-1,4,4)
+        vmask=data['validation']['mask'][:,:,None]
+        variance=np.maximum((calibration**2*vmask).sum(0)/vmask.sum(0),1e-4)
+        normalized_error=(x['audit']@best_beta-y['audit']).reshape(-1,4,4)
+        nll=(.5*normalized_error**2/variance+.5*np.log(2*np.pi*variance)).mean(-1)
+        error=normalized_error*ys.reshape(1,4,4)
+        position=np.linalg.norm(error[:,:,:2],axis=-1)*[.5,1.,2.,4.]
+        mask=data['audit']['mask'];episode=data['audit']['episode']
+        ep_position=np.stack([(position[episode==e]*mask[episode==e]).sum(0)/mask[episode==e].sum(0) for e in range(200)])
+        results[arm]=dict(alpha=chosen,validation_curve=curve,
+            position_error=((position*mask).sum(0)/mask.sum(0)).tolist(),
+            nll=((nll*mask).sum(0)/mask.sum(0)).tolist())
+        np.savez_compressed(root/f'ridge_{arm}.npz',beta=best_beta,xmean=mean,xscale=scale,
+            ymean=ym,yscale=ys,variance=variance,episode_position=ep_position,nll=nll)
+        print('RIDGE',arm,results[arm],flush=True)
+    (root/'ridge_results.json').write_text(json.dumps(results,indent=2))
+
+
 def audit_dagger(folder, params):
     from crowd_nav.bayes_continuous.train_smoke import ActionHistory, dagger_artifact
     result = json.loads((folder/'results.json').read_text())
@@ -288,13 +542,21 @@ def main():
     parser.add_argument('--dagger-confirm', action='store_true')
     parser.add_argument('--dagger-diagnose', action='store_true')
     parser.add_argument('--original-collection', type=Path)
+    parser.add_argument('--information-audit', action='store_true')
+    parser.add_argument('--information-ridge', action='store_true')
     args = parser.parse_args()
+    if args.information_ridge:
+        information_ridge_audit(args.results)
+        return
     if args.teacher_runs:
         audit_teachers(args.teacher_runs, args.results)
         return
     if args.params is None:
         parser.error('--params is required for checkpoint auditing')
     torch.set_num_threads(1)
+    if args.information_audit:
+        information_audit(args)
+        return
     if args.dagger_diagnose:
         diagnose_dagger(args.results,args.params)
         return

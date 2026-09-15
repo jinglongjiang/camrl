@@ -1,0 +1,47 @@
+{
+  "stage": "complete",
+  "prediction_gate": false,
+  "comparisons": {
+    "current": {
+      "full_nll_gain": -0.05952607136685402,
+      "simultaneous_interval": [
+        -0.15807473168921518,
+        0.006692646769906396
+      ],
+      "positive_seeds": 0,
+      "passed": false
+    },
+    "history": {
+      "full_nll_gain": 0.005712921534044051,
+      "simultaneous_interval": [
+        -0.09727679474446041,
+        0.11018305058692691
+      ],
+      "positive_seeds": 2,
+      "passed": false
+    },
+    "map": {
+      "full_nll_gain": -0.059315417081428075,
+      "simultaneous_interval": [
+        -0.14780617500823753,
+        -0.0023776250964089754
+      ],
+      "positive_seeds": 0,
+      "passed": false
+    },
+    "oracle": {
+      "full_nll_gain": -0.03282454927141469,
+      "simultaneous_interval": [
+        -0.14814701258228336,
+        0.11206559734543312
+      ],
+      "positive_seeds": 1,
+      "passed": false
+    }
+  },
+  "eligible_audit_episodes": 200,
+  "elapsed_seconds": 530.6332314014435,
+  "decision_test_started": false,
+  "verdict": "no_approval_for_long_PPO_on_this_evidence",
+  "limitation": "Finite diagonal-Gaussian probe; a failure is not proof of information-theoretic equivalence."
+}

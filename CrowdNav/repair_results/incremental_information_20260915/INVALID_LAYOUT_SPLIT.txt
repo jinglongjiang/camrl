@@ -1,0 +1,10 @@
+本目录不可用于增量信息结论。
+2026-09-15独立物理hash核查发现：训练/验证/审计使用了重复test_case范围。
+底层CrowdSim生成布局时使用test_case，而非外层layout_seed。
+因此validation的100个物理布局全部与train重叠，audit的200个也全部与train重叠。
+虽然事件调度seed不同，仍违反本次整布局划分协议。
+已主动停止诊断预测器训练；没有运行PPO，没有采用任何本目录模型得出科学结论。
+修复仅涉及审计采集器：train110000起、validation120000起、audit130000起，
+并在任何预测器训练前强制检查700个物理布局hash全局互异。
+正确重跑目录：../incremental_information_disjoint_20260915。
+原数据保留供追溯，不覆盖、不删除、不混入修正版。
