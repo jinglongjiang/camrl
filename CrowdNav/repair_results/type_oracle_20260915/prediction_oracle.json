@@ -1,0 +1,64 @@
+{
+  "results": {
+    "current": [
+      {
+        "seed": 2407,
+        "selected_update": 500,
+        "validation_loss": 0.6305299997329712,
+        "position_mse": 0.039285749197006226,
+        "position_error_4": 0.10004347562789917,
+        "position_error_8": 0.3127238154411316
+      },
+      {
+        "seed": 4807,
+        "selected_update": 500,
+        "validation_loss": 0.6535534858703613,
+        "position_mse": 0.03815821185708046,
+        "position_error_4": 0.10057900846004486,
+        "position_error_8": 0.31024736166000366
+      },
+      {
+        "seed": 7207,
+        "selected_update": 500,
+        "validation_loss": 0.6925394535064697,
+        "position_mse": 0.03854957967996597,
+        "position_error_4": 0.10200366377830505,
+        "position_error_8": 0.314269483089447
+      }
+    ],
+    "oracle_type": [
+      {
+        "seed": 2407,
+        "selected_update": 500,
+        "validation_loss": 0.7023670673370361,
+        "position_mse": 0.04281572252511978,
+        "position_error_4": 0.10610731691122055,
+        "position_error_8": 0.3292483389377594
+      },
+      {
+        "seed": 4807,
+        "selected_update": 500,
+        "validation_loss": 0.7036765813827515,
+        "position_mse": 0.04207444563508034,
+        "position_error_4": 0.10614685714244843,
+        "position_error_8": 0.32906052470207214
+      },
+      {
+        "seed": 7207,
+        "selected_update": 500,
+        "validation_loss": 0.7074955105781555,
+        "position_mse": 0.04244702309370041,
+        "position_error_4": 0.10737978667020798,
+        "position_error_8": 0.3302030861377716
+      }
+    ]
+  },
+  "relative_mse_gain": -0.0977955088019371,
+  "absolute_ci": [
+    -0.004898600839078426,
+    -0.0026750609627924863
+  ],
+  "positive_seeds": 0,
+  "passed": false,
+  "limitation": "Finite learned predictor: failure cannot reject value of true type"
+}

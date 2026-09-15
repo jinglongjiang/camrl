@@ -1,0 +1,1503 @@
+[
+  {
+    "case": 270000,
+    "target": 4,
+    "step": 16,
+    "clearance": 0.5598036676599825,
+    "gain": 0.0,
+    "known_return": 0.7981322447917726,
+    "unknown_return": 0.7981322447917726,
+    "known_choices": [
+      9,
+      9
+    ],
+    "unknown_choice": 9,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7973070521396802,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270002,
+    "target": 1,
+    "step": 48,
+    "clearance": 0.8273459602039195,
+    "gain": 0.0,
+    "known_return": 0.8711407927756438,
+    "unknown_return": 0.8711407927756438,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.8711407927756438,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270003,
+    "target": 4,
+    "step": 32,
+    "clearance": 0.45158086032702066,
+    "gain": 0.0,
+    "known_return": 0.7048375099309949,
+    "unknown_return": 0.7048375099309949,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7048375099309949,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270004,
+    "target": 0,
+    "step": 48,
+    "clearance": 0.5816829807013779,
+    "gain": 0.0,
+    "known_return": 0.9790896333081223,
+    "unknown_return": 0.9790896333081223,
+    "known_choices": [
+      8,
+      8
+    ],
+    "unknown_choice": 8,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.9789442107243389,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270005,
+    "target": 0,
+    "step": 48,
+    "clearance": 0.48982553329879647,
+    "gain": 0.0,
+    "known_return": 0.8072313281600361,
+    "unknown_return": 0.8072313281600361,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.8072313281600361,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270006,
+    "target": 1,
+    "step": 48,
+    "clearance": 0.5644601884332998,
+    "gain": 0.0,
+    "known_return": 0.8737312891505457,
+    "unknown_return": 0.8737312891505457,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.8737312891505457,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270007,
+    "target": 3,
+    "step": 48,
+    "clearance": 0.284639524985886,
+    "gain": 0.0,
+    "known_return": 0.97604375714546,
+    "unknown_return": 0.97604375714546,
+    "known_choices": [
+      5,
+      5
+    ],
+    "unknown_choice": 5,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.9635959161779217,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270008,
+    "target": 4,
+    "step": 32,
+    "clearance": 0.5575840214121786,
+    "gain": 0.0,
+    "known_return": 0.8359589567712774,
+    "unknown_return": 0.8359589567712774,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.8359589567712774,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270009,
+    "target": 3,
+    "step": 16,
+    "clearance": 0.13020666727503527,
+    "gain": 0.011002657640511004,
+    "known_return": 0.005862076896022417,
+    "unknown_return": -0.005140580744488588,
+    "known_choices": [
+      8,
+      0
+    ],
+    "unknown_choice": 8,
+    "known_collision": 0.5,
+    "unknown_collision": 0.5,
+    "baseline_return": -0.5,
+    "baseline_collision": 1.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270010,
+    "target": 1,
+    "step": 16,
+    "clearance": 0.7101922319726914,
+    "gain": 0.0,
+    "known_return": 0.7560123942974258,
+    "unknown_return": 0.7560123942974258,
+    "known_choices": [
+      6,
+      6
+    ],
+    "unknown_choice": 6,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7438271040511213,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270011,
+    "target": 3,
+    "step": 32,
+    "clearance": 0.7981352977435026,
+    "gain": 0.0,
+    "known_return": 0.871157058348111,
+    "unknown_return": 0.871157058348111,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.871157058348111,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270012,
+    "target": 3,
+    "step": 32,
+    "clearance": 0.5054789965672786,
+    "gain": 0.0,
+    "known_return": 0.7718835934208389,
+    "unknown_return": 0.7718835934208389,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7718835934208389,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270013,
+    "target": 4,
+    "step": 16,
+    "clearance": 0.3185503772191958,
+    "gain": 0.0,
+    "known_return": 0.7297508298604733,
+    "unknown_return": 0.7297508298604733,
+    "known_choices": [
+      10,
+      10
+    ],
+    "unknown_choice": 10,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7207196462332359,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270014,
+    "target": 2,
+    "step": 16,
+    "clearance": 0.5455720915879316,
+    "gain": 0.0,
+    "known_return": 0.7893807386065175,
+    "unknown_return": 0.7893807386065175,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7893807386065175,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270015,
+    "target": 0,
+    "step": 32,
+    "clearance": 0.6967908360545205,
+    "gain": 0.0,
+    "known_return": 0.9280251738051088,
+    "unknown_return": 0.9280251738051088,
+    "known_choices": [
+      8,
+      8
+    ],
+    "unknown_choice": 8,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.9154611938666147,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270016,
+    "target": 4,
+    "step": 32,
+    "clearance": 0.545526860609558,
+    "gain": 0.0,
+    "known_return": 0.8277787671918836,
+    "unknown_return": 0.8277787671918836,
+    "known_choices": [
+      8,
+      8
+    ],
+    "unknown_choice": 8,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.8170775739403393,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270017,
+    "target": 3,
+    "step": 16,
+    "clearance": 0.790103045022629,
+    "gain": 0.0,
+    "known_return": 0.8054501801582077,
+    "unknown_return": 0.8054501801582077,
+    "known_choices": [
+      8,
+      8
+    ],
+    "unknown_choice": 8,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7214981633960025,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270018,
+    "target": 3,
+    "step": 16,
+    "clearance": 0.658934525398235,
+    "gain": 0.0,
+    "known_return": 0.7723828786869354,
+    "unknown_return": 0.7723828786869354,
+    "known_choices": [
+      9,
+      9
+    ],
+    "unknown_choice": 9,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7720358334790303,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270019,
+    "target": 3,
+    "step": 16,
+    "clearance": 0.5371003954045319,
+    "gain": 0.0,
+    "known_return": 0.7890394283378809,
+    "unknown_return": 0.7890394283378809,
+    "known_choices": [
+      9,
+      9
+    ],
+    "unknown_choice": 9,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7876140032727507,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270020,
+    "target": 4,
+    "step": 32,
+    "clearance": 0.3111876686243205,
+    "gain": 0.0,
+    "known_return": 0.767494667106946,
+    "unknown_return": 0.767494667106946,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.767494667106946,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270021,
+    "target": 2,
+    "step": 16,
+    "clearance": 1.11783329506608,
+    "gain": 0.0,
+    "known_return": 0.8070606721869754,
+    "unknown_return": 0.8070606721869754,
+    "known_choices": [
+      9,
+      9
+    ],
+    "unknown_choice": 9,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7975009977306663,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270022,
+    "target": 2,
+    "step": 32,
+    "clearance": 0.6391792989333662,
+    "gain": 0.0,
+    "known_return": 0.9090555635103066,
+    "unknown_return": 0.9090555635103066,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.9090555635103066,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270023,
+    "target": 0,
+    "step": 32,
+    "clearance": 0.6991109416954622,
+    "gain": 0.0,
+    "known_return": 0.729439971984359,
+    "unknown_return": 0.729439971984359,
+    "known_choices": [
+      8,
+      8
+    ],
+    "unknown_choice": 8,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.708035439590865,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270024,
+    "target": 3,
+    "step": 32,
+    "clearance": 0.6507813443461199,
+    "gain": 0.0,
+    "known_return": 0.9286250852730529,
+    "unknown_return": 0.9286250852730529,
+    "known_choices": [
+      9,
+      9
+    ],
+    "unknown_choice": 9,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.9285914551000347,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270025,
+    "target": 1,
+    "step": 48,
+    "clearance": 0.464732325083342,
+    "gain": 0.0,
+    "known_return": 0.9789233849609814,
+    "unknown_return": 0.9789233849609814,
+    "known_choices": [
+      8,
+      8
+    ],
+    "unknown_choice": 8,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.9785257971644885,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270026,
+    "target": 3,
+    "step": 48,
+    "clearance": 0.6165484799714569,
+    "gain": 0.0,
+    "known_return": 0.8591272754197831,
+    "unknown_return": 0.8591272754197831,
+    "known_choices": [
+      8,
+      8
+    ],
+    "unknown_choice": 8,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7077130957979749,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270027,
+    "target": 0,
+    "step": 16,
+    "clearance": 0.5718243479977123,
+    "gain": 0.0,
+    "known_return": 0.7908261431928676,
+    "unknown_return": 0.7908261431928676,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7908261431928676,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270028,
+    "target": 1,
+    "step": 16,
+    "clearance": 0.539310615093801,
+    "gain": 0.0,
+    "known_return": 0.7975778809435278,
+    "unknown_return": 0.7975778809435278,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7975778809435278,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270029,
+    "target": 0,
+    "step": 32,
+    "clearance": 0.605058198703224,
+    "gain": 0.0,
+    "known_return": 0.8412327705229486,
+    "unknown_return": 0.8412327705229486,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.8412327705229486,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270030,
+    "target": 3,
+    "step": 16,
+    "clearance": 0.5996206209009753,
+    "gain": 0.0,
+    "known_return": 0.7968563568350471,
+    "unknown_return": 0.7968563568350471,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7968563568350471,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270031,
+    "target": 2,
+    "step": 16,
+    "clearance": 0.2258418804655869,
+    "gain": 0.0,
+    "known_return": 0.7327056503057607,
+    "unknown_return": 0.7327056503057607,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7327056503057607,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270032,
+    "target": 0,
+    "step": 16,
+    "clearance": 0.6056113427090499,
+    "gain": 0.0,
+    "known_return": 0.7275469702739973,
+    "unknown_return": 0.7275469702739973,
+    "known_choices": [
+      10,
+      10
+    ],
+    "unknown_choice": 10,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7182446453605937,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270033,
+    "target": 4,
+    "step": 32,
+    "clearance": 0.5720467359272641,
+    "gain": 0.0,
+    "known_return": 0.8619632184189454,
+    "unknown_return": 0.8619632184189454,
+    "known_choices": [
+      9,
+      9
+    ],
+    "unknown_choice": 9,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.8616197104152812,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270034,
+    "target": 4,
+    "step": 16,
+    "clearance": 0.5411279701046681,
+    "gain": 0.0,
+    "known_return": 0.7121278104999295,
+    "unknown_return": 0.7121278104999295,
+    "known_choices": [
+      6,
+      6
+    ],
+    "unknown_choice": 6,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7029176787465373,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270035,
+    "target": 0,
+    "step": 32,
+    "clearance": 0.3236004295008648,
+    "gain": 0.0,
+    "known_return": 0.8428582864437193,
+    "unknown_return": 0.8428582864437193,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.8428582864437193,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270036,
+    "target": 4,
+    "step": 16,
+    "clearance": 0.5576633980401,
+    "gain": 0.0,
+    "known_return": 0.7569285568235034,
+    "unknown_return": 0.7569285568235034,
+    "known_choices": [
+      8,
+      8
+    ],
+    "unknown_choice": 8,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.5939329712652327,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270037,
+    "target": 3,
+    "step": 16,
+    "clearance": 0.8079361361214907,
+    "gain": 0.0,
+    "known_return": 0.7967897319366155,
+    "unknown_return": 0.7967897319366155,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7967897319366155,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270038,
+    "target": 0,
+    "step": 16,
+    "clearance": 0.8720882908824521,
+    "gain": 0.0,
+    "known_return": 0.6727444869195867,
+    "unknown_return": 0.6727444869195867,
+    "known_choices": [
+      1,
+      1
+    ],
+    "unknown_choice": 1,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.496390361102083,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270039,
+    "target": 0,
+    "step": 32,
+    "clearance": 0.5770505395417094,
+    "gain": 0.002678771840727845,
+    "known_return": 0.932893733538787,
+    "unknown_return": 0.9302149616980592,
+    "known_choices": [
+      8,
+      0
+    ],
+    "unknown_choice": 8,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.9226794329855513,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270040,
+    "target": 1,
+    "step": 16,
+    "clearance": 0.7051639354060346,
+    "gain": 0.0,
+    "known_return": 0.7491914533025392,
+    "unknown_return": 0.7491914533025392,
+    "known_choices": [
+      10,
+      10
+    ],
+    "unknown_choice": 10,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7391961965814825,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270041,
+    "target": 3,
+    "step": 32,
+    "clearance": 0.7208990856484294,
+    "gain": 0.0,
+    "known_return": 0.8611068603267152,
+    "unknown_return": 0.8611068603267152,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.8611068603267152,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270042,
+    "target": 4,
+    "step": 32,
+    "clearance": 0.47622315429487366,
+    "gain": 0.0,
+    "known_return": 0.6655156621554522,
+    "unknown_return": 0.6655156621554522,
+    "known_choices": [
+      10,
+      10
+    ],
+    "unknown_choice": 10,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": -0.4579898303390743,
+    "baseline_collision": 1.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270043,
+    "target": 4,
+    "step": 48,
+    "clearance": 0.4919812996123856,
+    "gain": 0.0,
+    "known_return": 0.9537064384495646,
+    "unknown_return": 0.9537064384495646,
+    "known_choices": [
+      10,
+      10
+    ],
+    "unknown_choice": 10,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.9412030049147497,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270044,
+    "target": 3,
+    "step": 32,
+    "clearance": 0.3755597954670527,
+    "gain": 0.0,
+    "known_return": 0.8216864846377757,
+    "unknown_return": 0.8216864846377757,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.8216864846377757,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270045,
+    "target": 4,
+    "step": 48,
+    "clearance": 0.5703804547059632,
+    "gain": 0.0,
+    "known_return": 0.8895454818900621,
+    "unknown_return": 0.8895454818900621,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.8895454818900621,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270046,
+    "target": 0,
+    "step": 32,
+    "clearance": 0.6572004976906396,
+    "gain": 0.0010433713157420588,
+    "known_return": 0.828681507194903,
+    "unknown_return": 0.8276381358791609,
+    "known_choices": [
+      8,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.8276381358791609,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270047,
+    "target": 3,
+    "step": 16,
+    "clearance": 0.6947301380441588,
+    "gain": 0.0013622436697731666,
+    "known_return": 0.08612745114055062,
+    "unknown_return": 0.08476520747077745,
+    "known_choices": [
+      8,
+      1
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.5,
+    "unknown_collision": 0.5,
+    "baseline_return": 0.08476520747077745,
+    "baseline_collision": 0.5,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270048,
+    "target": 1,
+    "step": 32,
+    "clearance": 0.6175353510523303,
+    "gain": 0.0,
+    "known_return": 0.8525406933309245,
+    "unknown_return": 0.8525406933309245,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.8525406933309245,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270049,
+    "target": 4,
+    "step": 32,
+    "clearance": 0.7061290935833329,
+    "gain": 0.0,
+    "known_return": 0.7243326966453565,
+    "unknown_return": 0.7243326966453565,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7243326966453565,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270050,
+    "target": 4,
+    "step": 48,
+    "clearance": 0.5876208640114158,
+    "gain": 0.0,
+    "known_return": 0.9891218822390409,
+    "unknown_return": 0.9891218822390409,
+    "known_choices": [
+      10,
+      10
+    ],
+    "unknown_choice": 10,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.9773609947251208,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270051,
+    "target": 3,
+    "step": 48,
+    "clearance": 0.6442639081257377,
+    "gain": 0.0,
+    "known_return": 0.7114955450326574,
+    "unknown_return": 0.7114955450326574,
+    "known_choices": [
+      9,
+      9
+    ],
+    "unknown_choice": 9,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7111806970241245,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270052,
+    "target": 4,
+    "step": 48,
+    "clearance": 0.6008777236793204,
+    "gain": 0.0,
+    "known_return": 0.8710591580001011,
+    "unknown_return": 0.8710591580001011,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.8710591580001011,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270053,
+    "target": 3,
+    "step": 48,
+    "clearance": 0.5012159795135807,
+    "gain": 0.0,
+    "known_return": 0.9362773280551485,
+    "unknown_return": 0.9362773280551485,
+    "known_choices": [
+      9,
+      9
+    ],
+    "unknown_choice": 9,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.9357934964473692,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270054,
+    "target": 4,
+    "step": 16,
+    "clearance": 0.5183897884158226,
+    "gain": 0.0,
+    "known_return": 0.8080662239342967,
+    "unknown_return": 0.8080662239342967,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.8080662239342967,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270055,
+    "target": 1,
+    "step": 16,
+    "clearance": 0.46865302503477274,
+    "gain": 0.0,
+    "known_return": 0.7397043192716004,
+    "unknown_return": 0.7397043192716004,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7397043192716004,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270056,
+    "target": 4,
+    "step": 16,
+    "clearance": 0.6404915108253608,
+    "gain": 0.0,
+    "known_return": 0.7551975343838638,
+    "unknown_return": 0.7551975343838638,
+    "known_choices": [
+      8,
+      8
+    ],
+    "unknown_choice": 8,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7441951443208226,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270057,
+    "target": 4,
+    "step": 32,
+    "clearance": 0.270384404863473,
+    "gain": 0.0,
+    "known_return": 0.7616079627176249,
+    "unknown_return": 0.7616079627176249,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7616079627176249,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270058,
+    "target": 2,
+    "step": 16,
+    "clearance": 0.6039935156343477,
+    "gain": 0.0,
+    "known_return": 0.6675192265089206,
+    "unknown_return": 0.6675192265089206,
+    "known_choices": [
+      3,
+      3
+    ],
+    "unknown_choice": 3,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.502932084437866,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270059,
+    "target": 1,
+    "step": 16,
+    "clearance": 0.8858324694415685,
+    "gain": 0.0,
+    "known_return": 0.7951581134077842,
+    "unknown_return": 0.7951581134077842,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7951581134077842,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270060,
+    "target": 2,
+    "step": 32,
+    "clearance": 0.5519991294361537,
+    "gain": 0.0,
+    "known_return": 0.8431423596202844,
+    "unknown_return": 0.8431423596202844,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.8431423596202844,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270061,
+    "target": 1,
+    "step": 32,
+    "clearance": 0.3360915319551048,
+    "gain": 0.0,
+    "known_return": 0.9180155191167804,
+    "unknown_return": 0.9180155191167804,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.9180155191167804,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270062,
+    "target": 0,
+    "step": 32,
+    "clearance": 0.7492163648075718,
+    "gain": 0.0,
+    "known_return": 0.8616407148857849,
+    "unknown_return": 0.8616407148857849,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.8616407148857849,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270063,
+    "target": 1,
+    "step": 32,
+    "clearance": 0.6405704307762323,
+    "gain": 0.0,
+    "known_return": 0.7479032775903212,
+    "unknown_return": 0.7479032775903212,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7479032775903212,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270064,
+    "target": 2,
+    "step": 32,
+    "clearance": 0.707534388071366,
+    "gain": 0.0,
+    "known_return": 0.9090794403702233,
+    "unknown_return": 0.9090794403702233,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.9090794403702233,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270065,
+    "target": 3,
+    "step": 48,
+    "clearance": 0.25206844430317005,
+    "gain": 0.0,
+    "known_return": 0.764745767981109,
+    "unknown_return": 0.764745767981109,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.764745767981109,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270066,
+    "target": 0,
+    "step": 16,
+    "clearance": 0.5652995662428073,
+    "gain": 0.0,
+    "known_return": 0.789338283380611,
+    "unknown_return": 0.789338283380611,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.789338283380611,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270067,
+    "target": 0,
+    "step": 48,
+    "clearance": 0.46170259272967457,
+    "gain": 0.0,
+    "known_return": 0.9479574874164726,
+    "unknown_return": 0.9479574874164726,
+    "known_choices": [
+      9,
+      9
+    ],
+    "unknown_choice": 9,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.9478846091867925,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270068,
+    "target": 4,
+    "step": 16,
+    "clearance": 0.47549218621822004,
+    "gain": 0.0,
+    "known_return": 0.7155611647512768,
+    "unknown_return": 0.7155611647512768,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7155611647512768,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270069,
+    "target": 3,
+    "step": 16,
+    "clearance": 0.5918200159565623,
+    "gain": 0.0,
+    "known_return": 0.7796826076685225,
+    "unknown_return": 0.7796826076685225,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7796826076685225,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270070,
+    "target": 3,
+    "step": 16,
+    "clearance": 0.5647962372023099,
+    "gain": 0.0,
+    "known_return": 0.7321351697141765,
+    "unknown_return": 0.7321351697141765,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7321351697141765,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270071,
+    "target": 4,
+    "step": 48,
+    "clearance": 0.608749529609961,
+    "gain": 0.0,
+    "known_return": 0.9085452400801192,
+    "unknown_return": 0.9085452400801192,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.9085452400801192,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270072,
+    "target": 1,
+    "step": 32,
+    "clearance": 0.4600585590746436,
+    "gain": 0.0,
+    "known_return": 0.9280176912790361,
+    "unknown_return": 0.9280176912790361,
+    "known_choices": [
+      9,
+      9
+    ],
+    "unknown_choice": 9,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.9267733478320905,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270073,
+    "target": 1,
+    "step": 32,
+    "clearance": 0.6178569406199474,
+    "gain": 0.0,
+    "known_return": 0.9584882568752086,
+    "unknown_return": 0.9584882568752086,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.9584882568752086,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270074,
+    "target": 1,
+    "step": 16,
+    "clearance": 0.8332421273375936,
+    "gain": 0.005125792613412561,
+    "known_return": 0.12101647643561392,
+    "unknown_return": 0.11589068382220136,
+    "known_choices": [
+      10,
+      7
+    ],
+    "unknown_choice": 10,
+    "known_collision": 0.5,
+    "unknown_collision": 0.5,
+    "baseline_return": -0.5015589462743686,
+    "baseline_collision": 1.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270075,
+    "target": 0,
+    "step": 32,
+    "clearance": 0.7399564858804111,
+    "gain": 0.0,
+    "known_return": 0.9384696228931797,
+    "unknown_return": 0.9384696228931797,
+    "known_choices": [
+      9,
+      9
+    ],
+    "unknown_choice": 9,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.9381155548575678,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270076,
+    "target": 2,
+    "step": 16,
+    "clearance": 0.7690553910130298,
+    "gain": 0.0,
+    "known_return": 0.8248920918739758,
+    "unknown_return": 0.8248920918739758,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.8248920918739758,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270077,
+    "target": 4,
+    "step": 16,
+    "clearance": 0.9815028335415792,
+    "gain": 0.0,
+    "known_return": 0.7576810748032597,
+    "unknown_return": 0.7576810748032597,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7576810748032597,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270078,
+    "target": 3,
+    "step": 32,
+    "clearance": 0.5180968709443747,
+    "gain": 0.0,
+    "known_return": 0.8712035642185909,
+    "unknown_return": 0.8712035642185909,
+    "known_choices": [
+      0,
+      0
+    ],
+    "unknown_choice": 0,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.8712035642185909,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  },
+  {
+    "case": 270079,
+    "target": 4,
+    "step": 16,
+    "clearance": 0.3756511840455908,
+    "gain": 0.0,
+    "known_return": 0.794368635829535,
+    "unknown_return": 0.794368635829535,
+    "known_choices": [
+      9,
+      9
+    ],
+    "unknown_choice": 9,
+    "known_collision": 0.0,
+    "unknown_collision": 0.0,
+    "baseline_return": 0.7844312055114102,
+    "baseline_collision": 0.0,
+    "risk_only_value": 0.0
+  }
+]
