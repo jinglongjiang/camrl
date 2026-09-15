@@ -1,0 +1,779 @@
+{
+  "status": "complete_stable",
+  "arm": "full",
+  "profile": "train_nonstationary",
+  "seed": 2407,
+  "requested_steps_per_attempt": 4096,
+  "max_attempts": 2,
+  "reward_changed": false,
+  "initialization": "exact deterministic function conversion, no new BC fit",
+  "distribution": "physical Gaussian, tanh-bounded mean, ordinary SB3 action clipping",
+  "initial_std": [
+    0.03,
+    0.06
+  ],
+  "evaluations": [
+    {
+      "tag": "initial_deterministic",
+      "profile": "nominal",
+      "deterministic": true,
+      "success": 96,
+      "collision": 4,
+      "timeout": 0,
+      "mean_return": 0.8729539469720663
+    },
+    {
+      "tag": "initial_stochastic",
+      "profile": "nominal",
+      "deterministic": false,
+      "success": 99,
+      "collision": 1,
+      "timeout": 0,
+      "mean_return": 0.9146084245000394
+    },
+    {
+      "tag": "initial_nonstationary",
+      "profile": "train_nonstationary",
+      "deterministic": true,
+      "success": 93,
+      "collision": 7,
+      "timeout": 0,
+      "mean_return": 0.8231322522738774
+    },
+    {
+      "tag": "attempt0_2048",
+      "profile": "nominal",
+      "deterministic": true,
+      "success": 97,
+      "collision": 3,
+      "timeout": 0,
+      "mean_return": 0.8878971483913085
+    },
+    {
+      "tag": "attempt0_2048_nonstationary",
+      "profile": "train_nonstationary",
+      "deterministic": true,
+      "success": 90,
+      "collision": 10,
+      "timeout": 0,
+      "mean_return": 0.778129199663993
+    },
+    {
+      "tag": "attempt0_4096",
+      "profile": "nominal",
+      "deterministic": true,
+      "success": 96,
+      "collision": 4,
+      "timeout": 0,
+      "mean_return": 0.8717036221030537
+    },
+    {
+      "tag": "attempt0_4096_nonstationary",
+      "profile": "train_nonstationary",
+      "deterministic": true,
+      "success": 92,
+      "collision": 8,
+      "timeout": 0,
+      "mean_return": 0.8088418490286969
+    },
+    {
+      "tag": "attempt0_final_stochastic",
+      "profile": "nominal",
+      "deterministic": false,
+      "success": 95,
+      "collision": 4,
+      "timeout": 1,
+      "mean_return": 0.8516956190938733
+    }
+  ],
+  "single_seed_development_only": true,
+  "source_sha256": "f1188379822d94dbd1e44ef096fa7aa84529ebc9343bb2c248c1c88f56a2a4cc",
+  "mean_conversion_max_error": 0.0,
+  "elapsed_seconds": 237.9700963497162,
+  "candidate": "attempt0_4096",
+  "changed_policy_tensors": 43,
+  "actor_belief_column_max_abs": 0.00016187550500035286,
+  "actual_steps": 4096,
+  "training_episodes": [
+    {
+      "layout_seed": 80450079,
+      "test_case": 7315,
+      "outcome": "success",
+      "steps": 69,
+      "reward": 0.8728680624975108,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80192980,
+      "test_case": 8263,
+      "outcome": "collision",
+      "steps": 16,
+      "reward": -0.5277894517222816,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80064276,
+      "test_case": 7134,
+      "outcome": "collision",
+      "steps": 19,
+      "reward": -0.5433178847147488,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80693331,
+      "test_case": 8397,
+      "outcome": "success",
+      "steps": 53,
+      "reward": 0.918670665267851,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80886726,
+      "test_case": 3796,
+      "outcome": "success",
+      "steps": 45,
+      "reward": 0.9446337915638876,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80063301,
+      "test_case": 1442,
+      "outcome": "success",
+      "steps": 54,
+      "reward": 0.9166698705980059,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80595425,
+      "test_case": 8281,
+      "outcome": "success",
+      "steps": 52,
+      "reward": 0.9233485816479021,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80537143,
+      "test_case": 5581,
+      "outcome": "collision",
+      "steps": 32,
+      "reward": -0.5786685424711879,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80867437,
+      "test_case": 2513,
+      "outcome": "success",
+      "steps": 44,
+      "reward": 0.9458507440714969,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80564771,
+      "test_case": 3478,
+      "outcome": "success",
+      "steps": 40,
+      "reward": 0.9592435601525227,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80694418,
+      "test_case": 7552,
+      "outcome": "success",
+      "steps": 69,
+      "reward": 0.8706915940470648,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80994049,
+      "test_case": 6081,
+      "outcome": "collision",
+      "steps": 19,
+      "reward": -0.5693815249327415,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80896473,
+      "test_case": 948,
+      "outcome": "success",
+      "steps": 71,
+      "reward": 0.8569037160313018,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80731435,
+      "test_case": 1693,
+      "outcome": "success",
+      "steps": 39,
+      "reward": 0.9608412857269499,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80642651,
+      "test_case": 8751,
+      "outcome": "success",
+      "steps": 40,
+      "reward": 0.9597483355342394,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80029954,
+      "test_case": 222,
+      "outcome": "success",
+      "steps": 38,
+      "reward": 0.9639897420710674,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80847054,
+      "test_case": 4141,
+      "outcome": "success",
+      "steps": 47,
+      "reward": 0.9365891333818022,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80144982,
+      "test_case": 5129,
+      "outcome": "success",
+      "steps": 69,
+      "reward": 0.8714207678239853,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80632200,
+      "test_case": 8769,
+      "outcome": "collision",
+      "steps": 31,
+      "reward": -0.5650390263817275,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80665082,
+      "test_case": 3237,
+      "outcome": "success",
+      "steps": 47,
+      "reward": 0.938516040142183,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80336811,
+      "test_case": 2336,
+      "outcome": "success",
+      "steps": 41,
+      "reward": 0.9569858557385026,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80128001,
+      "test_case": 8605,
+      "outcome": "success",
+      "steps": 38,
+      "reward": 0.9646122456151051,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80094316,
+      "test_case": 1958,
+      "outcome": "success",
+      "steps": 39,
+      "reward": 0.96268465726587,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80718979,
+      "test_case": 2950,
+      "outcome": "success",
+      "steps": 76,
+      "reward": 0.8519579413258974,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80423546,
+      "test_case": 1417,
+      "outcome": "success",
+      "steps": 67,
+      "reward": 0.8779189802174694,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80149344,
+      "test_case": 7363,
+      "outcome": "success",
+      "steps": 70,
+      "reward": 0.8699440802426666,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80554080,
+      "test_case": 470,
+      "outcome": "success",
+      "steps": 63,
+      "reward": 0.8908651128989897,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80605145,
+      "test_case": 5357,
+      "outcome": "success",
+      "steps": 47,
+      "reward": 0.9372847789335557,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80794561,
+      "test_case": 5507,
+      "outcome": "success",
+      "steps": 37,
+      "reward": 0.96773520924149,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80730476,
+      "test_case": 6819,
+      "outcome": "success",
+      "steps": 45,
+      "reward": 0.9442294833230133,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80157954,
+      "test_case": 626,
+      "outcome": "success",
+      "steps": 60,
+      "reward": 0.738963266610616,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80287458,
+      "test_case": 5734,
+      "outcome": "collision",
+      "steps": 26,
+      "reward": -0.5678655502330816,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80095873,
+      "test_case": 2641,
+      "outcome": "success",
+      "steps": 49,
+      "reward": 0.9319522591854761,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80809809,
+      "test_case": 5415,
+      "outcome": "success",
+      "steps": 68,
+      "reward": 0.8748459226514755,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80271794,
+      "test_case": 6221,
+      "outcome": "success",
+      "steps": 50,
+      "reward": 0.9298032541806396,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80588911,
+      "test_case": 1973,
+      "outcome": "success",
+      "steps": 52,
+      "reward": 0.9215278502511176,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80738175,
+      "test_case": 6839,
+      "outcome": "success",
+      "steps": 38,
+      "reward": 0.9655028925200999,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80570190,
+      "test_case": 8577,
+      "outcome": "success",
+      "steps": 39,
+      "reward": 0.9610834336943652,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80252056,
+      "test_case": 2026,
+      "outcome": "success",
+      "steps": 55,
+      "reward": 0.9128693569919165,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80818104,
+      "test_case": 6184,
+      "outcome": "success",
+      "steps": 44,
+      "reward": 0.9463671456064677,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80120157,
+      "test_case": 4137,
+      "outcome": "success",
+      "steps": 63,
+      "reward": 0.8902675607786923,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80150836,
+      "test_case": 8204,
+      "outcome": "success",
+      "steps": 41,
+      "reward": 0.9567967911668728,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80882581,
+      "test_case": 3589,
+      "outcome": "collision",
+      "steps": 27,
+      "reward": -0.5756221373985705,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80233032,
+      "test_case": 4157,
+      "outcome": "success",
+      "steps": 47,
+      "reward": 0.8780826963226467,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80700418,
+      "test_case": 6298,
+      "outcome": "success",
+      "steps": 47,
+      "reward": 0.9375503805916452,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80078694,
+      "test_case": 2519,
+      "outcome": "collision",
+      "steps": 27,
+      "reward": -0.5692239158772853,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80398031,
+      "test_case": 7981,
+      "outcome": "success",
+      "steps": 60,
+      "reward": 0.8995269380636608,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80386959,
+      "test_case": 2783,
+      "outcome": "success",
+      "steps": 58,
+      "reward": 0.9042477344862115,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80191356,
+      "test_case": 8532,
+      "outcome": "success",
+      "steps": 61,
+      "reward": 0.8966569188542926,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80732075,
+      "test_case": 4071,
+      "outcome": "success",
+      "steps": 56,
+      "reward": 0.9112368762703916,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80252489,
+      "test_case": 4418,
+      "outcome": "success",
+      "steps": 56,
+      "reward": 0.9113149859060962,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80597882,
+      "test_case": 3577,
+      "outcome": "success",
+      "steps": 51,
+      "reward": 0.9248784008531732,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80813980,
+      "test_case": 5338,
+      "outcome": "success",
+      "steps": 50,
+      "reward": 0.9297444695431413,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80137259,
+      "test_case": 4002,
+      "outcome": "success",
+      "steps": 61,
+      "reward": 0.896731548771599,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80386786,
+      "test_case": 7781,
+      "outcome": "success",
+      "steps": 46,
+      "reward": 0.9400396822094672,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80027682,
+      "test_case": 2650,
+      "outcome": "success",
+      "steps": 67,
+      "reward": 0.8787288101920196,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80656140,
+      "test_case": 2881,
+      "outcome": "success",
+      "steps": 46,
+      "reward": 0.9404179710960714,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80202476,
+      "test_case": 2528,
+      "outcome": "success",
+      "steps": 86,
+      "reward": 0.8218320980622887,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80072428,
+      "test_case": 4759,
+      "outcome": "success",
+      "steps": 40,
+      "reward": 0.9584434220218933,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80645925,
+      "test_case": 7170,
+      "outcome": "success",
+      "steps": 49,
+      "reward": 0.9316763359413798,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80311278,
+      "test_case": 7718,
+      "outcome": "success",
+      "steps": 37,
+      "reward": 0.9684913450032085,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80921343,
+      "test_case": 5325,
+      "outcome": "success",
+      "steps": 57,
+      "reward": 0.9089401138529818,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80643245,
+      "test_case": 6441,
+      "outcome": "success",
+      "steps": 70,
+      "reward": 0.8699250509963576,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80205403,
+      "test_case": 11,
+      "outcome": "success",
+      "steps": 48,
+      "reward": 0.9352421324391426,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80410738,
+      "test_case": 5449,
+      "outcome": "success",
+      "steps": 38,
+      "reward": 0.9658108554402371,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80435450,
+      "test_case": 2734,
+      "outcome": "success",
+      "steps": 36,
+      "reward": 0.9703931458649063,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80836527,
+      "test_case": 5096,
+      "outcome": "success",
+      "steps": 54,
+      "reward": 0.9165215449029613,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80229303,
+      "test_case": 2014,
+      "outcome": "success",
+      "steps": 59,
+      "reward": 0.9013782008368685,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80745924,
+      "test_case": 7645,
+      "outcome": "success",
+      "steps": 47,
+      "reward": 0.9379345870389186,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80673253,
+      "test_case": 7217,
+      "outcome": "success",
+      "steps": 73,
+      "reward": 0.8609387745800015,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80810347,
+      "test_case": 7400,
+      "outcome": "collision",
+      "steps": 18,
+      "reward": -0.5356879493190856,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80188647,
+      "test_case": 5210,
+      "outcome": "success",
+      "steps": 45,
+      "reward": 0.9448340646848923,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80034187,
+      "test_case": 6954,
+      "outcome": "success",
+      "steps": 37,
+      "reward": 0.9686507525052639,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80756074,
+      "test_case": 2660,
+      "outcome": "success",
+      "steps": 60,
+      "reward": 0.8992312462529471,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80626558,
+      "test_case": 7095,
+      "outcome": "success",
+      "steps": 40,
+      "reward": 0.9578182491696972,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80892019,
+      "test_case": 7111,
+      "outcome": "success",
+      "steps": 51,
+      "reward": 0.9251360836798328,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80791131,
+      "test_case": 640,
+      "outcome": "success",
+      "steps": 56,
+      "reward": 0.9105306328737702,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80716027,
+      "test_case": 8013,
+      "outcome": "success",
+      "steps": 42,
+      "reward": 0.9531980011558746,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80327837,
+      "test_case": 2510,
+      "outcome": "success",
+      "steps": 43,
+      "reward": 0.950835714933695,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80078096,
+      "test_case": 3135,
+      "outcome": "success",
+      "steps": 52,
+      "reward": 0.9220547447228369,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80704341,
+      "test_case": 8298,
+      "outcome": "success",
+      "steps": 44,
+      "reward": 0.9464283993019628,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80776197,
+      "test_case": 5613,
+      "outcome": "success",
+      "steps": 42,
+      "reward": 0.9418830476049711,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80363089,
+      "test_case": 3636,
+      "outcome": "success",
+      "steps": 38,
+      "reward": 0.9642699591698488,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80795025,
+      "test_case": 6327,
+      "outcome": "collision",
+      "steps": 20,
+      "reward": -0.534324491981692,
+      "bound_violations": 0
+    },
+    {
+      "layout_seed": 80251888,
+      "test_case": 3258,
+      "outcome": "success",
+      "steps": 41,
+      "reward": 0.9558188854932443,
+      "bound_violations": 0
+    }
+  ]
+}
