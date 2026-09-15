@@ -374,6 +374,19 @@ class Contracts(unittest.TestCase):
 
 
 class GaussianTransferTests(unittest.TestCase):
+    def test_type_oracle_value_requires_conflicting_optima(self):
+        from crowd_nav.bayes_continuous.audit_saved import type_oracle_value
+        collision=np.zeros((2,2))
+        same=type_oracle_value([[1.,0.],[.5,0.]],collision)
+        self.assertAlmostEqual(same['gain'],0.)
+        conflict=type_oracle_value([[1.,0.],[0.,1.]],collision)
+        self.assertAlmostEqual(conflict['gain'],.5)
+        self.assertEqual(conflict['known_choices'],[0,1])
+        self.assertEqual(conflict['unknown_choice'],0)
+        identical=type_oracle_value([[1.,1.],[1.,1.]],collision)
+        self.assertEqual(identical['known_choices'],[0,0])
+        self.assertAlmostEqual(identical['gain'],0.)
+
     def test_reciprocity_physical_input_excludes_truth_and_future(self):
         from crowd_nav.bayes_continuous.audit_saved import reciprocity_physical
         rng=np.random.default_rng(91)

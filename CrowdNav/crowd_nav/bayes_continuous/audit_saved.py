@@ -830,6 +830,200 @@ def reciprocity_audit(args):
     (root/'summary.json').write_text(json.dumps(summary,indent=2));print(summary,flush=True)
 
 
+def type_oracle_value(returns, collisions):
+    """Perfect-information value within one shared finite candidate set."""
+    returns=np.asarray(returns,dtype=float);collisions=np.asarray(collisions,dtype=float)
+    assert returns.shape==collisions.shape and returns.shape[0]==2
+    def best(values):return int(np.flatnonzero(values>=values.max()-1e-8)[0])
+    unknown=best(returns.mean(0));known=[best(row) for row in returns]
+    informed=float(np.mean([returns[k,known[k]] for k in range(2)]))
+    blind=float(returns[:,unknown].mean())
+    return dict(gain=informed-blind,known_return=informed,unknown_return=blind,
+        known_choices=known,unknown_choice=unknown,
+        known_collision=float(np.mean([collisions[k,known[k]] for k in range(2)])),
+        unknown_collision=float(collisions[:,unknown].mean()),
+        baseline_return=float(returns[:,0].mean()),baseline_collision=float(collisions[:,0].mean()),
+        risk_only_value=float(collisions.mean(0).min()-collisions.min(1).mean()))
+
+
+def type_oracle_episode(task):
+    params,source,case=task;torch.set_num_threads(1)
+    env,actor=reciprocity_world(params,source)
+    flags=np.random.default_rng(92000000+case).integers(0,2,5)
+    obs=reciprocity_reset(env,case,flags)
+    initial=reciprocity_state(env,obs);prefix=[];anchors=[]
+    for t in range(140):
+        action=actor.predict(obs,deterministic=True)[0].astype(np.float32)
+        if t in (16,32,48):
+            world=env.unwrapped.world
+            clearances=np.array([np.hypot(h.px-world.robot.px,h.py-world.robot.py)-
+                h.radius-world.robot.radius for h in world.env.humans])
+            anchors.append(dict(step=t,target=int(clearances.argmin()),
+                clearance=float(clearances.min()),action=action.copy(),
+                state_hash=reciprocity_state(env,obs)['state_hash']))
+        prefix.append(action)
+        obs,_,term,trunc,_=env.step(action)
+        if term or trunc:break
+    else:raise AssertionError('Source episode failed to terminate')
+    if not anchors:
+        env.close();return dict(case=case,eligible=False,layout_hash=initial['state_hash'])
+    anchor=min(anchors,key=lambda a:(a['clearance'],a['step']))
+    base=anchor['action'];t=anchor['step'];target=anchor['target']
+    offsets=np.unique(np.array([[np.clip(base[0]+dv,0,1),np.clip(base[1]+dw,-1.2,1.2)]
+        for dv in (-.2,0,.2) for dw in (-.4,0,.4)]+[[0.,0.]],np.float32),axis=0)
+    candidates=[None]+list(offsets)  # The unchanged source policy is a feasible common option.
+    returns=np.zeros((2,len(candidates)));collisions=np.zeros_like(returns);records=[]
+    first_actions=[]
+    for kind in (0,1):
+        for j,candidate in enumerate(candidates):
+            obs=reciprocity_reset(env,case,flags)
+            for action in prefix[:t]:
+                obs,_,term,trunc,_=env.step(action);assert not(term or trunc)
+            assert reciprocity_state(env,obs)['state_hash']==anchor['state_hash']
+            env.unwrapped.world.policies[target].set_reciprocity(bool(kind))
+            rewards=[];executed=[];clearance=float('inf')
+            for h in range(140-t):
+                action=(candidate if candidate is not None and h<8 else
+                        actor.predict(obs,deterministic=True)[0]).astype(np.float32)
+                obs,reward,term,trunc,info=env.step(action)
+                rewards.append(float(reward));executed.append(action.tolist())
+                clearance=min(clearance,float(info['actual_clearance']))
+                if term or trunc:break
+            else:raise AssertionError('Counterfactual did not terminate')
+            returns[kind,j]=sum(.99**h*r for h,r in enumerate(rewards))
+            collisions[kind,j]=info['outcome']=='collision'
+            records.append(dict(kind=kind,candidate=j,rewards=rewards,executed=executed,
+                outcome=info['outcome'],steps=len(rewards),minimum_clearance=clearance))
+            if j==0:first_actions.append(executed[0])
+    np.testing.assert_array_equal(first_actions[0],first_actions[1])
+    value=type_oracle_value(returns,collisions)
+    assert value['gain']>=-1e-7
+    env.close()
+    return dict(case=case,eligible=True,layout_hash=initial['state_hash'],anchor=anchor,
+        flags=flags,prefix=prefix[:t],candidates=candidates,returns=returns,
+        collisions=collisions,records=records,value=value)
+
+
+def type_oracle_prediction(root, data_root):
+    import copy
+    raw={s:torch.load(data_root/(s+'_raw.pt'),weights_only=False)
+         for s in ('train','validation','audit')}
+    data={s:dict(np.load(data_root/(s+'_features.npz'))) for s in raw}
+    for split,d in data.items():
+        d['x']=d['x'].copy();d['x'][:,37:]=0
+        for row,(ei,bi,p) in enumerate(d['record']):
+            order=[p]+[i for i in range(5) if i!=p]
+            d['x'][row,142:147]=raw[split][ei]['flags'][order]
+    xmu=data['train']['x'].mean(0);xsd=np.maximum(data['train']['x'].std(0),.01)
+    y=data['train']['y'];mask=data['train']['mask'];ymu=(y*mask).sum(0)/mask.sum(0)
+    ysd=np.maximum(np.sqrt(((y-ymu)**2*mask).sum(0)/mask.sum(0)),.01)
+    ids=data['audit']['episode'];am=data['audit']['mask']
+    eligible=[i for i in range(len(raw['audit'])) if am[ids==i][:,[0,1,4,5]].sum()>0]
+    results={};scores={}
+    for arm in ('current','oracle_type'):
+        tensors={}
+        for split,d in data.items():
+            x=(d['x']-xmu)/xsd;x[:,37:142]=0
+            if arm=='current':x[:,142:]=0
+            tensors[split]=tuple(torch.as_tensor(a,device='cuda',dtype=torch.float32)
+                for a in (x,(d['y']-ymu)/ysd,d['mask']))
+        results[arm]=[];scores[arm]=[]
+        for seed in (2407,4807,7207):
+            torch.manual_seed(seed);rng=np.random.default_rng(seed)
+            model=torch.nn.Sequential(torch.nn.Linear(148,128),torch.nn.ReLU(),
+                torch.nn.Linear(128,128),torch.nn.ReLU(),torch.nn.Linear(128,8)).cuda()
+            optimizer=torch.optim.Adam(model.parameters(),lr=.001);bestloss=float('inf')
+            for step in range(1,3001):
+                idx=rng.integers(len(y),size=256);x,yy,m=tensors['train']
+                loss=(((model(x[idx])-yy[idx])**2)*m[idx]).sum()/m[idx].sum()
+                optimizer.zero_grad();loss.backward();optimizer.step()
+                if step%500==0:
+                    with torch.no_grad():
+                        x,yy,m=tensors['validation'];v=float((((model(x)-yy)**2)*m).sum()/m.sum())
+                    if v<bestloss:bestloss=v;best=copy.deepcopy(model.state_dict());beststep=step
+            model.load_state_dict(best)
+            with torch.no_grad():pred=model(tensors['audit'][0]).cpu().numpy()*ysd+ymu
+            yy=data['audit']['y'];cols=[0,1,4,5];sq=(pred[:,cols]-yy[:,cols])**2;mm=am[:,cols]
+            sc=np.array([(sq[ids==i]*mm[ids==i]).sum()/mm[ids==i].sum() for i in eligible])
+            assert np.isfinite(sc).all();scores[arm].append(sc)
+            r=dict(seed=seed,selected_update=beststep,validation_loss=bestloss,position_mse=float(sc.mean()))
+            for j,h in enumerate((4,8)):
+                valid=am[:,4*j]>0
+                r['position_error_'+str(h)]=float(np.linalg.norm(pred[valid,4*j:4*j+2]-yy[valid,4*j:4*j+2],axis=1).mean())
+            results[arm].append(r);print('PREDICTION_ORACLE',arm,r,flush=True)
+            torch.save(model.state_dict(),root/(arm+'_'+str(seed)+'.pt'))
+    delta=np.mean(scores['current'],0)-np.mean(scores['oracle_type'],0)
+    rng=np.random.default_rng(9017);bs=delta[rng.integers(len(delta),size=(10000,len(delta)))].mean(1)
+    ci=np.quantile(bs,[.025,.975]);gain=float(delta.mean()/np.mean(scores['current']))
+    positives=int(np.sum(np.mean(scores['current'],1)>np.mean(scores['oracle_type'],1)))
+    report=dict(results=results,relative_mse_gain=gain,absolute_ci=ci.tolist(),
+        positive_seeds=positives,passed=bool(gain>=.02 and ci[0]>0 and positives>=2),
+        limitation='Finite learned predictor: failure cannot reject value of true type')
+    (root/'prediction_oracle.json').write_text(json.dumps(report,indent=2))
+    np.savez_compressed(root/'prediction_episode_scores.npz',**{k:np.array(v) for k,v in scores.items()})
+    return report
+
+
+def type_oracle_audit(args):
+    import multiprocessing,time
+    start=time.time();root=args.results;root.mkdir(parents=True,exist_ok=False)
+    data_root=Path('repair_results/reciprocity_diagnostic_20260915')
+    source='repair_results/dagger_ppo_nominal_20260915/initial.zip'
+    protocol=dict(frozen_before_run=True,prediction_data=str(data_root),
+        prediction_data_sha256={p.name:hashlib.sha256(p.read_bytes()).hexdigest()
+            for split in ('train','validation','audit')
+            for p in (data_root/(split+'_raw.pt'),data_root/(split+'_features.npz'))},
+        prediction_arms=['current','oracle_type'],predictor='148->128->128->8 same parameter count',
+        seeds=[2407,4807,7207],updates=3000,batch=256,lr=.001,
+        validation_selection_every=500,prediction_gate='MSE improvement >=2%, paired 95% lower CI>0, >=2/3 seeds',
+        prediction_failure_does_not_stop_decision=True,decision_cases=list(range(270000,270080)),
+        decision_anchor='One of steps16/32/48 with minimum current surface clearance; nearest person target; no outcome-based selection',
+        candidates='Source feedback policy plus clipped 3x3 offsets dv[-.2,0,.2],dw[-.4,0,.4] and stop; non-feedback candidates held8 steps then source Actor to terminal',
+        type_worlds='Target reciprocal vs non-reciprocal after identical prefix; all other state, goals, ORCA memory and types held fixed',
+        unknown_type_prior=[.5,.5],gamma=.99,
+        value='0.5*max_a R(type0,a)+0.5*max_a R(type1,a)-max_a[0.5*R(type0,a)+0.5*R(type1,a)]',
+        decision_gate='Mean value >=0.01, paired episode bootstrap95% lower>0, >=10% states value>0.01, known-type selected collision rate <= unknown-type selected collision rate',
+        bootstrap_replicates=10000,bootstrap_seed=9017,no_critic=True,no_policy_training=True,
+        limitations=['Finite candidate set, fixed continuation policy and nearest-person type only; not global POMDP upper bound',
+                    'Counterfactual 50/50 worlds do not prove natural histories remain ambiguous or that legal type inference is possible',
+                    'Proximity-enriched states: rates are not natural deployment prevalence',
+                    'Prediction Oracle is a learned finite probe, not an exact oracle'],
+        actor_sha256=hashlib.sha256(Path(source).read_bytes()).hexdigest(),
+        code_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest())
+    (root/'protocol.json').write_text(json.dumps(protocol,indent=2))
+    prediction=type_oracle_prediction(root,data_root)
+    tasks=[(str(args.params),source,c) for c in protocol['decision_cases']]
+    rows=[]
+    with multiprocessing.get_context('spawn').Pool(6) as pool:
+        for row in pool.imap(type_oracle_episode,tasks):
+            rows.append(row)
+            if len(rows)%10==0:print('DECISION_ORACLE',len(rows),flush=True)
+    torch.save(rows,root/'decision_raw.pt')
+    assert len({r['layout_hash'] for r in rows})==len(rows)
+    valid=[r for r in rows if r['eligible']];values=np.array([r['value']['gain'] for r in valid])
+    assert len(valid)>0
+    rng=np.random.default_rng(9017);draws=rng.integers(len(valid),size=(10000,len(valid)))
+    ci=np.quantile(values[draws].mean(1),[.025,.975])
+    def average(key):return float(np.mean([r['value'][key] for r in valid]))
+    known=average('known_collision');unknown=average('unknown_collision')
+    fraction=float(np.mean(values>.01))
+    result=dict(eligible_cases=len(valid),ineligible_cases=[r['case'] for r in rows if not r['eligible']],
+        branches=sum(len(r['records']) for r in valid),mean_value=float(values.mean()),
+        median_value=float(np.median(values)),maximum_value=float(values.max()),value_ci=ci.tolist(),
+        meaningful_fraction=fraction,known_collision=known,unknown_collision=unknown,
+        known_return=average('known_return'),unknown_return=average('unknown_return'),
+        baseline_return=average('baseline_return'),baseline_collision=average('baseline_collision'),
+        risk_only_value=average('risk_only_value'),
+        passed=bool(values.mean()>=.01 and ci[0]>0 and fraction>=.1 and known<=unknown+1e-12))
+    (root/'decision_oracle.json').write_text(json.dumps(result,indent=2))
+    (root/'decision_cases.json').write_text(json.dumps([dict(case=r['case'],target=r['anchor']['target'],
+        step=r['anchor']['step'],clearance=r['anchor']['clearance'],**r['value']) for r in valid],indent=2))
+    summary=dict(stage='complete',prediction_gate=prediction['passed'],decision=result,
+        elapsed_seconds=time.time()-start,PPO_started=False,Bayes_rebuilt=False,
+        verdict='approve_likelihood_research_not_PPO' if result['passed'] else 'no_approval_under_this_local_oracle_protocol')
+    (root/'summary.json').write_text(json.dumps(summary,indent=2));print(summary,flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--results', type=Path, required=True)
@@ -842,6 +1036,7 @@ def main():
     parser.add_argument('--information-ridge', action='store_true')
     parser.add_argument('--reciprocity-audit', action='store_true')
     parser.add_argument('--reciprocity-resume', action='store_true')
+    parser.add_argument('--type-oracle', action='store_true')
     args = parser.parse_args()
     if args.information_ridge:
         information_ridge_audit(args.results)
@@ -852,6 +1047,9 @@ def main():
     if args.params is None:
         parser.error('--params is required for checkpoint auditing')
     torch.set_num_threads(1)
+    if args.type_oracle:
+        type_oracle_audit(args)
+        return
     if args.reciprocity_audit or args.reciprocity_resume:
         reciprocity_audit(args)
         return
