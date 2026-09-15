@@ -1727,7 +1727,7 @@ def bayes_teacher_worker(task):
         for h in base.world.env.humans],dtype=np.float64).tobytes()).hexdigest()
     probes=[]; diagnostics=[]
     for step in range(140):
-        probe=teacher_mode=='gdbn' and case<86012 and step in (0,20,40)
+        probe=teacher_mode=='gdbn' and case%1000<12 and step in (0,20,40)
         before=copy.deepcopy(base.world._cem_teacher) if probe else None
         snapshot=base.filter.get_belief_snapshot()
         action=base.expert_action()
@@ -1762,15 +1762,18 @@ def bayes_teacher_gate_main():
     parser.add_argument('--count',type=int,default=200)
     parser.add_argument('--workers',type=int,default=6)
     parser.add_argument('--teacher-mode',choices=['gdbn','cv'],default='gdbn')
+    parser.add_argument('--layout-start',type=int,default=74000000)
+    parser.add_argument('--case-start',type=int,default=86000)
     args=parser.parse_args();args.out.mkdir(parents=True,exist_ok=False)
     protocol=dict(stage='teacher_qualification',teacher=args.teacher_mode,profile='train_nonstationary',
         humans=5,count=args.count,success_gate=.95,collision_gate=.02,
-        layout_seed_start=74000000,test_case_start=86000,planner_changed=False,
+        layout_seed_start=args.layout_start,test_case_start=args.case_start,planner_changed=False,
         existence='observed=1, not entropy',risk_interface='Gaussian moments, isotropic trace/2',
+        probability_event='physical_overlap; .50m geometric buffer retained separately',
         parameters='existing fitted GDBN, no refit or calibration',student_training_started=False)
     (args.out/'protocol.json').write_text(json.dumps(protocol,indent=2))
     records=[]
-    tasks=[(str(args.params),86000+i,74000000+i,args.teacher_mode) for i in range(args.count)]
+    tasks=[(str(args.params),args.case_start+i,args.layout_start+i,args.teacher_mode) for i in range(args.count)]
     with multiprocessing.get_context('spawn').Pool(args.workers) as pool:
         for record in pool.imap_unordered(bayes_teacher_worker,tasks):
             records.append(record)

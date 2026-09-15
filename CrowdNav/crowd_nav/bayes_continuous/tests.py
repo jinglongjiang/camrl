@@ -374,6 +374,26 @@ class Contracts(unittest.TestCase):
 
 
 class GaussianTransferTests(unittest.TestCase):
+    def test_teacher_margin_transfer_preserves_geometry(self):
+        from dataclasses import fields, replace
+        from crowd_nav.bayes_continuous.teacher import PlannerObservation,UnicycleCEMMPC,UnicycleConfig
+        values={f.name:None for f in fields(PlannerObservation)}
+        values.update(robot_xy=np.array([0.,0.]),robot_velocity=np.array([.5,0.]),
+            robot_radius=.3,goal_xy=np.array([4.,0.]),entities=np.array([[2.,1.,0.,-.2,.3]]),
+            robot_heading=0.,provenance='test')
+        old=PlannerObservation(**values)
+        new=replace(old,human_uncertainty_buffer=np.full((1,16),.5))
+        p=UnicycleCEMMPC(UnicycleConfig(population=32,human_margin=.5))
+        q=UnicycleCEMMPC(replace(p.cfg,human_margin=0.))
+        controls,velocities,positions=p._rollout(p._seed_trajectories(old),old)
+        clearance=p._human_clearance(velocities,old)
+        np.testing.assert_allclose(p._cost(velocities,old,positions,clearance,None,None),
+            q._cost(velocities,new,positions,clearance,None,None))
+        np.testing.assert_allclose(p._combined_clearance(velocities,old,positions,clearance,None,None),
+            q._combined_clearance(velocities,new,positions,clearance,None,None))
+        np.testing.assert_allclose(p._physical_clearance(velocities,old,positions,clearance),
+            q._physical_clearance(velocities,new,positions,clearance))
+
     def test_bayes_teacher_moment_contract(self):
         from types import SimpleNamespace
         from crowd_nav.gdbn import ModeBeliefSnapshot

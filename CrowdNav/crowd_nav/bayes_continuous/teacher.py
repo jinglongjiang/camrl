@@ -7,7 +7,7 @@ Only the adapter below reads current observed states. No goals/futures of humans
 from __future__ import annotations
 import math
 import time
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 from typing import Dict, List, Optional, Tuple
 import numpy as np
 from scipy.special import ndtr
@@ -949,6 +949,9 @@ def unicycle_teacher(world, belief_snapshot=None, dynamics=None):
         world._cem_teacher = UnicycleCEMMPC(UnicycleConfig(
             dt=dt, population=512, iterations=4, omega_max=1.2, human_margin=.50))
     planner = world._cem_teacher
+    # Keep the qualified .50m geometric buffer, but do not call intrusion into
+    # that buffer a physical collision event in the probability calculation.
+    planner.cfg = replace(planner.cfg, human_margin=0.0 if belief_snapshot is not None else .50)
     entities = np.asarray([[h.px, h.py, h.vx, h.vy, h.radius]
                            for h in world.env.humans], dtype=np.float64).reshape(-1, 5)
     observation = PlannerObservation(
@@ -967,11 +970,13 @@ def unicycle_teacher(world, belief_snapshot=None, dynamics=None):
         observation.human_segment_start=start
         observation.human_segment_end=end
         observation.human_position_covariance=cov
+        observation.human_uncertainty_buffer=np.full((len(entities),planner.cfg.horizon),.50)
         observation.human_existence=np.ones(len(entities))
         observation.human_visible=np.ones(len(entities),bool)
         observation.provenance='full_observation_gdbn_moment_teacher'
     command, elapsed = planner.plan(observation, seed=2407+round(world.env.global_time/dt))
     world.teacher_diagnostics = dict(planner.last_diagnostics, elapsed_ms=elapsed,
         provenance=observation.provenance, covariance_projection='trace/2 isotropic',
-        full_multimodal_risk=False)
+        full_multimodal_risk=False, geometric_margin=.50,
+        probability_event='physical_overlap' if belief_snapshot is not None else 'disabled')
     return np.asarray([command[0], command[1]/dt], dtype=np.float32)
