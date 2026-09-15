@@ -1712,6 +1712,45 @@ def scratch_baseline_main():
         env.close()
 
 
+def dagger_ppo_confirmation_worker(task):
+    from stable_baselines3 import PPO
+    torch.set_num_threads(1)
+    params, checkpoint, destination = task
+    model = PPO.load(checkpoint, device='cpu')
+    records, _, _ = episodes(Path(params), 500, 73000000, actor=model,
+                             case_offset=85000, arm='no_belief')
+    Path(destination).write_text(json.dumps(dict(checkpoint=str(checkpoint), records=records), indent=2))
+    return records
+
+
+def dagger_ppo_confirmation_main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--params', type=Path, default=Path('repair_results/params'))
+    parser.add_argument('--stages', type=Path, required=True)
+    args = parser.parse_args()
+    status = json.loads((args.stages/'status.json').read_text())
+    if status['status'] != 'complete_stable':
+        raise ValueError('Only a completed fixed-budget candidate can enter confirmation')
+    folder = args.stages/'confirmation500'
+    folder.mkdir(exist_ok=False)
+    protocol = dict(count=500, layout_seed_start=73000000, test_case_start=85000,
+        candidate=status['candidate'], selection='last budget checkpoint, not best development score',
+        no_retraining=True, paired=True)
+    (folder/'protocol.json').write_text(json.dumps(protocol, indent=2))
+    tasks = [(str(args.params), str(args.stages/(name+'.zip')), str(folder/(tag+'.json')))
+             for name, tag in [('initial','initial'),(status['candidate'],'final')]]
+    with multiprocessing.get_context('spawn').Pool(2) as pool:
+        initial, final = pool.map(dagger_ppo_confirmation_worker, tasks)
+    assert all(a['layout_sha256']==b['layout_sha256'] and a['test_case']==b['test_case']
+               for a,b in zip(initial,final))
+    protocol['outcomes'] = {tag:dict(success=sum(r['outcome']=='success' for r in rows),
+        collision=sum(r['outcome']=='collision' for r in rows),timeout=sum(r['outcome']=='timeout' for r in rows),
+        mean_return=float(np.mean([r['reward'] for r in rows]))) for tag,rows in [('initial',initial),('final',final)]}
+    protocol['status']='complete'
+    (folder/'result.json').write_text(json.dumps(protocol,indent=2))
+    print('CONFIRMATION',protocol,flush=True)
+
+
 def dagger_ppo_main():
     """Finite nominal PPO transfer test with exact physical-mean conversion."""
     import copy
@@ -1842,7 +1881,10 @@ def dagger_ppo_main():
 
 if __name__ == '__main__':
     import sys
-    if '--dagger-ppo' in sys.argv:
+    if '--dagger-ppo-confirm' in sys.argv:
+        sys.argv.remove('--dagger-ppo-confirm')
+        dagger_ppo_confirmation_main()
+    elif '--dagger-ppo' in sys.argv:
         sys.argv.remove('--dagger-ppo')
         dagger_ppo_main()
     elif '--scratch-baseline' in sys.argv:
