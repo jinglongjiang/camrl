@@ -32,3 +32,17 @@ repair_results/no_belief_td3_smoke_2k/status.json
 repair_results/no_belief_td3_smoke_2k.launch.log
 repair_results/safety_no_belief_min_120/receipt.json
 本报告依据实际读取的status.json和启动日志；原始数据仍保留在远程。
+
+后续整改：定向安全采集
+已修改原train_smoke.py采集器，不改教师、DAgger、Actor、Bayes或Critic公式。
+负样本来自round16正常执行的成功/超时轨迹；正样本在净空小于1米时切换为
+朝最近行人运动的控制，只保留切换后的碰撞后缀，最多15步。
+每组目标30碰撞+30非碰撞，每组最多300次尝试；训练case从40000起、验证从50000起。
+记录所有尝试及丢弃情况，检查物理布局不重复。危险样本不进入BC、DAgger或reward replay。
+正样本是危险控制下的结果，不应解释成原学生部署时的校准碰撞概率。
+Critic最低20/20门槛及原数值验收不变；固定1000次warmup，未通过则不进入TD3。
+TD3最多2000步，每1000步评估，成功率低于80%停止。
+远程17项测试通过，包括新增的正样本后缀、类别配额及跨组布局隔离测试。
+新队列：repair_results/no_belief_td3_smoke_2k_directed
+新安全数据：repair_results/safety_no_belief_directed
+旧失败记录不覆盖。新队列结果以该目录status.json为准，不预先宣称通过。

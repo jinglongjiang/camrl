@@ -243,17 +243,15 @@ def dagger_online_smoke(args, stages):
             raise ValueError('Unexpected TD3 schedule')
         save('safety_collection')
         safety_path = args.safety
-        for count in (80, 120):
-            safety_path = args.safety if count == 80 else args.safety.with_name(args.safety.name+'_120')
-            if safety_path.exists():
-                counts = json.loads((safety_path/'receipt.json').read_text())
-            else:
-                counts = collect_safety_replay(args.params, safety_path, args.arm, count_per_split=count)
-            report['safety_path'], report['safety_counts'] = str(safety_path), counts
-            save('safety_collection')
-            if all(counts[s]['adequate'] for s in ('train','validation')):
-                break
+        if safety_path.exists():
+            counts = json.loads((safety_path/'receipt.json').read_text())
         else:
+            counts = collect_safety_replay(args.params, safety_path, args.arm, actor=model)
+        if counts.get('protocol') != 'directed_suffix_v1':
+            raise ValueError('Refusing legacy random-perturbation safety data')
+        report['safety_path'], report['safety_counts'] = str(safety_path), counts
+        save('safety_collection')
+        if not all(counts[s]['quota_complete'] for s in ('train','validation')):
             save('blocked_insufficient_safety_classes')
             return
         safety = {s:torch.load(safety_path/(s+'.pt'), weights_only=False) for s in ('train','validation')}
@@ -303,7 +301,7 @@ def dagger_online_smoke(args, stages):
                                    for k in good[0]['observation']}
         model.demo_actions = model.policy.scale_action(np.stack([r['action'] for r in good])).astype(np.float32)
         # Validation trajectories never enter replay; perturbed actions are never BC labels.
-        for rows in collection['trajectories'][:-20] + safety['train']['trajectories']:
+        for rows in collection['trajectories'][:-20]:
             for r in rows:
                 model.replay_buffer.add({k:v[None] for k,v in r['observation'].items()},
                     {k:v[None] for k,v in r['next_observation'].items()},
@@ -448,32 +446,102 @@ def episodes(params, count, offset, actor=None, collect=False, case_offset=0, di
     return records, trajectories, raw
 
 
-def collect_safety_replay(params, out, arm, count_per_split=200):
-    """Finite five-human risk collection, deliberately separate from BC data.
+def collect_safety_replay(params, out, arm, actor=None):
+    """30/30 outcome-stratified episodes per split, at most 300 attempts each.
 
-    This does not qualify a critic. Perturbed-policy outcomes are supervised
-    initialization labels, not calibrated collision probabilities of the actor.
+    Positive labels describe a collision-seeking continuation, not calibrated
+    collision probabilities of the student. Only its intervention suffix is kept.
+    Simulator geometry is used solely by the safety-data intervention.
     """
-    if not 80 <= count_per_split <= 1000:
-        raise ValueError('Safety split size must be in [80,1000]')
+    if arm != 'no_belief':
+        raise ValueError('Directed safety collection is restricted to no_belief')
+    env = ActionHistory(BeliefEnv(params, arm=arm, seed=2407), route=True)
+    if actor is None:
+        actor = BayesSetTD3.load(Path('repair_results/student_dagger_coverage_20260915/round16.zip'),
+                                env=env, device='cuda')
+    actor.check_arm(arm)
+    if actor.observation_space['robot'].shape != (10,):
+        raise ValueError('Safety student must have the 10D route contract')
     out.mkdir(exist_ok=False)
-    result = {}
-    for split, base in [('train', 40000), ('validation', 50000)]:
-        records, trajectories = [], []
-        for perturbed, n, case in [(False, count_per_split//2, base),
-                                    (True, count_per_split-count_per_split//2, base+2000)]:
-            rec, rows, _ = episodes(params, n, 540000+case, collect=True,
-                case_offset=case, arm=arm, perturbation_seed=2407+case if perturbed else None,
-                route_history=True)
-            records.extend(rec)
-            trajectories.extend(rows)
-        positives = sum(r['outcome']=='collision' for r in records)
-        torch.save(dict(arm=arm, robot_fields=10, route_history=True, records=records, trajectories=trajectories,
-                        use='cost_only_not_BC'), out/(split+'.pt'))
-        result[split] = dict(positive_trajectories=positives,
-            negative_trajectories=len(records)-positives,
-            adequate=positives>=20 and len(records)-positives>=20)
-    (out/'receipt.json').write_text(json.dumps(result, indent=2))
+    result = dict(protocol='directed_suffix_v1', target_per_class=30, max_attempts_per_split=300,
+                  trigger_surface_clearance=1., intervention_steps=15,
+                  use='cost_critic_only_not_BC_DAgger_or_reward_replay',
+                  scope='Outcome-stratified intervention data, not deployment calibration')
+    hashes = set()
+    try:
+        for split, base in [('train', 40000), ('validation', 50000)]:
+            records, trajectories, attempts = [], [], []
+            positive = negative = 0
+            for trial in range(300):
+                if positive == negative == 30:
+                    break
+                # Alternate while both quotas are open, then finish the missing class.
+                seek = negative == 30 or (positive < 30 and trial % 2 == 1)
+                case = base + trial
+                obs, _ = env.reset(options=dict(layout_seed=540000+case, test_case=case, profile='nominal'))
+                world = env.unwrapped.world
+                layout_hash = hashlib.sha256(np.asarray([[h.px,h.py,h.gx,h.gy,h.radius,h.v_pref]
+                    for h in world.env.humans], dtype=np.float64).tobytes()).hexdigest()
+                if layout_hash in hashes:
+                    raise ValueError('Repeated physical layout in safety collection')
+                hashes.add(layout_hash)
+                rows, switched, outcome, terminal = [], None, None, None
+                for step in range(140):
+                    robot = world.robot
+                    closest = min(world.env.humans, key=lambda h:
+                        np.hypot(h.px-robot.px,h.py-robot.py)-h.radius-robot.radius)
+                    clearance = np.hypot(closest.px-robot.px,closest.py-robot.py)-closest.radius-robot.radius
+                    if seek and switched is None and clearance < 1.:
+                        switched = step
+                        rows = []
+                    intervention = switched is not None
+                    if intervention:
+                        target = np.arctan2(closest.py-robot.py, closest.px-robot.px)
+                        error = (target-robot.theta+np.pi) % (2*np.pi)-np.pi
+                        action = np.array([1.,np.clip(error/world.env.time_step,-1.2,1.2)],dtype=np.float32)
+                    else:
+                        action = actor.predict(obs, deterministic=True)[0]
+                    nxt, reward, done, truncated, info = env.step(action)
+                    if not seek or intervention:
+                        rows.append(dict(observation=obs, next_observation=nxt,
+                            action=np.asarray(info['action'],dtype=np.float32).copy(),
+                            reward=reward, done=done or truncated, collision_cost=info['collision_cost'],
+                            safety_intervention=intervention, source_step=step))
+                    obs = nxt
+                    if done or truncated:
+                        terminal = dict(info['episode_result'])
+                        outcome = terminal['outcome']
+                        break
+                    if intervention and len(rows) == 15:
+                        break
+                accepted = (seek and outcome=='collision' and switched is not None) or (
+                    not seek and outcome in ('success','timeout'))
+                attempts.append(dict(test_case=case,layout_seed=540000+case,layout_sha256=layout_hash,
+                    seek_collision=seek,switch_step=switched,outcome=outcome,accepted=accepted,
+                    stored_steps=len(rows) if accepted else 0))
+                if accepted:
+                    if seek:
+                        assert 1 <= len(rows) <= 15 and all(r['safety_intervention'] for r in rows)
+                        assert rows[0]['source_step'] == switched and rows[-1]['collision_cost'] == 1
+                        positive += 1
+                    else:
+                        assert not any(r['collision_cost'] or r['safety_intervention'] for r in rows)
+                        negative += 1
+                    terminal.update(layout_sha256=layout_hash,safety_suffix_only=seek,
+                                    switch_step=switched,stored_steps=len(rows))
+                    records.append(terminal)
+                    trajectories.append(rows)
+                result[split] = dict(positive_trajectories=positive,negative_trajectories=negative,
+                    attempts=trial+1,adequate=positive>=20 and negative>=20,
+                    quota_complete=positive==negative==30)
+                (out/'receipt.json').write_text(json.dumps(result,indent=2))
+                if accepted or trial % 20 == 19:
+                    print('SAFETY_DIRECTED',split,trial+1,positive,negative,flush=True)
+            torch.save(dict(arm=arm,robot_fields=10,route_history=True,records=records,
+                trajectories=trajectories,use=result['use'],protocol=result['protocol']),out/(split+'.pt'))
+            (out/(split+'_attempts.json')).write_text(json.dumps(attempts,indent=2))
+    finally:
+        env.close()
     return result
 
 

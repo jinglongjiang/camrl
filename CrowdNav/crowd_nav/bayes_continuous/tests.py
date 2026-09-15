@@ -15,6 +15,63 @@ PARAMS = Path(__file__).resolve().parents[2] / 'repair_results/params'
 
 
 class Contracts(unittest.TestCase):
+    def test_directed_safety_suffix_and_quotas(self):
+        from types import SimpleNamespace
+        from crowd_nav.bayes_continuous.train_smoke import collect_safety_replay
+        class Student:
+            observation_space = {'robot': SimpleNamespace(shape=(10,))}
+            def check_arm(self, arm):
+                assert arm == 'no_belief'
+            def predict(self, obs, deterministic=True):
+                return np.array([.2, 0.],np.float32), None
+        class FakeEnv:
+            def __init__(self):
+                self.unwrapped = self
+                self.world = SimpleNamespace(robot=SimpleNamespace(px=0.,py=0.,theta=0.,radius=.3),
+                    env=SimpleNamespace(time_step=.25,humans=[]))
+            def observation(self):
+                return {'robot':np.array([self.t,0,0,0,0,0,0,0,0,self.route],np.float32)}
+            def reset(self, options):
+                self.t, self.route, self.danger = 0, .0, False
+                self.world.env.humans = [SimpleNamespace(px=2.,py=.2,gx=options['test_case'],
+                    gy=0.,radius=.3,v_pref=1.)]
+                return self.observation(), {}
+            def step(self, action):
+                self.danger = self.danger or action[0] > .9
+                self.t += 1
+                self.route = .7*self.route+.3*float(action[1])/1.2
+                if self.t == 2:
+                    self.world.env.humans[0].px = 1.
+                done = self.t == 5
+                info = dict(action=action,collision_cost=int(done and self.danger))
+                if done:
+                    info['episode_result'] = dict(outcome='collision' if self.danger else 'success')
+                return self.observation(), 0., done, False, info
+            def close(self):
+                pass
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch('crowd_nav.bayes_continuous.train_smoke.BeliefEnv',return_value=FakeEnv()), \
+                patch('crowd_nav.bayes_continuous.train_smoke.ActionHistory',side_effect=lambda env,route:env):
+            out = Path(tmp)/'safety'
+            result = collect_safety_replay(PARAMS,out,'no_belief',actor=Student())
+            fingerprints = []
+            for split in ('train','validation'):
+                self.assertEqual(result[split]['positive_trajectories'],30)
+                self.assertEqual(result[split]['negative_trajectories'],30)
+                self.assertEqual(result[split]['attempts'],60)
+                data = torch.load(out/(split+'.pt'),weights_only=False)
+                for rec,rows in zip(data['records'],data['trajectories']):
+                    fingerprints.append(rec['layout_sha256'])
+                    self.assertEqual(rows[0]['observation']['robot'].shape,(10,))
+                    if rec['safety_suffix_only']:
+                        self.assertEqual([r['source_step'] for r in rows],[2,3,4])
+                        self.assertTrue(all(r['safety_intervention'] for r in rows))
+                        self.assertEqual(rows[-1]['collision_cost'],1)
+                    else:
+                        self.assertEqual(len(rows),5)
+                        self.assertFalse(any(r['safety_intervention'] for r in rows))
+            self.assertEqual(len(set(fingerprints)),120)
+
     def test_parallel_dagger_matches_serial(self):
         from crowd_nav.bayes_continuous.train_smoke import ActionHistory, dagger_rollout_worker, collect_dagger_parallel
         torch.set_num_threads(1)
