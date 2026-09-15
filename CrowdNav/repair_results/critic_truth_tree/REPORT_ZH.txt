@@ -1,0 +1,159 @@
+Critic真值审计与有限整改决策树：最终报告
+
+一、最终出口
+已到达出口3：在本轮固定预算与验收规则下，停止TD3微调整改，保留原DAgger Actor。
+不是挂起，也不是要求再追加一项训练。A、B和实际命中的C1至C4均已完成。
+最终状态：exit3_critic_audit_failed_at_finite_cap。
+最终Critic能较好拟合已执行动作的行为return，但反事实动作排序未达到预定标准。
+因此没有开放Actor训练，没有改reward，没有启动policy anchoring、SAC/PPO或Bayes。
+这不是“TD3在任何配置都无效”的证明，也不是贝叶斯价值的负结果。
+
+二、最关键的结果
+                                       原冻结Critic     最终C4+MC/TD
+行为return MAE                         0.577909         0.070383
+行为return RMSE                        0.641103         0.084388
+行为return Q-G bias                    -0.547625        -0.059557
+行为return Pearson                     0.497104         0.972671
+行为return Spearman                    0.827814         0.969871
+反事实pairwise ranking accuracy        61.34%           60.43%
+反事实平均Spearman                     0.283207         0.257570
+反事实top-1 agreement                  24%              27%
+Q选中动作平均真实regret                0.031002         0.035536
+Q选中动作return减Actor原动作return     -0.002274        -0.006807
+
+大白话：把“历史上执行过的动作值多少钱”拟合好，并没有让Critic学会
+“在这个状态下，换一个动作到底更好还是更差”。这两个量本轮已被分开测量。
+
+三、版本、冻结输入和执行边界
+仓库：jinglongjiang/camrl
+分支：repair-continuous-training-20260914
+审计/整改代码提交：dbdd8c7。
+机器：远程4090，45.126.120.6。
+环境与reward不改：5人baseline_circle、nominal、No-Belief。
+Actor为round16，同一份权重贯穿所有审计和Critic-only训练。
+载入源：no_belief_local_finetune/frozen_actor_3000.zip，包含此前冻结Actor及Critic。
+Actor原始round16 SHA256：634e8106713c0c316afc77bf345615d3a6a101789f82f182853356ab57dbc086。
+Actor更新次数：0。每个Critic训练阶段均断言Actor逐张量未变。
+Critic encoder复制后不共享参数，代码检查其与Actor参数data_ptr不同。
+20项契约测试通过，含MC尾段排除及跨episode返回累计的新增测试。
+
+四、预先固定的审计口径
+A：在原frozen_transitions.pt按done切完整episode，gamma=.99计算实际折扣return。
+原3000步中2956步属于62个完整episode，未完成尾段44步排除。
+62回合包含59成功、3碰撞，无超时。
+A补充工程门槛在取结果前写入protocol：MAE<=0.2、RMSE<=0.3。
+这是将“明显偏离”落实成固定研发判据，不是统计定理。
+A是带探索噪声的行为策略实现return，而且使用过训练数据，不是确定性Actor的
+独立期望Q验证。它的高相关性不能单独证明动作梯度正确。
+
+B：50个固定诊断case 61000..61049，layout_seed=700000+case。
+先运行冻结Actor，每回合固定选其轨迹约1/3和2/3处，共100个状态。
+每个状态保存case、step、prefix actions、全部代理运动/目标/半径信息、时间、
+route/上一动作及网络实际观测。真值信息只用于回放核对，不送入Critic。
+候选为dv={-.15,0,.15}、domega={-.30,0,.30}的3x3网格，再加(v=1,原omega)。
+每个候选均reset同case、重放prefix；物理状态和所有网络观测逐项完全一致后，
+执行候选一步，再由冻结round16接管直到真实终止，累计折扣return。
+1000个候选槽位中有重复裁剪动作；实际执行935个不同的状态-动作分支。
+100个状态的prefix复现断言全部通过。
+排序统计排除重复动作和真实return差<=1e-6的pair，共4374个有效pair。
+Q相同的pair按0.5计；top-1按真实return并列最优计入通过。
+B门槛：pairwise>=70%、平均Spearman>=0.5、平均(Q所选真实return-Actor真实return)>=-0.05。
+后续所有Critic复用这同一批真实反事实return，不重新挑状态。
+这些是开发探针，不是独立论文确认实验。
+
+五、完整检查点表（不挑最好结果）
+阶段                         A MAE      A RMSE     B排序正确率    B Spearman
+原冻结Critic                 0.577909   0.641103   61.34%         0.283207
+C1 encoder复制+TD5000        0.415632   0.523893   58.39%         0.198523
+C2 新增5000步                0.227098   0.302211   58.82%         0.223284
+C2 新增10000步               0.176124   0.212433   57.84%         0.196836
+C2 新增15000步               0.187629   0.222536   60.01%         0.241995
+C2 新增20000步               0.220073   0.260409   59.88%         0.219861
+C3 MC5000+TD1000             0.092706   0.119705   59.26%         0.225073
+C4 大Critic新增5000步        0.423329   0.509910   64.72%         0.358496
+C4 大Critic新增10000步       0.289472   0.360627   61.45%         0.277833
+C4 大Critic新增15000步       0.232741   0.285044   59.72%         0.237761
+C4 大Critic新增20000步       0.203980   0.247934   60.24%         0.240347
+C4 最终MC5000+TD1000         0.070383   0.084388   60.43%         0.257570
+
+status.json里A_B_initial出现两次，是生成反事实数据后恢复执行时在相同数据上
+重算了一次，两个结果完全一致；本表只算一次，不能当成两个独立实验。
+
+六、C支线到底执行了多少
+C1：Actor encoder复制到独立Critic encoder，Q head随机，[96,96]，lr=3e-4，TD5000次。
+C2：新增20000步，403个完整回合，14次失败；没有超过上限。
+每5000步使用当前全部可用数据训练5000次Critic-only并复查A+B。
+C3：完整轨迹MC return训练5000次，再接1000次标准TD3形式Bellman更新。
+C4：新建[256,256] Critic，lr=1e-4；仍复制Actor encoder作为初始化。
+重新按同样上限采20000步，405个完整回合、15次失败；再做MC5000+TD1000。
+C2/C4噪声均按50%/.05、30%/.15、20%/.30的归一化动作标准差逐步抽样。
+Actor始终固定；实现按5000步先采集、再训练5000次。由于Actor不随Critic变化，
+该顺序不改变采集策略，但不是“每个环境步立刻更新一次”的交错实现。
+新增训练采集总量40000步，完成808个回合；两个池分别使用，不把失败数混作单池配额。
+本轮Critic更新总计57000次；没有任何Actor RL更新。
+
+重要限制：C2和C4各自都没达到“20次失败”的覆盖目标，虽然都达到200个完成回合。
+这是预定噪声和步数上限下的实际结果，不能写成“充分失败覆盖后仍然失败”。
+未为了凑20次失败临时改噪声、换场景或继续超过20000步。
+
+七、最终A的分类与时域结果
+分类/剩余步数        n       MAE        RMSE       Q-G bias
+成功                 2862    0.067877   0.078405   -0.062827
+碰撞                 94      0.146680   0.191778    0.040010
+超时                 0       无数据
+剩余1..10步          620     0.042530   0.054181   -0.036704
+剩余11..40步         1805    0.076859   0.088285   -0.068942
+剩余41..80步         531     0.080887   0.098598   -0.054338
+剩余81..140步        0       无数据
+各组Pearson/Spearman等完整指标见C4_wide_mc5000_td1000.json的A字段。
+
+八、最终B的额外检查与限制
+按50个case做10000次簇bootstrap，seed=2407：
+排序正确率描述性95%区间：[56.29%,64.61%]。
+平均Spearman描述性95%区间：[0.1605,0.3569]。
+这不是新的独立检验，也不纠正反复使用同一开发探针的选择效应。
+最终Q在21%的状态把额外满速动作列为最优，真实return对应比例为22%。
+所以“满速最优比例相近”不代表逐状态动作排序正确。
+最终平均regret=0.035536，Q所选比Actor原动作低0.006807；只有2/100个状态
+低于Actor原动作超过0.05。不能把排序不过门夸大成“每次Q选动作都会灾难”。
+本测试没有证明它是此前99%跌到46%的唯一原因。
+审计比较min(Q1,Q2)，不是直接测量Actor实际使用的Q1动作梯度。
+MC来自带探索噪声的行为，而B后续是确定性参考Actor；TD训练保留target smoothing。
+这些目标差异仍是解释边界，不能声称已经排除所有估计目标不一致。
+
+九、为什么不继续D/E/F/G
+D：前提是Q排序可信，本轮未成立，因此没有运行速度策略变换，也没有改reward。
+E：前提是Q和reward审计通过，本轮未成立，没有让未经资格确认的Critic更新Actor。
+F：其三项前提未满足，所以没有启动policy anchoring，也没有宣称它失败。
+G：没有合格RL候选，因此没有新500case确认，不能借用旧96.4%当新结果。
+H：没有进入MAP/FULL，Bayes价值本轮未测。
+这是命中C4停止出口，不是把所有分支都跑过，更不是提前收工。
+
+十、工程决定与科学结论分开
+工程决定：按本轮有限预算，停止当前TD3微调路线，保留原96.4%独立评价的DAgger Actor。
+科学结论：当前Critic改造链没有通过固定动作排序探针；执行动作return的拟合改善
+没有自动转化成可靠的局部动作排序。不能推导“RL不能导航”或“贝叶斯没有价值”。
+本轮没有提出下一版网络或自动启动新的训练。
+
+十一、本地证据与复现
+本地根：/home/abc/workspace/bayes_set_continuous/CrowdNav/repair_results/critic_truth_tree/
+远程根：/root/continuous_repair_20260914/CrowdNav/repair_results/critic_truth_tree/
+REPORT_ZH.txt：本报告。
+status.json：先写入的口径、阶段汇总、训练日志摘要及全部覆盖回合记录。
+A_B_initial.json、C1*.json、C2*.json、C3*.json、C4*.json：所有检查点A/B完整数值。
+每个JSON的per_state保存Q与真实return，支持重新计算排序、regret及case簇区间。
+counterfactuals.pt：100个可重放状态、prefix、候选动作和真实结果，已取回本地。
+*_critic.pt：各检查点Critic权重，已取回本地，不上传Git。
+原frozen_transitions.pt仍在no_belief_local_finetune目录，已在前轮取回本地。
+C2/C4新增逐步transition在运行中供训练使用，没有另外序列化保存；保存的是
+完整回合记录、确定的采样规则和代码，可重跑生成，不能称为所有新增原始步数据已归档。
+相邻critic_truth_tree.launch.log：完整运行日志。
+SHA256SUMS.txt：关键输入输出的远程原文件哈希。
+Git保存报告、JSON与日志；张量数据和模型保留本地及远程。
+
+复现（输出目录必须不存在）：
+cd /root/continuous_repair_20260914/CrowdNav
+PYTHONPATH=/root/bayes_continuous_deps:$PWD OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 \
+ /root/miniconda3/envs/mamba/bin/python -m crowd_nav.bayes_continuous.train_smoke \
+ --critic-audit --out repair_results/critic_truth_tree_reproduction --workers 4
+--resume仅用于已有反事实数据后的接续，会从原冻结Critic重跑C树，不能误称任意检查点续训。

@@ -1,0 +1,255 @@
+Gym has been unmaintained since 2022 and does not support NumPy 2.0 amongst other critical functionality.
+Please upgrade to Gymnasium, the maintained drop-in replacement of Gym, or contact the authors of your software and request that they upgrade.
+Users of this version of Gym should be able to simply replace 'import gym' with 'import gymnasium as gym' in the vast majority of cases.
+See the migration guide at https://gymnasium.farama.org/introduction/migration_guide/ for additional information.
+CRITIC_AUDIT protocol_frozen
+CRITIC_AUDIT counterfactual_rollouts
+Gym has been unmaintained since 2022 and does not support NumPy 2.0 amongst other critical functionality.
+Please upgrade to Gymnasium, the maintained drop-in replacement of Gym, or contact the authors of your software and request that they upgrade.
+Users of this version of Gym should be able to simply replace 'import gym' with 'import gymnasium as gym' in the vast majority of cases.
+See the migration guide at https://gymnasium.farama.org/introduction/migration_guide/ for additional information.
+Gym has been unmaintained since 2022 and does not support NumPy 2.0 amongst other critical functionality.
+Please upgrade to Gymnasium, the maintained drop-in replacement of Gym, or contact the authors of your software and request that they upgrade.
+Users of this version of Gym should be able to simply replace 'import gym' with 'import gymnasium as gym' in the vast majority of cases.
+See the migration guide at https://gymnasium.farama.org/introduction/migration_guide/ for additional information.
+Gym has been unmaintained since 2022 and does not support NumPy 2.0 amongst other critical functionality.
+Please upgrade to Gymnasium, the maintained drop-in replacement of Gym, or contact the authors of your software and request that they upgrade.
+Users of this version of Gym should be able to simply replace 'import gym' with 'import gymnasium as gym' in the vast majority of cases.
+See the migration guide at https://gymnasium.farama.org/introduction/migration_guide/ for additional information.
+Gym has been unmaintained since 2022 and does not support NumPy 2.0 amongst other critical functionality.
+Please upgrade to Gymnasium, the maintained drop-in replacement of Gym, or contact the authors of your software and request that they upgrade.
+Users of this version of Gym should be able to simply replace 'import gym' with 'import gymnasium as gym' in the vast majority of cases.
+See the migration guide at https://gymnasium.farama.org/introduction/migration_guide/ for additional information.
+COUNTERFACTUAL_STATES 2
+COUNTERFACTUAL_STATES 4
+COUNTERFACTUAL_STATES 6
+COUNTERFACTUAL_STATES 8
+COUNTERFACTUAL_STATES 10
+COUNTERFACTUAL_STATES 12
+COUNTERFACTUAL_STATES 14
+COUNTERFACTUAL_STATES 16
+COUNTERFACTUAL_STATES 18
+COUNTERFACTUAL_STATES 20
+COUNTERFACTUAL_STATES 22
+COUNTERFACTUAL_STATES 24
+COUNTERFACTUAL_STATES 26
+COUNTERFACTUAL_STATES 28
+COUNTERFACTUAL_STATES 30
+COUNTERFACTUAL_STATES 32
+COUNTERFACTUAL_STATES 34
+COUNTERFACTUAL_STATES 36
+COUNTERFACTUAL_STATES 38
+COUNTERFACTUAL_STATES 40
+COUNTERFACTUAL_STATES 42
+COUNTERFACTUAL_STATES 44
+COUNTERFACTUAL_STATES 46
+COUNTERFACTUAL_STATES 48
+COUNTERFACTUAL_STATES 50
+COUNTERFACTUAL_STATES 52
+COUNTERFACTUAL_STATES 54
+COUNTERFACTUAL_STATES 56
+COUNTERFACTUAL_STATES 58
+COUNTERFACTUAL_STATES 60
+COUNTERFACTUAL_STATES 62
+COUNTERFACTUAL_STATES 64
+COUNTERFACTUAL_STATES 66
+COUNTERFACTUAL_STATES 68
+COUNTERFACTUAL_STATES 70
+COUNTERFACTUAL_STATES 72
+COUNTERFACTUAL_STATES 74
+COUNTERFACTUAL_STATES 76
+COUNTERFACTUAL_STATES 78
+COUNTERFACTUAL_STATES 80
+COUNTERFACTUAL_STATES 82
+COUNTERFACTUAL_STATES 84
+COUNTERFACTUAL_STATES 86
+COUNTERFACTUAL_STATES 88
+COUNTERFACTUAL_STATES 90
+COUNTERFACTUAL_STATES 92
+COUNTERFACTUAL_STATES 94
+COUNTERFACTUAL_STATES 96
+COUNTERFACTUAL_STATES 98
+COUNTERFACTUAL_STATES 100
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+[GDBN] : K=3 repair_results/params
+CRITIC_AUDIT A_B_initial
+CRITIC_AUDIT branch_C_required
+Gym has been unmaintained since 2022 and does not support NumPy 2.0 amongst other critical functionality.
+Please upgrade to Gymnasium, the maintained drop-in replacement of Gym, or contact the authors of your software and request that they upgrade.
+Users of this version of Gym should be able to simply replace 'import gym' with 'import gymnasium as gym' in the vast majority of cases.
+See the migration guide at https://gymnasium.farama.org/introduction/migration_guide/ for additional information.
+CRITIC_AUDIT protocol_frozen
+CRITIC_AUDIT A_B_initial
+CRITIC_AUDIT branch_C_required
+[GDBN] : K=3 repair_results/params
+CRITIC_ONLY td 0 0.06737647950649261
+CRITIC_ONLY td 500 0.005438249558210373
+CRITIC_ONLY td 1000 0.0008275500731542706
+CRITIC_ONLY td 1500 0.0008452677284367383
+CRITIC_ONLY td 2000 0.0016081880312412977
+CRITIC_ONLY td 2500 0.0009249537251889706
+CRITIC_ONLY td 3000 0.0012840407434850931
+CRITIC_ONLY td 3500 0.0012858039699494839
+CRITIC_ONLY td 4000 0.0008339656633324921
+CRITIC_ONLY td 4500 0.0009191432036459446
+CRITIC_AUDIT C1_encoder_copy_5000
+CRITIC_AUDIT C2_coverage_collect_5000
+CRITIC_ONLY td 0 0.013455433771014214
+CRITIC_ONLY td 500 0.003914960660040379
+CRITIC_ONLY td 1000 0.001934161875396967
+CRITIC_ONLY td 1500 0.0026497093494981527
+CRITIC_ONLY td 2000 0.0025069050025194883
+CRITIC_ONLY td 2500 0.0033902283757925034
+CRITIC_ONLY td 3000 0.0026649460196495056
+CRITIC_ONLY td 3500 0.003140001092106104
+CRITIC_ONLY td 4000 0.002085165586322546
+CRITIC_ONLY td 4500 0.0018561903852969408
+CRITIC_AUDIT C2_coverage_5000
+CRITIC_AUDIT C2_coverage_collect_10000
+CRITIC_ONLY td 0 0.004848970100283623
+CRITIC_ONLY td 500 0.006313949823379517
+CRITIC_ONLY td 1000 0.0025613191537559032
+CRITIC_ONLY td 1500 0.001972438069060445
+CRITIC_ONLY td 2000 0.001955067738890648
+CRITIC_ONLY td 2500 0.001508822781033814
+CRITIC_ONLY td 3000 0.001725668553262949
+CRITIC_ONLY td 3500 0.0016009430401027203
+CRITIC_ONLY td 4000 0.0016268137842416763
+CRITIC_ONLY td 4500 0.0016238093376159668
+CRITIC_AUDIT C2_coverage_10000
+CRITIC_AUDIT C2_coverage_collect_15000
+CRITIC_ONLY td 0 0.002973935566842556
+CRITIC_ONLY td 500 0.0017112932400777936
+CRITIC_ONLY td 1000 0.001544431783258915
+CRITIC_ONLY td 1500 0.0020941991824656725
+CRITIC_ONLY td 2000 0.0020294750574976206
+CRITIC_ONLY td 2500 0.0013169202720746398
+CRITIC_ONLY td 3000 0.0019386789062991738
+CRITIC_ONLY td 3500 0.0023646261543035507
+CRITIC_ONLY td 4000 0.002167506841942668
+CRITIC_ONLY td 4500 0.0028876429423689842
+CRITIC_AUDIT C2_coverage_15000
+CRITIC_AUDIT C2_coverage_collect_20000
+CRITIC_ONLY td 0 0.00470333406701684
+CRITIC_ONLY td 500 0.0025043473578989506
+CRITIC_ONLY td 1000 0.001255733659490943
+CRITIC_ONLY td 1500 0.0027657158207148314
+CRITIC_ONLY td 2000 0.0017341920174658298
+CRITIC_ONLY td 2500 0.0015222766669467092
+CRITIC_ONLY td 3000 0.0037654952611774206
+CRITIC_ONLY td 3500 0.002804500050842762
+CRITIC_ONLY td 4000 0.00699927331879735
+CRITIC_ONLY td 4500 0.0074212620966136456
+CRITIC_AUDIT C2_coverage_20000
+CRITIC_AUDIT C3_mc_initialization
+CRITIC_ONLY mc 0 0.17199748754501343
+CRITIC_ONLY mc 500 0.02959992177784443
+CRITIC_ONLY mc 1000 0.02683214657008648
+CRITIC_ONLY mc 1500 0.006953737232834101
+CRITIC_ONLY mc 2000 0.013736199587583542
+CRITIC_ONLY mc 2500 0.01577679067850113
+CRITIC_ONLY mc 3000 0.004222158342599869
+CRITIC_ONLY mc 3500 0.005281080491840839
+CRITIC_ONLY mc 4000 0.005246915388852358
+CRITIC_ONLY mc 4500 0.006438045762479305
+CRITIC_ONLY td 0 0.005240233615040779
+CRITIC_ONLY td 500 0.004059989936649799
+CRITIC_AUDIT C3_mc5000_td1000
+CRITIC_AUDIT C4_wide_coverage_collect_5000
+CRITIC_ONLY td 0 0.04269073158502579
+CRITIC_ONLY td 500 0.008366627618670464
+CRITIC_ONLY td 1000 0.0012446558102965355
+CRITIC_ONLY td 1500 0.0026285729836672544
+CRITIC_ONLY td 2000 0.0023834172170609236
+CRITIC_ONLY td 2500 0.0024803655687719584
+CRITIC_ONLY td 3000 0.0028273677453398705
+CRITIC_ONLY td 3500 0.0017507830634713173
+CRITIC_ONLY td 4000 0.0019525127718225121
+CRITIC_ONLY td 4500 0.0028916848823428154
+CRITIC_AUDIT C4_wide_coverage_5000
+CRITIC_AUDIT C4_wide_coverage_collect_10000
+CRITIC_ONLY td 0 0.002975896932184696
+CRITIC_ONLY td 500 0.004144890233874321
+CRITIC_ONLY td 1000 0.0047075399197638035
+CRITIC_ONLY td 1500 0.0025945561937987804
+CRITIC_ONLY td 2000 0.0037344754673540592
+CRITIC_ONLY td 2500 0.003428434254601598
+CRITIC_ONLY td 3000 0.0032264026813209057
+CRITIC_ONLY td 3500 0.0037090254481881857
+CRITIC_ONLY td 4000 0.002504801843315363
+CRITIC_ONLY td 4500 0.0034303837455809116
+CRITIC_AUDIT C4_wide_coverage_10000
+CRITIC_AUDIT C4_wide_coverage_collect_15000
+CRITIC_ONLY td 0 0.003160937922075391
+CRITIC_ONLY td 500 0.002929715206846595
+CRITIC_ONLY td 1000 0.0023483349941670895
+CRITIC_ONLY td 1500 0.0036397664807736874
+CRITIC_ONLY td 2000 0.002421838929876685
+CRITIC_ONLY td 2500 0.003327850718051195
+CRITIC_ONLY td 3000 0.0027230768464505672
+CRITIC_ONLY td 3500 0.003121359506621957
+CRITIC_ONLY td 4000 0.0023404720705002546
+CRITIC_ONLY td 4500 0.0019933991134166718
+CRITIC_AUDIT C4_wide_coverage_15000
+CRITIC_AUDIT C4_wide_coverage_collect_20000
+CRITIC_ONLY td 0 0.007458966225385666
+CRITIC_ONLY td 500 0.002978620119392872
+CRITIC_ONLY td 1000 0.002927269320935011
+CRITIC_ONLY td 1500 0.0018551804823800921
+CRITIC_ONLY td 2000 0.002291369251906872
+CRITIC_ONLY td 2500 0.0023788469843566418
+CRITIC_ONLY td 3000 0.0022878029849380255
+CRITIC_ONLY td 3500 0.0022966493852436543
+CRITIC_ONLY td 4000 0.0018287798156961799
+CRITIC_ONLY td 4500 0.0024011549539864063
+CRITIC_AUDIT C4_wide_coverage_20000
+CRITIC_AUDIT C4_mc_initialization
+CRITIC_ONLY mc 0 0.15433956682682037
+CRITIC_ONLY mc 500 0.0412093922495842
+CRITIC_ONLY mc 1000 0.038676004856824875
+CRITIC_ONLY mc 1500 0.007409981917589903
+CRITIC_ONLY mc 2000 0.007053656037896872
+CRITIC_ONLY mc 2500 0.01002882607281208
+CRITIC_ONLY mc 3000 0.00461682491004467
+CRITIC_ONLY mc 3500 0.005509408190846443
+CRITIC_ONLY mc 4000 0.00635088887065649
+CRITIC_ONLY mc 4500 0.005763462744653225
+CRITIC_ONLY td 0 0.0022972270380705595
+CRITIC_ONLY td 500 0.0033303555101156235
+CRITIC_AUDIT C4_wide_mc5000_td1000
+CRITIC_AUDIT exit3_critic_audit_failed_at_finite_cap
