@@ -1,0 +1,105 @@
+原生Reward-only TD3最小诊断：完整结果
+
+一、结论
+已实际跑完Reward Critic预热1000次、基线100回合、TD3在线1000步及其100回合评价。
+基线99成功/1碰撞/0超时；TD3后0成功/19碰撞/81超时。
+触发预定SR<80%停止规则，未执行第二个1000步，最终状态stopped_below_80_percent。
+这次不是安全数据或Cost gate卡住；是真正执行了原生TD3后，策略性能严重退化。
+原始round16不覆盖，原本已经具备的导航能力仍保留在原检查点。
+
+二、版本与冻结条件
+仓库：jinglongjiang/camrl
+分支：repair-continuous-training-20260914
+运行代码：090ec67；报告后续提交不改变本轮运行代码。
+入口：原train_smoke.py新增--native-td3分支；未新建算法模块。
+机器：45.126.120.6，4090；SB3 2.7.1。
+环境：ActionHistory(BeliefEnv(params, arm=no_belief), route=True)。
+训练：baseline_circle、5人、nominal、seed=2407。
+robot输入10维：原7维+上一动作2维+route状态1维。
+无Mamba、无离散80动作网格；没有MAP/FULL实验。
+教师、DAgger、Bayes、环境、reward配置没有修改。
+
+三、算法契约
+RL主体确实是stable_baselines3.TD3，不是BayesSetTD3子类。
+BayesSetTD3仅用于读取round16 Actor，迁移完成立即释放source对象。
+只复制Actor权重至原生Actor和Actor target。
+未迁移旧Reward Critic、Cost Critic、optimizer、replay或旧训练gate。
+原生模型没有cost_critic；RL Actor损失由SB3原生TD3实现，无Cost、BC、DAgger辅助损失。
+网络：SetEncoder(features_dim=192)，pi=[256,256]，qf=[96,96]，特征提取器不共享。
+学习率3e-4，buffer_size=50000，batch_size=128，learning_starts=0，
+train_freq=1 step，gradient_steps=1，policy_delay=2，tau=0.005，gamma=0.99。
+探索噪声为归一化动作空间独立高斯标准差0.1，评价关闭探索噪声。
+Reward warmup为固定Actor下的双Reward Critic Bellman MSE训练，使用target policy
+smoothing与Polyak target更新；没有调用BayesSetTD3.train或任何Cost gate。
+Actor预热前后逐张量一致断言通过；迁移后Actor参数及单状态动作与源模型完全一致。
+
+四、源模型和数据
+模型：student_dagger_coverage_20260915/round16.zip
+SHA256：634e8106713c0c316afc77bf345615d3a6a101789f82f182853356ab57dbc086
+原成功教师示范：9037个transition。
+round16的1000条学生rollout：49524个transition。
+Critic回放使用row[action]，从未用teacher_action替换实际执行动作。
+所有transition检查10维robot当前/下一状态及动作边界。
+共58561步，超过指定50000容量；用固定seed打乱入池，避免只挤掉教师数据。
+最终保留7689步教师+42311步学生，共50000步；没有声称所有58561步同时驻留。
+完全没有加载安全干预数据。
+
+五、过程和结果
+18项契约测试通过，含原生TD3预热只更新Critic而不更新Actor的新增测试。
+Reward warmup 1000次完成，无非有限损失；末批双头训练MSE为0.004422。
+此训练损失不等于留出Q准确度、概率校准或导航保证，本轮未设置新的拟合门槛。
+基线和RL后使用同一组开发case 30000..30099，layout_seed=530000..530099。
+这不是全新独立确认集，也不是此前96.4%的500回合队列。
+
+阶段                        成功        碰撞        超时
+round16迁移+Critic预热后     99/100      1/100       0/100
+原生TD3在线1000步后         0/100       19/100      81/100
+原生TD3在线2000步           未执行（触发预定停止规则）
+
+逐回合核验：100组layout_seed、test_case、物理布局SHA256完全配对。
+配对变化：原99次成功中80次变为超时、19次变为碰撞；原1次碰撞变为超时。
+两组动作边界违规计数均为0；这不等同于额外工作区越界认证。
+reward_warmup.zip：num_timesteps=0，_n_updates=0，无cost_critic。
+rl_1000.zip：num_timesteps=1000，_n_updates=1000，无cost_critic。
+按照原生policy_delay=2，对应500次在线Actor更新。
+
+六、额外只读检查：不能把81次超时直接叫“停车冻结”
+在原round16 rollout每隔50步取一条，共991个固定离线状态，分别查询两版Actor：
+                                  预热后Actor       RL-1000 Actor
+平均速度(m/s)                     0.824128          0.968611
+中位速度(m/s)                     0.940262          0.995154
+速度小于0.05比例                  1.21%             0.00%
+平均绝对角速度(rad/s)             0.470114          0.466549
+这说明在这批固定状态上，RL后Actor反而更接近高速输出，不是普遍压成零速度。
+这些是离线状态动作探针，不是RL闭环访问状态的轨迹统计；不能据此断言所有超时
+都由高速绕圈或某个具体机制导致。尚未定位Critic偏差、reward或策略分布偏移谁主导。
+
+七、当前能下的判断
+1. 接口迁移与预热没有破坏导航：基线仍99%成功。
+2. 去除Cost与BC并改用原生TD3，没有避免本配置1000步内的严重退化。
+3. 这次不能再将退化归因于Cost Critic、Cost gate或BC梯度，因为RL中不存在它们。
+4. 仍不能推出“标准TD3永远不行”“Bayes无用”或某一唯一根因。
+5. 本轮只有一个seed和已使用的开发集，属于故障诊断，不是论文最终对照。
+6. 不继续跑到2000，不换reward，不自动改算法或追加训练；保留原Actor及失败检查点。
+
+八、文件与复现
+本地根：/home/abc/workspace/bayes_set_continuous/CrowdNav/repair_results/
+no_belief_native_td3_2k/REPORT_ZH.txt：本报告。
+同目录status.json：全流程状态、回放计数、1000个warmup损失、最终结果。
+baseline_episodes.json、evaluation_1000.json：配对100回合原始记录。
+training_episodes.json：在线训练已完成回合记录。
+reward_warmup.zip、rl_1000.zip：已下载本地，权重不上传Git。
+相邻no_belief_native_td3_2k.launch.log：原始运行日志。
+SHA256SUMS.txt：远程原文件哈希，可在repair_results/no_belief_native_td3_2k中校验。
+报告、JSON及日志同步Git；旧数据、原round16与此前Cost实验不覆盖。
+
+复现命令（输出目录需不存在）：
+cd /root/continuous_repair_20260914/CrowdNav
+PYTHONPATH=/root/bayes_continuous_deps:$PWD OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 \
+ /root/miniconda3/envs/mamba/bin/python -m crowd_nav.bayes_continuous.train_smoke \
+ --native-td3 --out repair_results/no_belief_native_td3_2k_reproduction
+
+冻结文件哈希：
+environment.py 7face96ffe7a0c3b5592cc9d72b6819ac100991fb2e19753c996010950c98381
+network.py f70d75549c55706162bda24c84c500dd1ca76226c673632f6137a940caefcfd3
+env_belief_mdp.config 5c9be91dd31209d51e889aafc8ad1c6e0cd282f2f66ea7548daa6aa68b56f10d

@@ -1,0 +1,27 @@
+Gym has been unmaintained since 2022 and does not support NumPy 2.0 amongst other critical functionality.
+Please upgrade to Gymnasium, the maintained drop-in replacement of Gym, or contact the authors of your software and request that they upgrade.
+Users of this version of Gym should be able to simply replace 'import gym' with 'import gymnasium as gym' in the vast majority of cases.
+See the migration guide at https://gymnasium.farama.org/introduction/migration_guide/ for additional information.
+NATIVE_TD3 initializing
+[GDBN] : K=3 repair_results/params
+NATIVE_TD3 reward_warmup_1000
+REWARD_WARMUP 200 0.020227501168847084
+REWARD_WARMUP 400 0.025653265416622162
+REWARD_WARMUP 600 0.007175825536251068
+REWARD_WARMUP 800 0.003040183801203966
+REWARD_WARMUP 1000 0.004422091878950596
+NATIVE_TD3 baseline_evaluation
+[GDBN] : K=3 repair_results/params
+episodes 530000 20
+episodes 530000 40
+episodes 530000 60
+episodes 530000 80
+episodes 530000 100
+NATIVE_TD3 td3_to_1000
+[GDBN] : K=3 repair_results/params
+episodes 530000 20
+episodes 530000 40
+episodes 530000 60
+episodes 530000 80
+episodes 530000 100
+NATIVE_TD3 stopped_below_80_percent
