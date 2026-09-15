@@ -1,0 +1,34 @@
+No-Belief TD3 最小测试状态报告
+
+结论：安全数据验收未通过，任务已停止。Critic预热和TD3均未开始。
+这不是RL性能退化结果，也不能用于判断贝叶斯是否有价值。
+
+代码：repair-continuous-training-20260914 / 89735f5
+输入模型：student_dagger_coverage_20260915/round16.zip
+模型SHA256：634e8106713c0c316afc77bf345615d3a6a101789f82f182853356ab57dbc086
+协议：No-Belief，5人，nominal，seed=2407，10维robot输入（上一动作及route）。
+计划：安全数据验收 -> Actor冻结、Critic预热1000次 -> 最多2000步TD3。
+
+实际执行
+1. 每个安全数据分组先采80回合；类别不足，自动改为每组120回合。
+2. 最终训练组：碰撞1回合，非碰撞119回合。
+3. 最终验证组：碰撞2回合，非碰撞118回合。
+4. 要求每组碰撞、非碰撞各至少20回合；两组均未通过。
+5. 状态：blocked_insufficient_safety_classes。查询时进程已退出。
+80与120队列包含重叠布局，不能相加作为独立样本数。
+
+未执行的内容
+Critic warmup、TD3、RL前后配对导航评价均未执行。
+本任务未更新原round16模型。历史96.4%成功率不是本次RL测试结果。
+
+原因及后续建议
+当前正常教师与加扰动教师的采集组合产生的碰撞样本太少。
+应改进危险状态/动作覆盖，仅用于安全Critic，不作为BC专家标签。
+保持训练与验证布局分离，不降低现有类别门槛；补齐后再验收Critic。
+该建议尚未实施，本报告不表示测试已经重新启动。
+
+证据（远程 /root/continuous_repair_20260914/CrowdNav/ 下）
+repair_results/no_belief_td3_smoke_2k/status.json
+repair_results/no_belief_td3_smoke_2k.launch.log
+repair_results/safety_no_belief_min_120/receipt.json
+本报告依据实际读取的status.json和启动日志；原始数据仍保留在远程。
