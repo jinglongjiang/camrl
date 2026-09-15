@@ -1,0 +1,84 @@
+{
+  "algorithm": "td3",
+  "seed": 2407,
+  "arm": "no_belief",
+  "humans": 5,
+  "profile": "nominal",
+  "robot_fields": 10,
+  "requested_steps": 100000,
+  "reward_changed": false,
+  "pretrained_weights": false,
+  "old_replay": false,
+  "auxiliary_losses": false,
+  "device": "cuda",
+  "sb3_version": "2.7.1",
+  "evaluations": [
+    {
+      "steps": 10000,
+      "success": 0,
+      "collision": 3,
+      "timeout": 97
+    },
+    {
+      "steps": 20000,
+      "success": 1,
+      "collision": 49,
+      "timeout": 50
+    },
+    {
+      "steps": 30000,
+      "success": 0,
+      "collision": 19,
+      "timeout": 81
+    },
+    {
+      "steps": 40000,
+      "success": 0,
+      "collision": 34,
+      "timeout": 66
+    },
+    {
+      "steps": 50000,
+      "success": 0,
+      "collision": 13,
+      "timeout": 87
+    },
+    {
+      "steps": 60000,
+      "success": 16,
+      "collision": 41,
+      "timeout": 43
+    },
+    {
+      "steps": 70000,
+      "success": 29,
+      "collision": 15,
+      "timeout": 56
+    },
+    {
+      "steps": 80000,
+      "success": 18,
+      "collision": 17,
+      "timeout": 65
+    },
+    {
+      "steps": 90000,
+      "success": 38,
+      "collision": 5,
+      "timeout": 57
+    },
+    {
+      "steps": 100000,
+      "success": 55,
+      "collision": 4,
+      "timeout": 41
+    }
+  ],
+  "status": "complete",
+  "single_seed_development_only": true,
+  "ppo_budget_note": "Completes the last 2048-step rollout: 100000 requested gives 100352 actual steps.",
+  "policy_kwargs": "{'features_extractor_class': <class 'crowd_nav.bayes_continuous.network.SetEncoder'>, 'features_extractor_kwargs': {'features_dim': 192}, 'net_arch': {'pi': [256, 256], 'qf': [96, 96]}, 'share_features_extractor': False}",
+  "source_sha256": "1eb9ee92d74c09fb238f12e54f6bf48c5c0d8ac84f03a7146ea425aa7f8fd84e",
+  "elapsed_seconds": 3014.118292570114,
+  "actual_steps": 100000
+}
