@@ -534,6 +534,283 @@ def audit_teachers(paths, destination):
     print(json.dumps(report, indent=2))
 
 
+def reciprocity_world(params, source):
+    from stable_baselines3 import PPO
+    from crowd_nav.bayes_continuous.train_smoke import ActionHistory
+    env = ActionHistory(BeliefEnv(params, arm='no_belief'), route=True)
+    env.unwrapped.world.robot.visible = True
+    return env, PPO.load(source, device='cpu')
+
+
+def reciprocity_reset(env, case, flags):
+    from types import MethodType
+    obs, _ = env.reset(options=dict(layout_seed=91000000+case,
+                                    test_case=case, profile='nominal'))
+    world = env.unwrapped.world
+    assert world.robot.visible and len(world.env.humans) == 5
+    for i, (human, policy) in enumerate(zip(world.env.humans, world.policies)):
+        policy.set_reciprocity(bool(flags[i]))
+        original = policy.predict
+        def checked(self, state, original=original):
+            expected = world.robot.get_observable_state()
+            assert world.robot.visible and len(state.human_states) == 5
+            np.testing.assert_array_equal(state.human_states[-1].to_array(), expected.to_array())
+            return original(state)
+        policy.predict = MethodType(checked, policy)
+    return obs
+
+
+def reciprocity_state(env, obs):
+    world = env.unwrapped.world
+    truth = np.array([[h.px,h.py,h.vx,h.vy] for h in world.env.humans],np.float64)
+    # Private goals are used ONLY to verify identical replay, never as model input.
+    audit = np.array([h.get_full_state().to_array() for h in world.env.humans] +
+                     [world.robot.get_full_state().to_array()],np.float64)
+    memory = [None if p.base._last_pref_vel is None else
+              np.asarray(p.base._last_pref_vel).tolist() for p in world.policies]
+    digest = hashlib.sha256(audit.tobytes()+obs['robot'].tobytes()+
+                           json.dumps(memory).encode()).hexdigest()
+    return dict(robot=obs['robot'].copy(), humans=obs['humans'][:5,:5].copy(),
+                truth=truth, theta=float(world.robot.theta), state_hash=digest)
+
+
+def reciprocity_physical(frames, t, person):
+    order = [person]+[i for i in range(5) if i != person]
+    return np.concatenate([frames[t]['robot'], frames[t]['humans'][order].ravel()])
+
+
+def reciprocity_collect(task):
+    params, source, case, gate = task
+    torch.set_num_threads(1)
+    env, actor = reciprocity_world(params, source)
+    flags = np.random.default_rng(92000000+case).integers(0,2,5)
+    obs = reciprocity_reset(env,case,flags)
+    initial = reciprocity_state(env,obs)
+    frames = [initial]; actions = []; anchors = []
+    done = False
+    for t in range(140):
+        action = actor.predict(obs,deterministic=True)[0].astype(np.float32)
+        if t in (16,32,48):
+            anchors.append(dict(t=t,action=action.copy(),state_hash=frames[-1]['state_hash']))
+        actions.append(action)
+        obs, reward, terminated, truncated, info = env.step(action)
+        frames.append(reciprocity_state(env,obs));done=terminated or truncated
+        if done:break
+    assert done
+    branches=[]
+    for anchor in anchors:
+        t=anchor['t'];base=anchor['action']
+        candidates = np.unique(np.array([[np.clip(base[0]+dv,0,1),
+            np.clip(base[1]+dw,-1.2,1.2)] for dv in (-.2,0,.2)
+            for dw in (-.4,0,.4)],np.float32),axis=0)
+        if gate:candidates=np.array([[.3,-.8],[1.,0.],[.3,.8]],np.float32)
+        for flip in ((False,True) if gate else (False,)):
+            for j, action in enumerate(candidates):
+                obs=reciprocity_reset(env,case,flags)
+                for prefix in actions[:t]:
+                    obs,_,term,trunc,_=env.step(prefix)
+                    assert not (term or trunc)
+                assert reciprocity_state(env,obs)['state_hash']==anchor['state_hash']
+                if flip:
+                    env.unwrapped.world.policies[0].set_reciprocity(not bool(flags[0]))
+                future=[];ret=0.;outcome='running'
+                for h in range(8):
+                    obs,reward,term,trunc,info=env.step(action)
+                    future.append(reciprocity_state(env,obs)['truth'])
+                    ret += .99**h*reward
+                    if term or trunc:
+                        outcome=info['episode_result'].get('outcome','terminal');break
+                branches.append(dict(t=t,candidate=j,action=action,future=np.array(future),
+                                     flipped=flip,return8=ret,outcome=outcome))
+    env.close()
+    return dict(case=case,layout_hash=initial['state_hash'],flags=flags,
+                frames=frames,actions=actions,branches=branches)
+
+
+def reciprocity_audit(args):
+    """Frozen diagnostic only; never updates a navigation policy or old GDBN."""
+    import multiprocessing, time, copy
+    from scipy.special import expit
+    start=time.time();root=args.results;root.mkdir(parents=True,exist_ok=False)
+    source='repair_results/dagger_ppo_nominal_20260915/initial.zip'
+    protocol=dict(stage='frozen_before_collection',robot_visible=True,
+        intervention_profile='nominal',persistent_type_prior=.5,
+        counts=dict(environment=30,train=180,validation=60,audit=120),
+        case_starts=dict(environment=210000,train=220000,validation=230000,audit=240000),
+        anchors=[16,32,48],future_steps=[4,8],candidate_hold_steps=8,
+        candidate_offsets=dict(v=[-.2,0,.2],omega=[-.4,0,.4]),
+        environment_gate='At least 10% matched branches change target position by >0.01m at 8 steps; at least 10% anchors respond to candidate change >0.01m; exact first-step action-delay check',
+        posterior='Two conditional Gaussian ridge velocity-residual likelihoods fitted with TRAIN type labels only; fixed type, prior 0.5, sequential log-odds, no private goals; validation variance calibration; no type labels at inference',
+        likelihood_ridge=1.,likelihood_variance_floor=.0001,
+        predictor='148 -> 128 -> 128 -> 8; MSE on training-standardized CV residuals',
+        predictor_seeds=[2407,4807,7207],updates=3000,batch=256,lr=.001,
+        selection='lowest validation MSE each 500 updates',
+        information_gate='FULL reduces 1/2-second position MSE by >=2% vs EACH Current/History/MAP; paired episode 98.333% bootstrap lower bound >0; positive direction in >=2/3 seeds',
+        bootstrap_replicates=10000,bootstrap_seed=9017,
+        decision_gate='Only after information pass: same candidates held8 then fixed source Actor to terminal, replay exact prefix; equal-capacity return/collision probes on same splits; FULL regret at least .01 below every comparator with 98.333% lower CI>0 and no higher collision selection rate',
+        no_extra_sampling=True,no_PPO=True,source_sha256=hashlib.sha256(Path(source).read_bytes()).hexdigest(),
+        source_code_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        limitations=['Known simulator type labels allowed ONLY for training likelihood models',
+                    'Fixed behavior policy, binary simulator types, not real-human evidence',
+                    'Terminal branches masked; no invented post-terminal motion',
+                    'Finite diagnostic regressors; failure is not information-theoretic equivalence'])
+    (root/'protocol.json').write_text(json.dumps(protocol,indent=2))
+    def collect(split,gate=False):
+        tasks=[(str(args.params),source,protocol['case_starts'][split]+i,gate)
+               for i in range(protocol['counts'][split])]
+        with multiprocessing.get_context('spawn').Pool(6) as pool:
+            data=[]
+            for row in pool.imap(reciprocity_collect,tasks):
+                data.append(row)
+                if len(data)%10==0:print(split,len(data),flush=True)
+        torch.save(data,root/(split+'_raw.pt'))
+        return data
+    envdata=collect('environment',True)
+    differences=[];action_effect=[];delay_errors=[]
+    for ep in envdata:
+        for t in (16,32,48):
+            rows=[b for b in ep['branches'] if b['t']==t]
+            for j in range(3):
+                a=[b for b in rows if b['candidate']==j and not b['flipped']]
+                b=[b for b in rows if b['candidate']==j and b['flipped']]
+                if a and b and len(a[0]['future'])==len(b[0]['future'])==8:
+                    differences.append(float(np.linalg.norm(a[0]['future'][-1,0,:2]-b[0]['future'][-1,0,:2])))
+            for flip in (False,True):
+                bs=[b for b in rows if b['flipped']==flip]
+                if len(bs)==3:
+                    delay_errors.extend(float(np.max(np.abs(b['future'][0]-bs[0]['future'][0]))) for b in bs)
+                    if all(len(b['future'])==8 for b in bs):
+                        action_effect.append(max(float(np.linalg.norm(b['future'][-1,:,:2]-bs[0]['future'][-1,:,:2],axis=1).max()) for b in bs))
+    envresult=dict(matched_branches=len(differences),type_position_change_rate=float(np.mean(np.array(differences)>.01)),
+        action_position_change_rate=float(np.mean(np.array(action_effect)>.01)),
+        max_first_step_action_effect=max(delay_errors,default=0.),
+        passed=bool(differences and np.mean(np.array(differences)>.01)>=.1 and
+                    action_effect and np.mean(np.array(action_effect)>.01)>=.1 and max(delay_errors,default=0.)<1e-9))
+    (root/'environment_gate.json').write_text(json.dumps(envresult,indent=2));print(envresult,flush=True)
+    if not envresult['passed']:
+        (root/'summary.json').write_text(json.dumps(dict(stage='stopped_environment_gate',environment=envresult,no_PPO=True),indent=2));return
+    raw={split:collect(split) for split in ('train','validation','audit')}
+    hashes=[e['layout_hash'] for data in raw.values() for e in data]
+    assert len(set(hashes))==len(hashes)
+    # Fit emission models on actual executed transitions, never branch outcomes.
+    emissions={}
+    for split in ('train','validation'):
+        xs=[];ys=[];labels=[]
+        for ep in raw[split]:
+            fs=ep['frames']
+            for t in range(len(fs)-1):
+                c,s=np.cos(fs[t]['theta']),np.sin(fs[t]['theta']);rot=np.array([[c,s],[-s,c]])
+                for p in range(5):
+                    xs.append(reciprocity_physical(fs,t,p))
+                    ys.append(rot@(fs[t+1]['truth'][p,2:]-fs[t]['truth'][p,2:]))
+                    labels.append(ep['flags'][p])
+        emissions[split]=(np.array(xs),np.array(ys),np.array(labels))
+    ex,ey,et=emissions['train'];emu=ex.mean(0);esd=np.maximum(ex.std(0),.01)
+    def design(x):return np.column_stack([(x-emu)/esd,np.ones(len(x))])
+    weights=[];variances=[]
+    for kind in (0,1):
+        x=design(ex[et==kind]);y=ey[et==kind]
+        reg=np.eye(x.shape[1]);reg[-1,-1]=0
+        w=np.linalg.solve(x.T@x+reg,x.T@y);weights.append(w)
+        vx,vy,vt=emissions['validation'];err=vy[vt==kind]-design(vx[vt==kind])@w
+        variances.append(np.maximum(np.mean(err**2,axis=0),.0001))
+    np.savez_compressed(root/'likelihood.npz',mean=emu,std=esd,weights=weights,variance=variances)
+    datasets={};poststats={}
+    for split,episodes in raw.items():
+        xs=[];ys=[];masks=[];ids=[];ps=[];truths=[];records=[]
+        for ei,ep in enumerate(episodes):
+            fs=ep['frames'];belief=np.full((len(fs),5),.5);logodds=np.zeros(5)
+            for t in range(1,len(fs)):
+                c,s=np.cos(fs[t-1]['theta']),np.sin(fs[t-1]['theta']);rot=np.array([[c,s],[-s,c]])
+                x=design(np.array([reciprocity_physical(fs,t-1,p) for p in range(5)]))
+                y=(fs[t]['truth'][:,2:]-fs[t-1]['truth'][:,2:])@rot.T
+                ll=[-.5*np.sum((y-x@weights[k])**2/variances[k]+np.log(variances[k]),axis=1) for k in (0,1)]
+                logodds+=ll[1]-ll[0];belief[t]=expit(logodds)
+            ps.extend(belief[4:].ravel());truths.extend(np.tile(ep['flags'],len(fs)-4))
+            for bi,b in enumerate(ep['branches']):
+                t=b['t'];c,s=np.cos(fs[t]['theta']),np.sin(fs[t]['theta']);rot=np.array([[c,s],[-s,c]])
+                for p in range(5):
+                    x=np.zeros(148,np.float32)
+                    x[:35]=reciprocity_physical(fs,t,p);x[35:37]=b['action']/[1,1.2]
+                    x[37:142]=np.concatenate([reciprocity_physical(fs,t-j,p) for j in (1,2,3)])
+                    order=[p]+[i for i in range(5) if i!=p];x[142:147]=belief[t,order]
+                    y=np.zeros((2,4),np.float32);mask=np.zeros((2,4),np.float32)
+                    for j,h in enumerate((4,8)):
+                        if len(b['future'])<h:continue
+                        now=fs[t]['truth'][p];future=b['future'][h-1,p]
+                        y[j,:2]=rot@(future[:2]-now[:2]-now[2:]*h*.25)
+                        y[j,2:]=rot@(future[2:]-now[2:]);mask[j]=1
+                    xs.append(x);ys.append(y.ravel());masks.append(mask.ravel());ids.append(ei);records.append((ei,bi,p))
+        datasets[split]=(np.array(xs),np.array(ys),np.array(masks),np.array(ids))
+        ps=np.array(ps);truths=np.array(truths)
+        poststats[split]=dict(brier=float(np.mean((ps-truths)**2)),accuracy=float(np.mean((ps>.5)==truths)),
+            ambiguity_fraction=float(np.mean((ps>.1)&(ps<.9))))
+        np.savez_compressed(root/(split+'_features.npz'),x=xs,y=ys,mask=masks,episode=ids,record=records)
+    (root/'posterior_diagnostics.json').write_text(json.dumps(poststats,indent=2))
+    train=datasets['train'];xmu=train[0].mean(0);xsd=np.maximum(train[0].std(0),.01)
+    ymu=np.sum(train[1]*train[2],0)/train[2].sum(0)
+    ysd=np.maximum(np.sqrt(np.sum((train[1]-ymu)**2*train[2],0)/train[2].sum(0)),.01)
+    results={};episode_scores={}
+    for arm in ('current','history','map','full'):
+        tensors={}
+        for split,(x,y,m,ids) in datasets.items():
+            x=x.copy()
+            if arm!='history':x[:,37:142]=0
+            if arm in ('current','history'):x[:,142:]=0
+            if arm=='map':x[:,142:147]=(x[:,142:147]>.5).astype(float)
+            # Mask AFTER standardization, so absent blocks are exactly zero.
+            z=(x-xmu)/xsd
+            if arm!='history':z[:,37:142]=0
+            if arm in ('current','history'):z[:,142:]=0
+            tensors[split]=tuple(torch.as_tensor(a,device='cuda',dtype=torch.float32)
+                                for a in (z,(y-ymu)/ysd,m))
+        results[arm]=[];episode_scores[arm]=[]
+        for seed in protocol['predictor_seeds']:
+            torch.manual_seed(seed);rng=np.random.default_rng(seed)
+            model=torch.nn.Sequential(torch.nn.Linear(148,128),torch.nn.ReLU(),
+                torch.nn.Linear(128,128),torch.nn.ReLU(),torch.nn.Linear(128,8)).cuda()
+            optimizer=torch.optim.Adam(model.parameters(),lr=.001);best=None;bestloss=float('inf')
+            for update in range(1,3001):
+                idx=rng.integers(len(train[0]),size=256);x,y,m=tensors['train']
+                loss=(((model(x[idx])-y[idx])**2)*m[idx]).sum()/m[idx].sum()
+                optimizer.zero_grad();loss.backward();optimizer.step()
+                if update%500==0:
+                    with torch.no_grad():
+                        x,y,m=tensors['validation'];vl=float((((model(x)-y)**2)*m).sum()/m.sum())
+                    if vl<bestloss:bestloss=vl;best=copy.deepcopy(model.state_dict());beststep=update
+            model.load_state_dict(best)
+            with torch.no_grad():pred=model(tensors['audit'][0]).cpu().numpy()*ysd+ymu
+            y=datasets['audit'][1];m=datasets['audit'][2];ids=datasets['audit'][3]
+            cols=np.array([0,1,4,5]);sq=(pred[:,cols]-y[:,cols])**2;mm=m[:,cols]
+            scores=np.array([(sq[ids==i]*mm[ids==i]).sum()/mm[ids==i].sum()
+                             for i in range(len(raw['audit']))])
+            assert np.isfinite(scores).all()
+            episode_scores[arm].append(scores)
+            metrics=dict(seed=seed,validation_loss=bestloss,selected_update=beststep,
+                         position_mse=float(scores.mean()))
+            for j,h in enumerate((4,8)):
+                valid=m[:,4*j]>0
+                metrics['position_error_'+str(h)]=float(np.linalg.norm(pred[valid,4*j:4*j+2]-y[valid,4*j:4*j+2],axis=1).mean())
+            results[arm].append(metrics);print(arm,metrics,flush=True)
+            torch.save(model.state_dict(),root/(arm+'_'+str(seed)+'.pt'))
+            (root/'predictor_results.json').write_text(json.dumps(results,indent=2))
+    comparisons={};rng=np.random.default_rng(9017)
+    full=np.mean(episode_scores['full'],axis=0)
+    for arm in ('current','history','map'):
+        other=np.mean(episode_scores[arm],axis=0);delta=other-full
+        draws=rng.integers(len(delta),size=(10000,len(delta)))
+        lo,hi=np.quantile(delta[draws].mean(1),[.008333333,.991666667])
+        gain=float(delta.mean()/other.mean());positive=int(np.sum(np.mean(episode_scores[arm],axis=1)>np.mean(episode_scores['full'],axis=1)))
+        comparisons[arm]=dict(relative_mse_gain=gain,absolute_ci=[float(lo),float(hi)],
+                              positive_seeds=positive,passed=bool(gain>=.02 and lo>0 and positive>=2))
+    passed=all(x['passed'] for x in comparisons.values())
+    summary=dict(stage='information_complete',environment=envresult,information_gate=passed,
+        comparisons=comparisons,posterior=poststats,elapsed_seconds=time.time()-start,
+        decision_gate='pending' if passed else 'not_started_information_failed',PPO_started=False)
+    np.savez_compressed(root/'episode_scores.npz',**{k:np.array(v) for k,v in episode_scores.items()})
+    (root/'summary.json').write_text(json.dumps(summary,indent=2));print(summary,flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--results', type=Path, required=True)
@@ -544,6 +821,7 @@ def main():
     parser.add_argument('--original-collection', type=Path)
     parser.add_argument('--information-audit', action='store_true')
     parser.add_argument('--information-ridge', action='store_true')
+    parser.add_argument('--reciprocity-audit', action='store_true')
     args = parser.parse_args()
     if args.information_ridge:
         information_ridge_audit(args.results)
@@ -554,6 +832,9 @@ def main():
     if args.params is None:
         parser.error('--params is required for checkpoint auditing')
     torch.set_num_threads(1)
+    if args.reciprocity_audit:
+        reciprocity_audit(args)
+        return
     if args.information_audit:
         information_audit(args)
         return

@@ -374,6 +374,34 @@ class Contracts(unittest.TestCase):
 
 
 class GaussianTransferTests(unittest.TestCase):
+    def test_reciprocity_physical_input_excludes_truth_and_future(self):
+        from crowd_nav.bayes_continuous.audit_saved import reciprocity_physical
+        rng=np.random.default_rng(91)
+        frames=[dict(robot=rng.normal(size=10),humans=rng.normal(size=(5,5)),
+                     truth=rng.normal(size=(5,4))) for _ in range(8)]
+        original=reciprocity_physical(frames,3,2)
+        for frame in frames:frame['truth'][:]=999
+        np.testing.assert_array_equal(original,reciprocity_physical(frames[:4],3,2))
+        np.testing.assert_array_equal(original[10:15],frames[3]['humans'][2])
+
+    def test_reciprocity_guard_and_persistent_type(self):
+        from crowd_nav.bayes_continuous.audit_saved import reciprocity_reset
+        from crowd_nav.bayes_continuous.train_smoke import ActionHistory
+        from crowd_sim.envs.utils.state import JointState
+        env=ActionHistory(BeliefEnv(PARAMS,arm='no_belief'),route=True)
+        env.unwrapped.world.robot.visible=True
+        flags=[True,False,True,False,False]
+        reciprocity_reset(env,250001,flags)
+        world=env.unwrapped.world
+        h=world.env.humans[0]
+        without_robot=[other.get_observable_state() for other in world.env.humans[1:]]
+        with self.assertRaises(AssertionError):
+            world.policies[0].predict(JointState(h.get_full_state(),without_robot))
+        for _ in range(3):env.step(np.array([.2,0.],np.float32))
+        self.assertEqual([p.is_non_reciprocal for p in world.policies],flags)
+        self.assertTrue(all(p.mode=='nominal' for p in world.policies))
+        env.close()
+
     def test_information_probe_features_are_causal_and_masked(self):
         from crowd_nav.bayes_continuous.audit_saved import information_features,information_arm
         rng=np.random.default_rng(5)

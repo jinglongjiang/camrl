@@ -1,0 +1,68 @@
+{
+  "stage": "frozen_before_collection",
+  "robot_visible": true,
+  "intervention_profile": "nominal",
+  "persistent_type_prior": 0.5,
+  "counts": {
+    "environment": 30,
+    "train": 180,
+    "validation": 60,
+    "audit": 120
+  },
+  "case_starts": {
+    "environment": 210000,
+    "train": 220000,
+    "validation": 230000,
+    "audit": 240000
+  },
+  "anchors": [
+    16,
+    32,
+    48
+  ],
+  "future_steps": [
+    4,
+    8
+  ],
+  "candidate_hold_steps": 8,
+  "candidate_offsets": {
+    "v": [
+      -0.2,
+      0,
+      0.2
+    ],
+    "omega": [
+      -0.4,
+      0,
+      0.4
+    ]
+  },
+  "environment_gate": "At least 10% matched branches change target position by >0.01m at 8 steps; at least 10% anchors respond to candidate change >0.01m; exact first-step action-delay check",
+  "posterior": "Two conditional Gaussian ridge velocity-residual likelihoods fitted with TRAIN type labels only; fixed type, prior 0.5, sequential log-odds, no private goals; validation variance calibration; no type labels at inference",
+  "likelihood_ridge": 1.0,
+  "likelihood_variance_floor": 0.0001,
+  "predictor": "148 -> 128 -> 128 -> 8; MSE on training-standardized CV residuals",
+  "predictor_seeds": [
+    2407,
+    4807,
+    7207
+  ],
+  "updates": 3000,
+  "batch": 256,
+  "lr": 0.001,
+  "selection": "lowest validation MSE each 500 updates",
+  "information_gate": "FULL reduces 1/2-second position MSE by >=2% vs EACH Current/History/MAP; paired episode 98.333% bootstrap lower bound >0; positive direction in >=2/3 seeds",
+  "bootstrap_replicates": 10000,
+  "bootstrap_seed": 9017,
+  "decision_gate": "Only after information pass: same candidates held8 then fixed source Actor to terminal, replay exact prefix; equal-capacity return/collision probes on same splits; FULL regret at least .01 below every comparator with 98.333% lower CI>0 and no higher collision selection rate",
+  "no_extra_sampling": true,
+  "no_PPO": true,
+  "source_sha256": "f1188379822d94dbd1e44ef096fa7aa84529ebc9343bb2c248c1c88f56a2a4cc",
+  "source_code_sha256": "384c7595bf258e4a0f73adc9120c555a91a283c2a6af6acff68420f1f1503da7",
+  "limitations": [
+    "Known simulator type labels allowed ONLY for training likelihood models",
+    "Fixed behavior policy, binary simulator types, not real-human evidence",
+    "Terminal branches masked; no invented post-terminal motion",
+    "Finite diagnostic regressors; failure is not information-theoretic equivalence"
+  ]
+}
