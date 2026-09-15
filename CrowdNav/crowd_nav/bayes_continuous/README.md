@@ -1,8 +1,38 @@
-# Bayesian Set Imitation Learning: Current Mainline
+# Bayesian Belief-State PPO: Current Mainline
 
-Mainline: full GDBN teacher -> BC -> pooled DAgger -> standalone continuous
+Required structure: GDBN recursive belief -> SetEncoder192 -> continuous Gaussian
+actor, with an independent state-value V network for standard PPO training.
+IL initialization is the existing CEM/BC/DAgger policy, converted exactly to the
+physical PPO mean. It is NOT replaced by pure imitation learning.
+
+The default entry and `--dagger-ppo` use only PPO. No action-Q, Cost Critic,
+safety replay, BC/RL joint loss, Mamba or action grid is instantiated. Old
+experimental code is retained for evidence reproduction behind the explicit
+`--legacy-experiment` switch, and is not imported into the main training path.
+
+Example (run from CrowdNav):
+```
+python -m crowd_nav.bayes_continuous.train_smoke --arm full \
+  --profile train_nonstationary --stages 2 --out repair_results/new_full_run
+```
+
+Use the same command with `--arm no_belief` or `--arm map`. All arms receive the
+same IL-initialized physical policy; belief input weights start at zero but are
+trainable. PPO then learns solely from environment reward. Only five-human
+training is permitted. The minimal test is 4096 steps, with a predeclared single
+fallback (frozen actor encoder, lower LR) if navigation degrades. It is an
+engineering smoke test, not a demonstration of Bayesian superiority.
+
+Training layout seeds: [80000000,81000000). Development: 81000000..81000099,
+100 nominal and 100 train_nonstationary cases. No 10/20-human model selection.
+The source PPO `initial.zip` predates all RL updates and exactly reproduces the
+round16 DAgger mean; source optimizer/value weights are not transferred.
+
+## Archived Pure-IL Detour
+
+Former proposal: full GDBN teacher -> BC -> pooled DAgger -> standalone continuous
 SetEncoder actor. No RL, critic, safety replay or joint BC/RL objective is
-instantiated by `--bayes-il` (also the default entry).
+instantiated by the archived `--legacy-experiment --bayes-il` entry.
 The network remains SetEncoder192 + actor256/256, robot10, continuous v/omega.
 Teacher qualification uses `--bayes-teacher-gate`; a passed 200-layout GDBN
 receipt with matching teacher/parameter hashes is required before training.
