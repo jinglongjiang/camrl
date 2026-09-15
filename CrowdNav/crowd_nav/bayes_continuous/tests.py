@@ -15,6 +15,17 @@ PARAMS = Path(__file__).resolve().parents[2] / 'repair_results/params'
 
 
 class Contracts(unittest.TestCase):
+    def test_mc_return_excludes_partial_episodes(self):
+        from crowd_nav.bayes_continuous.train_smoke import complete_mc_rows
+        rows = [dict(reward=.1,done=False),dict(reward=1.,done=True,outcome='success'),
+                dict(reward=99.,done=False),dict(reward=-.5,done=True,episode_start=True,outcome='collision'),
+                dict(reward=99.,done=False)]
+        complete,excluded = complete_mc_rows(rows)
+        self.assertEqual(excluded,2)
+        self.assertEqual(len(complete),3)
+        self.assertAlmostEqual(complete[1]['mc_return'],1.09)
+        self.assertEqual(complete[2]['mc_outcome'],'collision')
+
     def test_finetune_learning_rates_survive_native_train(self):
         from stable_baselines3 import TD3
         from crowd_nav.bayes_continuous.train_smoke import ActionHistory, FineTuneTD3

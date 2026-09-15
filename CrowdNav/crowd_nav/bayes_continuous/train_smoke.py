@@ -677,6 +677,322 @@ def native_td3_main():
             env.close()
 
 
+def audit_physical_state(env):
+    world = env.unwrapped.world
+    fields = ('px','py','vx','vy','theta','gx','gy','radius','v_pref')
+    return np.asarray([[float(getattr(a,k,0.)) for k in fields]
+        for a in [world.robot,*world.env.humans]] +
+        [[world.env.global_time,env.unwrapped.elapsed,env.route,*env.previous,0,0,0,0]],dtype=np.float64)
+
+
+def critic_counterfactual_worker(task):
+    """Fixed reference policy; reset and replay every candidate, without snapshot shortcuts."""
+    params,checkpoint,case = task
+    torch.set_num_threads(1)
+    actor = TD3.load(checkpoint,device='cpu')
+    env = ActionHistory(BeliefEnv(params,arm='no_belief',seed=2407),route=True)
+    options = dict(layout_seed=700000+case,test_case=case,profile='nominal')
+    obs,_ = env.reset(options=options)
+    history = []
+    for _ in range(140):
+        action = actor.predict(obs,deterministic=True)[0]
+        history.append(dict(observation=obs,physical=audit_physical_state(env),action=action.copy()))
+        obs,_,done,truncated,_ = env.step(action)
+        if done or truncated:
+            break
+    selected = sorted(set([len(history)//3,2*len(history)//3]))
+    outputs = []
+    for t in selected:
+        node = history[t]
+        prefix = [x['action'] for x in history[:t]]
+        a0 = node['action']
+        candidates = [np.clip(a0+np.array([dv,dw]),env.action_space.low,env.action_space.high).astype(np.float32)
+                      for dv in (-.15,0,.15) for dw in (-.3,0,.3)]
+        candidates.append(np.array([1.,a0[1]],np.float32))
+        returns,outcomes,lengths = [],[],[]
+        cache = {}
+        for candidate in candidates:
+            key = candidate.tobytes()
+            if key not in cache:
+                current,_ = env.reset(options=options)
+                for a in prefix:
+                    current,_,done,truncated,_ = env.step(a)
+                    assert not done and not truncated
+                np.testing.assert_array_equal(audit_physical_state(env),node['physical'])
+                for k in current:
+                    np.testing.assert_array_equal(current[k],node['observation'][k])
+                total,discount = 0.,1.
+                action = candidate
+                for n in range(140-t):
+                    current,reward,done,truncated,info = env.step(action)
+                    total += discount*reward; discount *= .99
+                    if done or truncated:
+                        cache[key] = (total,info['episode_result']['outcome'],n+1)
+                        break
+                    action = actor.predict(current,deterministic=True)[0]
+                else:
+                    raise AssertionError('Counterfactual failed to terminate')
+            g,o,n = cache[key]; returns.append(g);outcomes.append(o);lengths.append(n)
+        outputs.append(dict(case=case,layout_seed=options['layout_seed'],step=t,
+            prefix_actions=prefix,observation=node['observation'],physical=node['physical'],
+            candidates=np.stack(candidates),returns=np.asarray(returns),outcomes=outcomes,
+            lengths=lengths,replay_exact=True))
+    env.close()
+    return outputs
+
+
+def complete_mc_rows(rows):
+    episodes_out,episode,excluded = [],[],0
+    for row in rows:
+        if row.get('episode_start') and episode:
+            excluded += len(episode)
+            episode = []
+        episode.append(row)
+        if row['done']:
+            value = 0.
+            for remaining,r in enumerate(reversed(episode),1):
+                value = float(r['reward'])+.99*value
+                r = dict(r,mc_return=value,remaining=remaining,
+                         mc_outcome=episode[-1].get('outcome','success' if episode[-1]['reward'] > 0 else 'failure'))
+                episodes_out.append(r)
+            episode = []
+    return episodes_out,excluded+len(episode)
+
+
+def truth_critic_train(model,rows,updates,mode='td'):
+    from stable_baselines3.common.utils import polyak_update
+    selected = complete_mc_rows(rows)[0] if mode=='mc' else rows
+    obs = stack_obs([r['observation'] for r in selected])
+    nxt = stack_obs([r['next_observation'] for r in selected])
+    actions = model.policy.scale_action(np.stack([r['action'] for r in selected]))
+    rewards = np.asarray([r['reward'] for r in selected],np.float32)[:,None]
+    dones = np.asarray([r['done'] for r in selected],np.float32)[:,None]
+    returns = np.asarray([r.get('mc_return',0.) for r in selected],np.float32)[:,None]
+    before = {k:v.clone() for k,v in model.actor.state_dict().items()}
+    model.actor.requires_grad_(False)
+    model.critic.set_training_mode(True)
+    losses = []
+    for step in range(updates):
+        ids = np.random.randint(len(selected),size=128)
+        x = obs_as_tensor({k:v[ids] for k,v in obs.items()},model.device)
+        a = torch.as_tensor(actions[ids],device=model.device)
+        with torch.no_grad():
+            if mode=='mc':
+                target = torch.as_tensor(returns[ids],device=model.device)
+            else:
+                xp = obs_as_tensor({k:v[ids] for k,v in nxt.items()},model.device)
+                noise = (torch.randn_like(a)*.2).clamp(-.5,.5)
+                ap = (model.actor_target(xp)+noise).clamp(-1,1)
+                q = torch.cat(model.critic_target(xp,ap),1).min(1,keepdim=True).values
+                target = torch.as_tensor(rewards[ids],device=model.device)+(1-torch.as_tensor(dones[ids],device=model.device))*.99*q
+        loss = sum(torch.nn.functional.mse_loss(q,target) for q in model.critic(x,a))
+        if not torch.isfinite(loss):
+            raise FloatingPointError('Nonfinite critic-only loss')
+        model.critic.optimizer.zero_grad(); loss.backward(); model.critic.optimizer.step()
+        polyak_update(model.critic.parameters(),model.critic_target.parameters(),.005)
+        if step%500==0:
+            losses.append(float(loss.detach()));print('CRITIC_ONLY',mode,step,float(loss.detach()),flush=True)
+    if mode=='mc':
+        model.critic_target.load_state_dict(model.critic.state_dict())
+    assert all(torch.equal(before[k],v) for k,v in model.actor.state_dict().items())
+    return dict(mode=mode,updates=updates,steps_available=len(selected),loss_samples=losses,actor_unchanged=True)
+
+
+def collect_local_coverage(model,env,count,noise_rng,start_case):
+    rows,records = [],[]
+    case = start_case
+    obs,_ = env.reset(options=dict(test_case=case,layout_seed=900000+case,profile='nominal'))
+    first = True
+    for _ in range(count):
+        action = model.predict(obs,deterministic=True)[0]
+        sigma = noise_rng.choice([.05,.15,.30],p=[.5,.3,.2])
+        noisy = np.clip(model.policy.scale_action(action)+noise_rng.normal(0,sigma,2),-1,1).astype(np.float32)
+        actual = model.policy.unscale_action(noisy)
+        nxt,reward,done,truncated,info = env.step(actual)
+        rows.append(dict(observation=obs,next_observation=nxt,action=info['action'],reward=reward,
+            done=done or truncated,episode_start=first,noise_sigma=float(sigma),test_case=case,
+            outcome=info['episode_result']['outcome'] if done or truncated else None))
+        obs = nxt; first=False
+        if done or truncated:
+            records.append(info['episode_result']); case+=1
+            obs,_ = env.reset(options=dict(test_case=case,layout_seed=900000+case,profile='nominal'))
+            first=True
+    return rows,records,case+1
+
+
+def evaluate_critic_truth(model,rows,counterfactuals):
+    from scipy.stats import pearsonr,spearmanr
+    complete,partial = complete_mc_rows(rows)
+    def q_values(obs,acts):
+        outputs = []
+        with torch.no_grad():
+            for i in range(0,len(acts),256):
+                x = obs_as_tensor({k:v[i:i+256] for k,v in obs.items()},model.device)
+                a = torch.as_tensor(model.policy.scale_action(acts[i:i+256]),device=model.device)
+                outputs.append(torch.cat(model.critic(x,a),1).min(1).values.cpu().numpy())
+        return np.concatenate(outputs)
+    def corr(x,y,fn):
+        return float(fn(x,y).statistic) if len(x)>1 and np.std(x)>1e-10 and np.std(y)>1e-10 else None
+    obs = stack_obs([r['observation'] for r in complete])
+    q = q_values(obs,np.stack([r['action'] for r in complete]))
+    g = np.asarray([r['mc_return'] for r in complete])
+    def stats(mask):
+        x,y = q[mask],g[mask]
+        return dict(n=len(x),mae=float(np.abs(x-y).mean()),rmse=float(np.sqrt(np.mean((x-y)**2))),
+            bias=float((x-y).mean()),pearson=corr(x,y,pearsonr),spearman=corr(x,y,spearmanr)) if len(x) else dict(n=0)
+    remaining = np.asarray([r['remaining'] for r in complete])
+    a = dict(all=stats(np.ones(len(g),bool)),by_outcome={k:stats(np.asarray([r['mc_outcome']==k for r in complete]))
+        for k in ('success','collision','timeout','failure')},by_remaining={str((lo,hi)):stats((remaining>=lo)&(remaining<=hi))
+        for lo,hi in ((1,10),(11,40),(41,80),(81,140))},excluded_partial_steps=partial,
+        scope='Behavior-policy realized return, not exact deterministic-reference Q; in-sample diagnostic')
+    results = []
+    for node in counterfactuals:
+        values = q_values({k:np.repeat(v[None],10,axis=0) for k,v in node['observation'].items()},node['candidates'])
+        truth = node['returns']
+        pairs = [(i,j) for i in range(10) for j in range(i+1,10)
+                 if not np.array_equal(node['candidates'][i],node['candidates'][j]) and abs(truth[i]-truth[j])>1e-6]
+        correct = sum(1. if (values[i]-values[j])*(truth[i]-truth[j])>0 else
+                      (.5 if abs(values[i]-values[j])<=1e-8 else 0.) for i,j in pairs)
+        pick = int(values.argmax())
+        rho = corr(values,truth,spearmanr)
+        results.append(dict(case=node['case'],step=node['step'],q=values.tolist(),returns=truth.tolist(),
+            correct=correct,pairs=len(pairs),spearman=rho,regret=float(truth.max()-truth[pick]),
+            selected_minus_actor=float(truth[pick]-truth[4]),
+            top1=bool(truth[pick]>=truth.max()-1e-6),q_full_speed=bool(values[9]>=values.max()-1e-8),
+            true_full_speed=bool(truth[9]>=truth.max()-1e-6)))
+    valid_rho = [x['spearman'] for x in results if x['spearman'] is not None]
+    npairs = sum(x['pairs'] for x in results)
+    b = dict(states=len(results),informative_pairs=npairs,
+        pairwise_accuracy=sum(x['correct'] for x in results)/npairs if npairs else 0.,
+        spearman=float(np.mean(valid_rho)) if valid_rho else -1.,
+        defined_spearman_states=len(valid_rho),mean_regret=float(np.mean([x['regret'] for x in results])),
+        mean_selected_minus_actor=float(np.mean([x['selected_minus_actor'] for x in results])),
+        top1_agreement=float(np.mean([x['top1'] for x in results])),
+        q_full_speed_fraction=float(np.mean([x['q_full_speed'] for x in results])),
+        true_full_speed_fraction=float(np.mean([x['true_full_speed'] for x in results])))
+    passed = a['all']['mae']<=.2 and a['all']['rmse']<=.3 and b['pairwise_accuracy']>=.7 and b['spearman']>=.5 and b['mean_selected_minus_actor']>=-.05
+    return dict(A=a,B=b,passed=bool(passed),per_state=results)
+
+
+def critic_audit_main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--params',type=Path,default=Path('repair_results/params'))
+    parser.add_argument('--out',type=Path,required=True)
+    parser.add_argument('--workers',type=int,default=4)
+    parser.add_argument('--resume',action='store_true')
+    args = parser.parse_args()
+    if not args.resume:
+        args.out.mkdir(exist_ok=False)
+    report = dict(protocol='critic_truth_finite_tree',seed=2407,actor_fixed=True,
+        A_limits=dict(mae=.2,rmse=.3),B_limits=dict(pairwise=.7,spearman=.5,selected_minus_actor=-.05),
+        counterfactual_cases=[61000,61049],selection='one-third and two-thirds of frozen reference episode',
+        branch_limits=dict(C1_updates=5000,C2_max_steps=20000,C3_mc=5000,C3_td=1000,C4_repeat_cap=20000),
+        continuation='fixed round16, deterministic, original reward',stages=[])
+    if args.resume:
+        report = json.loads((args.out/'status.json').read_text())
+    def save(stage):
+        report['stage'] = stage
+        (args.out/'status.json').write_text(json.dumps(report,indent=2))
+        print('CRITIC_AUDIT',stage,flush=True)
+    save('protocol_frozen')
+    torch.set_num_threads(1)
+    source = Path('repair_results/no_belief_local_finetune/frozen_actor_3000.zip')
+    model = TD3.load(source,device='cuda')
+    rows = torch.load('repair_results/no_belief_local_finetune/frozen_transitions.pt',weights_only=False)
+    old_receipt = json.loads(Path('repair_results/no_belief_local_finetune/status.json').read_text())
+    terminal_records = iter(old_receipt['frozen_episode_records'])
+    for row in rows:
+        if row['done']:
+            row['outcome'] = next(terminal_records)['outcome']
+    if args.resume:
+        cf = torch.load(args.out/'counterfactuals.pt',weights_only=False)
+    else:
+        save('counterfactual_rollouts')
+        tasks = [(args.params,source,case) for case in range(61000,61050)]
+        cf = []
+        ctx = multiprocessing.get_context('spawn')
+        with ctx.Pool(args.workers) as pool:
+            for nodes in pool.imap(critic_counterfactual_worker,tasks):
+                cf.extend(nodes)
+                print('COUNTERFACTUAL_STATES',len(cf),flush=True)
+    assert len(cf)==100
+    torch.save(cf,args.out/'counterfactuals.pt')
+    def audit(name):
+        result = evaluate_critic_truth(model,rows,cf)
+        (args.out/(name+'.json')).write_text(json.dumps(result,indent=2))
+        report['stages'].append(dict(name=name,passed=result['passed'],A=result['A']['all'],B=result['B']))
+        save(name)
+        return result['passed']
+    if audit('A_B_initial'):
+        save('branch_D_ready')
+        return
+    save('branch_C_required')
+    audit_rows = rows
+    reference = {k:v.clone() for k,v in model.actor.state_dict().items()}
+    env = ActionHistory(BeliefEnv(args.params,arm='no_belief',seed=2407),route=True)
+    def fresh(wide=False):
+        m = TD3('MultiInputPolicy',env,learning_rate=1e-4 if wide else 3e-4,
+            buffer_size=100,batch_size=128,device='cuda',seed=2407,
+            policy_kwargs=dict(features_extractor_class=SetEncoder,features_extractor_kwargs=dict(features_dim=192),
+                net_arch=dict(pi=[256,256],qf=[256,256] if wide else [96,96]),share_features_extractor=False))
+        m.actor.load_state_dict(reference);m.actor_target.load_state_dict(reference)
+        m.critic.features_extractor.load_state_dict(m.actor.features_extractor.state_dict())
+        m.critic_target.load_state_dict(m.critic.state_dict())
+        assert all(a.data_ptr()!=b.data_ptr() for a,b in zip(m.actor.features_extractor.parameters(),m.critic.features_extractor.parameters()))
+        return m
+    def assess(name,train_result):
+        report.setdefault('training',[]).append(dict(name=name,**train_result))
+        # The A audit remains fixed on the original 3000-step data at every stage.
+        result = evaluate_critic_truth(model,audit_rows,cf)
+        (args.out/(name+'.json')).write_text(json.dumps(result,indent=2))
+        torch.save(model.critic.state_dict(),args.out/(name+'_critic.pt'))
+        report['stages'].append(dict(name=name,passed=result['passed'],A=result['A']['all'],B=result['B']))
+        save(name)
+        if result['passed']:
+            model.save(args.out/'qualified_critic')
+            save('branch_D_ready')
+        return result['passed']
+    model = fresh()
+    if assess('C1_encoder_copy_5000',truth_critic_train(model,rows,5000)):
+        env.close();return
+    def coverage(prefix,start):
+        data = list(audit_rows)
+        records = []
+        rng = np.random.default_rng(start)
+        case = start
+        for steps in (5000,10000,15000,20000):
+            save(prefix+'_collect_'+str(steps))
+            more,rec,case = collect_local_coverage(model,env,5000,rng,case)
+            data.extend(more); records.extend(rec)
+            report.setdefault('coverage',{})[prefix] = dict(steps=steps,completed=len(records),
+                failures=sum(r['outcome']!='success' for r in records),records=records,
+                training='fixed actor; collect 5000 then 5000 critic-only updates; no policy change between')
+            if assess(prefix+'_'+str(steps),truth_critic_train(model,data,5000)):
+                return data,True
+            if steps>=10000 and len(records)>=200 and sum(r['outcome']!='success' for r in records)>=20:
+                break
+        return data,False
+    data,passed = coverage('C2_coverage',70000)
+    if passed:
+        env.close();return
+    save('C3_mc_initialization')
+    mc = truth_critic_train(model,data,5000,mode='mc')
+    td = truth_critic_train(model,data,1000)
+    if assess('C3_mc5000_td1000',dict(mc=mc,td=td)):
+        env.close();return
+    model = fresh(wide=True)
+    data,passed = coverage('C4_wide_coverage',80000)
+    if passed:
+        env.close();return
+    save('C4_mc_initialization')
+    mc = truth_critic_train(model,data,5000,mode='mc')
+    td = truth_critic_train(model,data,1000)
+    passed = assess('C4_wide_mc5000_td1000',dict(mc=mc,td=td))
+    if not passed:
+        save('exit3_critic_audit_failed_at_finite_cap')
+    env.close()
+
+
 def episodes(params, count, offset, actor=None, collect=False, case_offset=0, diagnostics=False,
              arm='full', perturbation_seed=None, query_teacher=False, route_history=False):
     env = BeliefEnv(params, seed=2407, arm=arm)
@@ -1286,7 +1602,10 @@ def main():
 
 if __name__ == '__main__':
     import sys
-    if '--native-td3' in sys.argv:
+    if '--critic-audit' in sys.argv:
+        sys.argv.remove('--critic-audit')
+        critic_audit_main()
+    elif '--native-td3' in sys.argv:
         sys.argv.remove('--native-td3')
         native_td3_main()
     elif '--dagger' in sys.argv:
