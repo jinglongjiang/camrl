@@ -1712,6 +1712,80 @@ def scratch_baseline_main():
         env.close()
 
 
+def bayes_teacher_worker(task):
+    import copy
+    from dataclasses import replace
+    from crowd_nav.bayes_continuous.teacher import unicycle_teacher
+    params,case,layout,*teacher_modes=task
+    teacher_mode=teacher_modes[0] if teacher_modes else 'gdbn'
+    torch.set_num_threads(1)
+    env=ActionHistory(BeliefEnv(Path(params),arm='full',seed=2407),route=True)
+    env.unwrapped.teacher_mode=teacher_mode
+    obs,_=env.reset(options=dict(layout_seed=layout,test_case=case,profile='train_nonstationary'))
+    base=env.unwrapped
+    layout_hash=hashlib.sha256(np.asarray([[h.px,h.py,h.gx,h.gy,h.radius,h.v_pref]
+        for h in base.world.env.humans],dtype=np.float64).tobytes()).hexdigest()
+    probes=[]; diagnostics=[]
+    for step in range(140):
+        probe=teacher_mode=='gdbn' and case<86012 and step in (0,20,40)
+        before=copy.deepcopy(base.world._cem_teacher) if probe else None
+        snapshot=base.filter.get_belief_snapshot()
+        action=base.expert_action()
+        diag=dict(base.world.teacher_diagnostics);diagnostics.append(diag)
+        if probe:
+            after=base.world._cem_teacher
+            features=np.asarray(snapshot.features).copy()
+            modes=features[:,:snapshot.mode_count].argmax(1)
+            features[:,:snapshot.mode_count]=np.eye(snapshot.mode_count)[modes]
+            mapped=replace(snapshot,features=tuple(tuple(float(v) for v in row) for row in features))
+            base.world._cem_teacher=copy.deepcopy(before)
+            map_action=unicycle_teacher(base.world,mapped,base.filter.gdbn)
+            base.world._cem_teacher=copy.deepcopy(before)
+            cv_action=unicycle_teacher(base.world)
+            base.world._cem_teacher=after; base.world.teacher_diagnostics=diag
+            assert snapshot==base.filter.get_belief_snapshot()
+            probes.append(dict(step=step,full=action.tolist(),map=map_action.tolist(),cv=cv_action.tolist(),
+                full_map_delta=float(np.max(np.abs(action-map_action))),
+                full_cv_delta=float(np.max(np.abs(action-cv_action)))))
+        obs,_,done,_,info=env.step(action)
+        if done:
+            record=dict(info['episode_result'],layout_sha256=layout_hash,profile='train_nonstationary',
+                probes=probes,diagnostics=diagnostics)
+            env.close();return record
+    raise AssertionError('No terminal after 140 steps')
+
+
+def bayes_teacher_gate_main():
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--params',type=Path,default=Path('repair_results/params'))
+    parser.add_argument('--out',type=Path,required=True)
+    parser.add_argument('--count',type=int,default=200)
+    parser.add_argument('--workers',type=int,default=6)
+    parser.add_argument('--teacher-mode',choices=['gdbn','cv'],default='gdbn')
+    args=parser.parse_args();args.out.mkdir(parents=True,exist_ok=False)
+    protocol=dict(stage='teacher_qualification',teacher=args.teacher_mode,profile='train_nonstationary',
+        humans=5,count=args.count,success_gate=.95,collision_gate=.02,
+        layout_seed_start=74000000,test_case_start=86000,planner_changed=False,
+        existence='observed=1, not entropy',risk_interface='Gaussian moments, isotropic trace/2',
+        parameters='existing fitted GDBN, no refit or calibration',student_training_started=False)
+    (args.out/'protocol.json').write_text(json.dumps(protocol,indent=2))
+    records=[]
+    tasks=[(str(args.params),86000+i,74000000+i,args.teacher_mode) for i in range(args.count)]
+    with multiprocessing.get_context('spawn').Pool(args.workers) as pool:
+        for record in pool.imap_unordered(bayes_teacher_worker,tasks):
+            records.append(record)
+            with (args.out/'episodes.jsonl').open('a') as stream: stream.write(json.dumps(record)+'\n')
+            print('TEACHER',len(records),record['outcome'],flush=True)
+            status=dict(completed=len(records),requested=args.count,
+                success=sum(r['outcome']=='success' for r in records),
+                collision=sum(r['outcome']=='collision' for r in records),
+                timeout=sum(r['outcome']=='timeout' for r in records))
+            (args.out/'status.json').write_text(json.dumps(status,indent=2))
+    status['passed']=status['success']/args.count>=.95 and status['collision']/args.count<=.02
+    status['stage']='complete';(args.out/'status.json').write_text(json.dumps(status,indent=2))
+    print('TEACHER_FINAL',status,flush=True)
+
+
 def dagger_ppo_confirmation_worker(task):
     from stable_baselines3 import PPO
     torch.set_num_threads(1)
@@ -1881,7 +1955,10 @@ def dagger_ppo_main():
 
 if __name__ == '__main__':
     import sys
-    if '--dagger-ppo-confirm' in sys.argv:
+    if '--bayes-teacher-gate' in sys.argv:
+        sys.argv.remove('--bayes-teacher-gate')
+        bayes_teacher_gate_main()
+    elif '--dagger-ppo-confirm' in sys.argv:
         sys.argv.remove('--dagger-ppo-confirm')
         dagger_ppo_confirmation_main()
     elif '--dagger-ppo' in sys.argv:

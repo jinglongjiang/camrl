@@ -374,6 +374,27 @@ class Contracts(unittest.TestCase):
 
 
 class GaussianTransferTests(unittest.TestCase):
+    def test_bayes_teacher_moment_contract(self):
+        from types import SimpleNamespace
+        from crowd_nav.gdbn import ModeBeliefSnapshot
+        from crowd_nav.bayes_continuous.teacher import gdbn_teacher_moments
+        a=np.eye(4);a[0,2]=.25;a[1,3]=.25
+        model=SimpleNamespace(Pi=np.eye(2),A=[a,a],Q=[np.eye(4)*.01,np.eye(4)*.01])
+        snapshot=ModeBeliefSnapshot(0,((.7,.3,0.,0.),),2,(True,))
+        entities=np.array([[2.,3.,1.,0.,.3]])
+        start,end,cov=gdbn_teacher_moments(entities,snapshot,model,2,.25)
+        np.testing.assert_allclose(end,[[[2.25,3.],[2.5,3.]]])
+        np.testing.assert_allclose(cov[0,0],np.eye(2)*.01)
+        np.testing.assert_allclose(cov[0,1],np.eye(2)*.020625)
+        np.testing.assert_array_equal(start[0,0],entities[0,:2])
+        env=BeliefEnv(PARAMS,arm='no_belief');env.teacher_mode='gdbn'
+        env.reset(seed=2407); prior=env.filter.get_belief_snapshot()
+        first=env.expert_action();second=env.expert_action()
+        np.testing.assert_array_equal(first,second)
+        self.assertEqual(prior,env.filter.get_belief_snapshot())
+        self.assertEqual(env.world.teacher_diagnostics['provenance'],'full_observation_gdbn_moment_teacher')
+        env.close()
+
     def test_physical_mean_and_gaussian_log_probability(self):
         from stable_baselines3 import PPO
         from crowd_nav.bayes_continuous.network import DaggerGaussianPolicy, PhysicalActionMean

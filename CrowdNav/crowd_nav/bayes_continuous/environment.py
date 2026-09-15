@@ -70,6 +70,7 @@ class BeliefEnv(gym.Env):
             'mask': spaces.Box(0., 1., (MAX_HUMANS,), np.float32)})
         self.episode_records = []
         self._teacher_cache = None
+        self.teacher_mode = 'cv'
 
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
@@ -122,7 +123,13 @@ class BeliefEnv(gym.Env):
     def expert_action(self):
         if self._teacher_cache is None:
             from crowd_nav.bayes_continuous.teacher import unicycle_teacher
-            self._teacher_cache = unicycle_teacher(self.world)
+            if self.teacher_mode == 'gdbn':
+                self._teacher_cache = unicycle_teacher(self.world,
+                    belief_snapshot=self.filter.get_belief_snapshot(), dynamics=self.filter.gdbn)
+            elif self.teacher_mode == 'cv':
+                self._teacher_cache = unicycle_teacher(self.world)
+            else:
+                raise ValueError('Unknown teacher mode')
         return self._teacher_cache.copy()
 
     def step(self, action):

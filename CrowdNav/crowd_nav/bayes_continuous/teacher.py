@@ -897,7 +897,53 @@ class UnicycleCEMMPC(ContinuousCEMMPC):
         return self._project_controls(controls, obs.robot_velocity)
 
 
-def unicycle_teacher(world):
+def gdbn_teacher_moments(entities, snapshot, model, horizon, dt):
+    """Exact first/second moments of the fitted switching-linear prediction.
+
+    Current geometry is observed exactly. Conditional mode moments are propagated
+    separately; only the existing CEM risk interface uses an isotropic projection.
+    Mode entropy is not an existence probability.
+    """
+    if dt != .25 or snapshot.coordinate_frame != 'world_xy_velocity':
+        raise ValueError('GDBN teacher requires the fitted .25s world-frame model')
+    n=len(entities); k=snapshot.mode_count
+    valid=np.asarray(snapshot.valid_mask, bool)
+    if valid.sum()!=n or not valid[:n].all():
+        raise ValueError('Teacher requires aligned valid entity slots')
+    weights=np.asarray(snapshot.features,float)[:n,:k].copy()
+    transition=np.asarray(model.Pi,float)
+    if not np.allclose(weights.sum(1),1.,atol=1e-6) or not np.allclose(transition.sum(1),1.):
+        raise ValueError('Unnormalized mode probabilities')
+    weights/=weights.sum(1,keepdims=True)
+    means=np.repeat(entities[:,None,:4],k,axis=1)
+    covs=np.zeros((n,k,4,4))
+    ends=[]; positions=[]
+    for _ in range(horizon):
+        joint=weights[:,:,None]*transition[None,:,:]
+        next_weights=joint.sum(1)
+        conditional=joint/np.maximum(next_weights[:,None,:],1e-300)
+        mixed_mean=np.einsum('nij,nid->njd',conditional,means)
+        second=covs+means[:,:,:,None]*means[:,:,None,:]
+        mixed_second=np.einsum('nij,nide->njde',conditional,second)
+        mixed_cov=mixed_second-mixed_mean[:,:,:,None]*mixed_mean[:,:,None,:]
+        for mode in range(k):
+            a=np.asarray(model.A[mode]); q=np.asarray(model.Q[mode])
+            means[:,mode]=mixed_mean[:,mode]@a.T
+            covs[:,mode]=a[None]@mixed_cov[:,mode]@a.T[None]+q[None]
+        weights=next_weights
+        mean=np.einsum('nk,nkd->nd',weights,means)
+        delta=means-mean[:,None,:]
+        covariance=np.einsum('nk,nkij->nij',weights,covs+delta[:,:,:,None]*delta[:,:,None,:])
+        covariance=(covariance+covariance.swapaxes(-1,-2))/2
+        if not np.isfinite(covariance).all() or np.linalg.eigvalsh(covariance).min() < -1e-7:
+            raise ValueError('Invalid GDBN predictive covariance')
+        ends.append(mean[:,:2].copy()); positions.append(covariance[:,:2,:2].copy())
+    end=np.stack(ends,axis=1); covariance=np.stack(positions,axis=1)
+    start=np.concatenate([entities[:,None,:2],end[:,:-1]],axis=1)
+    return start,end,covariance
+
+
+def unicycle_teacher(world, belief_snapshot=None, dynamics=None):
     robot, dt = world.robot, world.env.time_step
     if getattr(world, "_cem_teacher", None) is None:
         world._cem_teacher = UnicycleCEMMPC(UnicycleConfig(
@@ -914,6 +960,18 @@ def unicycle_teacher(world):
         human_existence=None, human_visible=None, unknown=None,
         occupancy_probability=None, provenance="full_observation_cv_teacher",
         robot_heading=robot.theta)
+    if belief_snapshot is not None:
+        if dynamics is None:
+            raise ValueError('Belief teacher requires dynamics')
+        start,end,cov=gdbn_teacher_moments(entities,belief_snapshot,dynamics,planner.cfg.horizon,dt)
+        observation.human_segment_start=start
+        observation.human_segment_end=end
+        observation.human_position_covariance=cov
+        observation.human_existence=np.ones(len(entities))
+        observation.human_visible=np.ones(len(entities),bool)
+        observation.provenance='full_observation_gdbn_moment_teacher'
     command, elapsed = planner.plan(observation, seed=2407+round(world.env.global_time/dt))
-    world.teacher_diagnostics = dict(planner.last_diagnostics, elapsed_ms=elapsed)
+    world.teacher_diagnostics = dict(planner.last_diagnostics, elapsed_ms=elapsed,
+        provenance=observation.provenance, covariance_projection='trace/2 isotropic',
+        full_multimodal_risk=False)
     return np.asarray([command[0], command[1]/dt], dtype=np.float32)
