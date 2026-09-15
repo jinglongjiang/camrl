@@ -1,0 +1,8 @@
+{
+  "total_audit_episodes": 120,
+  "eligible_episodes": 119,
+  "no_valid_future_cases": [
+    240042
+  ],
+  "reason": "No observed 1/2-second target; same inclusion for all arms, no outcome-based model selection"
+}
