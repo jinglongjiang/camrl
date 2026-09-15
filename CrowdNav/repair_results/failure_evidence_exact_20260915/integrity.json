@@ -1,0 +1,817 @@
+{
+  "total_cases": 129,
+  "anchors": 156,
+  "branches": 1716,
+  "branch_environment_steps": 50741,
+  "independent_fresh_layouts": 100,
+  "overlap_with_previous_1200": 0,
+  "layout_hashes": [
+    {
+      "case": 971000,
+      "human_hash": "977d7ba6983f51c44276bf20424a4227230c91fc7f59bd15592d2db9ba88994f",
+      "joint_hash": "04e80dbd616bc4e032f0e318d205bd01bfb74663f08b38fa5d622d5fa0921488"
+    },
+    {
+      "case": 971001,
+      "human_hash": "1f598062f7aaa90fa1290ae70e044df1f1dd57731e7f3c7d9a86f9ea0cd599a6",
+      "joint_hash": "ae717ccb336d7acdfb053c48e71d311aeb88f4823d8a033899192500cc82ceae"
+    },
+    {
+      "case": 971002,
+      "human_hash": "8540aec49f299e77225d0e80b24302016cdb555ef2bdc1836804ef09f291524b",
+      "joint_hash": "f37a4bd0d335c33a903e917060a2a9883377cca4c6f717a532b69b80f9cac144"
+    },
+    {
+      "case": 971003,
+      "human_hash": "b4c5aafff722fe8a3a94ace277d292317de047fc586559ade70040bce2787121",
+      "joint_hash": "2555b3ed1dc7c8047fe36685c2636087e5ec33c7af70de9e8235ca3580448e7a"
+    },
+    {
+      "case": 971004,
+      "human_hash": "ad4e181d08e4851ea168b38cfc6c41e91fb2523607eeb6d436d4c3e74c66b447",
+      "joint_hash": "bc1540e67f99ac2489cb203e742af024f0b10154297e0365e7f3bfdb392ce107"
+    },
+    {
+      "case": 971005,
+      "human_hash": "da47a072e0b75275694a51c2d3177ac7b21c6a83a681f1c009ad6852fb3e79ef",
+      "joint_hash": "f951ff3626c083110f94df7fd44d425e2f96226371c4b7a5cede913ac2d29a3e"
+    },
+    {
+      "case": 971006,
+      "human_hash": "3b60908fb557b996b257ceed37b5dc420f7b708a4eb6a7c5e6efe58d28a50543",
+      "joint_hash": "b0f4782a53a61cb3aacbe92e6d536e1df525bc3d895a12ace79c121140ce5e96"
+    },
+    {
+      "case": 971007,
+      "human_hash": "26b5103df9af12c0db3669fbdb6e422d0415b2ec7c76cae57416b6706787ae6c",
+      "joint_hash": "1c14b1bdb8b06cb97b86b9d925aabe7fd1a37392f59d3e082751c381eb3a7713"
+    },
+    {
+      "case": 971008,
+      "human_hash": "41fb81e634c079d7320cfb1193fcf746161f99d2f1ae1d00244e708c0b8cab58",
+      "joint_hash": "5b80abec0a7d95c315e93dd37820c425c783c5ccda518cba0a9603d847712775"
+    },
+    {
+      "case": 971009,
+      "human_hash": "961b34fc1f7b1444ef04f6a59024e9e0844c0af375ecf52d4253449519961b00",
+      "joint_hash": "39041ac93ca7e29a334f556711de30d98fdfa081c979353f2e4c7fe4422dd56f"
+    },
+    {
+      "case": 971010,
+      "human_hash": "564b6eca782e6d1516a43d41ac673f2fef2c178d1a4fc5c7a22f0ac833c24a2d",
+      "joint_hash": "34b98a42b8e0ed94d953a55fb92e30d2e7d6d663f37c90e29a5e9ce1dfa3d915"
+    },
+    {
+      "case": 971011,
+      "human_hash": "727be33afb10540f8b9af28c391dd0cf0bee9c84b5118b3693f917a65970494e",
+      "joint_hash": "35f81034d16897fdee33945aad713683f6b6bd4e074022347501376ebb30e02b"
+    },
+    {
+      "case": 971012,
+      "human_hash": "88470e90c60b81361b468ec51ad0556756aa1f845f695069a3efd8d311e13080",
+      "joint_hash": "62e0aed57d314b80b1694a83422b749df2fd35936fe1e8e0f3fac29aca6d184a"
+    },
+    {
+      "case": 971013,
+      "human_hash": "ddf5b8fbca30d6cd2453a84436d9a37cad32fabdfb345c4d37be3aa23602d31f",
+      "joint_hash": "1fa96d1e0ddf55bb64c76c6478f50f98d6e4795f9f59d28a0965245eb1f313a7"
+    },
+    {
+      "case": 971014,
+      "human_hash": "f10f0ba4cfdfd1ce819cfdda831039a70a09a9375682f632f251148306ecba19",
+      "joint_hash": "70f5df7cae5d3cba6198f04ef244fa0e6bdaf17a52cbd7168933e6f948b85f1a"
+    },
+    {
+      "case": 971015,
+      "human_hash": "13c7c6f80a53d9af7a600e455163eb02164811571fd26b9aeeea71c0668fef4a",
+      "joint_hash": "19ea8262f201b2961e7b636793c274d61a21c63e1b763b0b55bced3da728b9ac"
+    },
+    {
+      "case": 971016,
+      "human_hash": "e2bcdff039fe7a218e0b18557b40f055a7a8c47b1ed8202faebd6ba6f14430fd",
+      "joint_hash": "948ca52df6f4d6737c324c802b9d914f0b06055eca2198a637778f2a7be4c79d"
+    },
+    {
+      "case": 971017,
+      "human_hash": "41e1ec282b81f4720561af09c3ee23f91ddb1f0cc620527ca0ed18faceab5a9d",
+      "joint_hash": "5e6ab5633870d54dd1b534d6e9d16c12ff5e27cab84b5dccb1a993ee667bf388"
+    },
+    {
+      "case": 971018,
+      "human_hash": "8f6a00d7dd679ea9c5900272a6de8e528c70d86f67ebee8e35956693a64ba689",
+      "joint_hash": "476ba6680893d4cd6058374557d8e4fab4ef001060349170ed55346acf532467"
+    },
+    {
+      "case": 971019,
+      "human_hash": "2b6867a52d7bcf191891b4ddcb2d12025356e3b29238c3f967049a80b0b4f05e",
+      "joint_hash": "a3dbe21a4b9ca305e3bd528045bb7448db86f7dfc23ad122ca925afdd6c6512c"
+    },
+    {
+      "case": 971020,
+      "human_hash": "13abbf9913acc6765fe10d288b1866814ed7f985c71ba047e7436d00c4c14503",
+      "joint_hash": "27c0b157ae652847914c2f2b607b65a91074176c36c6afc117d56dd5f79b94c9"
+    },
+    {
+      "case": 971021,
+      "human_hash": "2a5c5bf3e570b409101d57b746776840d7ee5dfd6dc126acb8a1e87d8eb5bd82",
+      "joint_hash": "c911f27deb1fdfc3bca2667c04e8d854f49e36723f762bc748959eb3bd767793"
+    },
+    {
+      "case": 971022,
+      "human_hash": "c05052162a57f26a5fcc9e190623e6086b66e7f97a2122208420e0dbe82c7e8c",
+      "joint_hash": "1d5d05cf5cf751fb6d1541fe0e207b361cdaf9cb24bb236c0e70d7a6188347d9"
+    },
+    {
+      "case": 971023,
+      "human_hash": "208362410954de3f20a1996da216b60e12060124bc13859ec8c01626f6a01990",
+      "joint_hash": "2ff2471fdf5dabcdfc8a056c68c79f526967a6fb30dc24654921d95e1898e607"
+    },
+    {
+      "case": 971024,
+      "human_hash": "3b161b680778b7fe4651d79ac15c4a903b30a1736c08249a1022df7b1ae000bf",
+      "joint_hash": "4d21e42f0709366d2eb513912f109d144cb27fa38e25dac4ded40b3eb2131261"
+    },
+    {
+      "case": 971025,
+      "human_hash": "b323cecddfa9177da517a037db2271281e0b5743de8a27926622842ffc4b2252",
+      "joint_hash": "23b6ed2318132ed0382bd567dfc235086acfeb08721aaf068d0076cc2d912508"
+    },
+    {
+      "case": 971026,
+      "human_hash": "50af34db53088b518ddc1b6ba1290b8fb78eba3aa6f994977b908a295509b561",
+      "joint_hash": "448b52ef1db43266175b603cf0d8bd664fc4533a72a22f3aec11b3ff0641549e"
+    },
+    {
+      "case": 971027,
+      "human_hash": "b99afe81c1355ce2623f4b656b86552b7819894fd0a68c78b796e8e2df5a5bbd",
+      "joint_hash": "5f0cf126371b9751a5f6d97c092aa8670a00f4368a3e67ca8e7fc1f7ded090ac"
+    },
+    {
+      "case": 971028,
+      "human_hash": "52dd6479c06888f2219512c59e18a1bdd8aa257742b18ad92734544fbf9c07c2",
+      "joint_hash": "3de10c0d0230f857a4c436ee03a57037c87e484f1e86e647dbcc6a8543c90feb"
+    },
+    {
+      "case": 971029,
+      "human_hash": "dddd64c20132b281819e933fe0c8c8bf107012fe5ec468180076269646f8d090",
+      "joint_hash": "f4c2ed0eb5ea8061875e80b63e77140a8c3349f6c1cc8abd9dc756372754ba47"
+    },
+    {
+      "case": 971030,
+      "human_hash": "0dcc4debc0272d5d49650afefe74832c26feb145e20357a651c61ab771843955",
+      "joint_hash": "2c69836a4dcfa7783f3e6b8a79d4db81a482fffec6d42af6be765fafe041e063"
+    },
+    {
+      "case": 971031,
+      "human_hash": "50b93b12f73b5ac93c0c9840555bfba13c2b94b8f47f1de13db834860572a375",
+      "joint_hash": "6313ec9cc21087e9d9db266721032d152c8e9a741f6d2dcb4338198c757003dc"
+    },
+    {
+      "case": 971032,
+      "human_hash": "b63d142fdda7006a8a8da1d67e996ceb0b737488a5d06426bb6bfdf5b991d0a1",
+      "joint_hash": "a78f2ed4f818931860e5c71bc02a2af04eb03cdc95848483d99b8a8f3bebbc7d"
+    },
+    {
+      "case": 971033,
+      "human_hash": "531a46508499b43a05436ddd486cf14ce0dd66597472aeb651ce5f044be1589b",
+      "joint_hash": "267e7f208f1eb19eab40f0c37e448a11158e42c3b2fc3758e4cf57c302721425"
+    },
+    {
+      "case": 971034,
+      "human_hash": "93f0128f72416d1b2a9d6683339e070adfea2073e4a3e800d6bbe47235988504",
+      "joint_hash": "13c6af8c48106170c775e9017f9d667b892488b273d14aa5c48687e287cb3315"
+    },
+    {
+      "case": 971035,
+      "human_hash": "a35d7aff87a224eb92c114b85aa5975245a003f2d76e60625ea22333afdda730",
+      "joint_hash": "ecec49d4cabe40680a39f4dd531eaddcb0b3894be19a0276cba61de512b6343b"
+    },
+    {
+      "case": 971036,
+      "human_hash": "d08e41cc921bb6aa8bae990d049205ce235ec3f064ff056f48169ae4b301f1ec",
+      "joint_hash": "fc0f5f673c018099c7ba3835316326e635b15d0dddfc02037960ac3b5140b515"
+    },
+    {
+      "case": 971037,
+      "human_hash": "806fe49eb276321f22ef6091ebbd5abb2dbbbabd9284c6c1e002b59f4f64362b",
+      "joint_hash": "3c476d3f8bc954a913bab7300185ece50f586073739d14ba1518134559865dd9"
+    },
+    {
+      "case": 971038,
+      "human_hash": "7e9289123598185b92c40a45e14e0685ffed1c33e69c07d414c6e4830af3036f",
+      "joint_hash": "d7ab18090f600eeff57bdc859375c0734c8cf20411e07cbd26e22973e69e00e0"
+    },
+    {
+      "case": 971039,
+      "human_hash": "f615e47bf7176731296a992cb109d476977c2348cc188f290e88aa9e2d5effe1",
+      "joint_hash": "7c4202863c82e664ab40a47c808a3aec3d699a3bed765f41f348d5f312c5d6fe"
+    },
+    {
+      "case": 971040,
+      "human_hash": "2664d00390b2b026bbe2c56cc41801df9435830b099b1b72844067391a84ab8b",
+      "joint_hash": "ea5fa1f1e8a24f1e632dcc355053c6caeb26e9efbd908388698517b2bfebb5a8"
+    },
+    {
+      "case": 971041,
+      "human_hash": "17b06685999037a113313cb512c1ca4789308230acd7cb11140bbaec72d0e50f",
+      "joint_hash": "9003383cb02e911401f0d9a31e670e5bb4b93db5eb977300cfbe6e0736285a93"
+    },
+    {
+      "case": 971042,
+      "human_hash": "5be17c554835589612b1d731267810ff4f1bd48115e5822ba1bc66274979410d",
+      "joint_hash": "089b228ca17a053cc4a6fe6becad5ace131f791c5ce1347ff00aadb408e151f0"
+    },
+    {
+      "case": 971043,
+      "human_hash": "7d7e916e171bc7741d9f249ba1d8311b4d45dd767e2f0f079fe85d87db243b3f",
+      "joint_hash": "2bce9c04e3251601a0a3fab6f27a93b38225a57fb146e4d811ca2ad3f4fad6aa"
+    },
+    {
+      "case": 971044,
+      "human_hash": "1674e24e8ffb497158296a1c9130af5ceb00bae2c22e720059852b580802ff31",
+      "joint_hash": "b4ef06ad8e982f405a1a660f49ce822900005a02e50bed3366f28ac29e4c8fa1"
+    },
+    {
+      "case": 971045,
+      "human_hash": "151ce8adf8174d4275f5676d017532e1cd05b2c347bc2872ca617bd30a49dfb9",
+      "joint_hash": "1150d72ef1d0b6fb9712152877a4f3a3c9879e19c3556ffe895a182e87717677"
+    },
+    {
+      "case": 971046,
+      "human_hash": "6a06149550ca4801de9c31743fdba88b9b4afdd79a7292d1cfecea08d097d37a",
+      "joint_hash": "dd90c918686c8ec19d67e641dbc799e367dde7f4122909afc6d466ebb6fcad16"
+    },
+    {
+      "case": 971047,
+      "human_hash": "ca1c2a863891083a40c482972c20e628a44db8bcd9a3be16fad8e7276571c7fb",
+      "joint_hash": "b43e71f5a5d45dcf69aead181ddc927b339fa6a5a6b14809aca7c44cd898a2f4"
+    },
+    {
+      "case": 971048,
+      "human_hash": "aa835ed5a3f939909c494e4adc74819eb04f9d8846571a5ab6443cd224b62357",
+      "joint_hash": "765455acf467d558277d4a29d156f08056d3806f82d057f51bad02ac33c7a2ab"
+    },
+    {
+      "case": 971049,
+      "human_hash": "359db1c9255f8bd97f940fd475fba2a83b113cf75a465c484ebff61a578426f0",
+      "joint_hash": "c5815ed33d4d5f049ccd1886bb28707fd761f014220645eb29bba7323d74a520"
+    },
+    {
+      "case": 971050,
+      "human_hash": "0929db586dd3e7c672c73683c99abba6dbbee27ee02f10ddc0f7d8a33ad03936",
+      "joint_hash": "f592eb264549e8cae6bae6f1b2c78f884624525568dd514657cb9beee6bf1903"
+    },
+    {
+      "case": 971051,
+      "human_hash": "5bcd244185d244b3bfa62ebed216caa22eb05fcdc219811416c218d23b721c0e",
+      "joint_hash": "28dab312a09a9a5f51740315e6cef41ad06850d4360dec351ef7e168316e1f29"
+    },
+    {
+      "case": 971052,
+      "human_hash": "551f292e44076dbac0b5648ac9c766151c30ca7290267273482c3951162325a9",
+      "joint_hash": "a9976f9e8d5c58f594bea724abb64698acb00b1c27cc2f4f41b1f6f95adbc0e1"
+    },
+    {
+      "case": 971053,
+      "human_hash": "bd102e65e51ea80b555aa94d11ad6fd2e59c20c0dcee38d5a53e4cb6471075bb",
+      "joint_hash": "a1184b771ae27aa277aba60036a31d82925653fe9493549e3a77df3bb085194e"
+    },
+    {
+      "case": 971054,
+      "human_hash": "08b07ac6800e9d50087c56ac0d717d9e51aceec5ea9a51941fb985618b15e92f",
+      "joint_hash": "062728526f1a286dcb4d7d910141eee4f923639b56448d79d57dc2b0a55536ce"
+    },
+    {
+      "case": 971055,
+      "human_hash": "f124fa27078f013cca6606ada7da88e46207a4facaec80d2b9ad1283bfe9d4a8",
+      "joint_hash": "75fdd801873c617f1a3f7b223f0392c92a8fe9548b621389acfab039c6cca9b0"
+    },
+    {
+      "case": 971056,
+      "human_hash": "8fe10b4b87fc47ed7d5d0944dc2532b86efc9dfba10f7fc7f6901a4ff5c7508b",
+      "joint_hash": "6d5f468e5096be555aee23cdd27fe55ced3d10ff6b8239671d3be81898e14f9a"
+    },
+    {
+      "case": 971057,
+      "human_hash": "a3824a8c1670d6051b1628a1dc47d447596597b0c65f8ce88172a202a7e6de53",
+      "joint_hash": "8c7c9ad41306c738bdb7c365d2c7a2ca838dc33e195d92d6d3e95aeb75bbc4bb"
+    },
+    {
+      "case": 971058,
+      "human_hash": "84e343fb25dcd70c154c4cb71d09f53a7ac4ba37dac80479c22bdbe6876e06ed",
+      "joint_hash": "9a266ce11491586a4168a557269a9993946246f4b5bbdf34316fef56f5d37a28"
+    },
+    {
+      "case": 971059,
+      "human_hash": "ead66cd281202232eee559153884390fd0b899217ad554a37d3223ac7f05c230",
+      "joint_hash": "b01952e24b220b5e56a9f383053a977ef5c24c877762370101f51791100efabc"
+    },
+    {
+      "case": 971060,
+      "human_hash": "9c0b3c2d580628ba4b88356eb5988dbcc6829492ddd4c4a43888057cd65aa0f1",
+      "joint_hash": "019226aba5badc71074d7aa46c8312e9394412df92c22f1611f2dde8f86091fc"
+    },
+    {
+      "case": 971061,
+      "human_hash": "bc96391f5829b35ce69331be18ce9a66586334008da54927bb701322961fb8ec",
+      "joint_hash": "02b68b1705fa36ad5f7f20e8ad2fbab853b96f42cd6875bda223d99732dd78cb"
+    },
+    {
+      "case": 971062,
+      "human_hash": "06d9c91f79b53f456e275d740da5b1fcd456c1897e332ad51abe44d8d1cb32e6",
+      "joint_hash": "8378268ebe065df70169e14bf0baacafba56ce4bf0f47fecce703833a46ae526"
+    },
+    {
+      "case": 971063,
+      "human_hash": "6c24eda34473d65662072015eb3b80ea157caf4ba9b1b92c6a3877455a788428",
+      "joint_hash": "13bbe9b883801b32c79744829623c85aca87d096b2b937b01ec36b833dda925b"
+    },
+    {
+      "case": 971064,
+      "human_hash": "08f92e08dd30f8611f236af43ec5f170243e08baa69c8e86caebfa6765c58cc1",
+      "joint_hash": "85d3e37ad4585e35459e984b7dd8e6943b3bd196490ba0bd5a6a3ee20507967e"
+    },
+    {
+      "case": 971065,
+      "human_hash": "8ccc0b9b408125ad0291b375ae16d62a9ae647e48c890d9368c9e5f05a48f305",
+      "joint_hash": "9c536c6bc16ad55d3dc584f8741002c74a1ee2530b45c56f26a3fd1c2fe7d7b1"
+    },
+    {
+      "case": 971066,
+      "human_hash": "ba8ac5965da05ab67045f786e51d0250583fd1d67a3b3941254991635ba7b417",
+      "joint_hash": "911a2e8859519070fc0092d56ae8cf27da2c35f01be091edb8cb44b3e504c18c"
+    },
+    {
+      "case": 971067,
+      "human_hash": "412894490f5eeae95c282a4a799d8d931f96da7c7d7117d69c29e4962edb3f65",
+      "joint_hash": "fc669e8313378eba4c34c6938df7efa8ad72cd847f8d2f8b225e1ac65664c7a1"
+    },
+    {
+      "case": 971068,
+      "human_hash": "a889696bc671714fc0e55c7a47fb48588adbd1ab8dc69433dd36dea2adc92b5a",
+      "joint_hash": "699e8f74cbd1532de676c5d89dba77c81aff82dd23f406f6d6582a7997ee25ee"
+    },
+    {
+      "case": 971069,
+      "human_hash": "aec86232bcb56c07dbdc93432621b45fa054c375ad185abf7a57537f02549ff6",
+      "joint_hash": "208db03d93ad8d59a8ed1fb655f748f505e8b71bbf8d961ad233fbc7d5c28334"
+    },
+    {
+      "case": 971070,
+      "human_hash": "0d0ac15b4fe2327a2e3d3071f98f816c4a588909caf2253cf920c06c7b04f927",
+      "joint_hash": "80d45ea681adb657eb5bf399c9e9c9cdac7b55b14f2115be65bc949d6ce9d208"
+    },
+    {
+      "case": 971071,
+      "human_hash": "6edf02c17a3d486fa471314aea39be8974bb0cc8d74807e4fc5890b561b58880",
+      "joint_hash": "2053acce090ef9e7469fe7703db47b51c54dcf1e6d9be878d853973bfebece5e"
+    },
+    {
+      "case": 971072,
+      "human_hash": "1696c6daedcd629e87035496ce42f67fa33f27a3c043c08397dc864b1d32115b",
+      "joint_hash": "d759c24b63382e15c3172fb3da0a1ef3df5ef58496d8f87691b2baaeb867c86f"
+    },
+    {
+      "case": 971073,
+      "human_hash": "925253c660dbd2e2f30f3c5fe8f19fe14c2a325f8cb2fb67c2dd80b2fab9076f",
+      "joint_hash": "9da1ea54f862f66fe4059ff44d7f806ceacbb5f6b052c1009e31ce211e2d349b"
+    },
+    {
+      "case": 971074,
+      "human_hash": "ec783ba931e56e34194dad8b03a505aebc202b45421e0883ff48bf9406736439",
+      "joint_hash": "cfdc355a73f2f497adaca94a9f1e84eea05b5956c9cba4a77d5276da1102dff9"
+    },
+    {
+      "case": 971075,
+      "human_hash": "90f19e7b20a5e47acfae30997cff2ca7640fbee4e01a371aad5fcce619a98f66",
+      "joint_hash": "a1120f4357ea4f389a7b7e2282327a3632f431bf99ea40313506c076f63b4b77"
+    },
+    {
+      "case": 971076,
+      "human_hash": "3ac5582b855cc34a52d969c172efaac4d4d6b485319deb2c2f3bd8e70b52bb4f",
+      "joint_hash": "bb9922e3857bd8e681a3a00bb05ced2f8ded0f73120a225b7f02fe79292e88e6"
+    },
+    {
+      "case": 971077,
+      "human_hash": "cc20f4a018d5f034d3002ed26167719c2d07fd346fd8315342078cdb7c7975fd",
+      "joint_hash": "ebd5dca844a80f85550f7653a7e7c699df218b1dae344fa33ec5bdeea158a3fc"
+    },
+    {
+      "case": 971078,
+      "human_hash": "be587ce92de170e5947c6bbfa8472fe27cb93885e32d6fa55bcdb2464a09efa4",
+      "joint_hash": "503cbb16eacd1f7c68eb5feb94425e1bce2930b1e441ef428e48e6fd59af11f0"
+    },
+    {
+      "case": 971079,
+      "human_hash": "77b54fb4c9552f4b065cdb7c36915bbe7555b52f0a751b00f02d221de082d2f6",
+      "joint_hash": "7ed332508230ed0ef9cb2559a56e611687450cf05d676c4b3c55a503eb60feed"
+    },
+    {
+      "case": 971080,
+      "human_hash": "978431e7a132dda664ee6e26a7644919dca75c0a0fff60b7d3178aeb7907f3db",
+      "joint_hash": "e972e6894eabf27b24171a40b43bfa4ae0c813f9cfa4dea59100fd4f6b550366"
+    },
+    {
+      "case": 971081,
+      "human_hash": "11e790be17914766554adab13b7a23b1d78b64607802c42d42499ec98730b327",
+      "joint_hash": "6b49f1ea5d93014ff06c37353d4d1a89d132b703e125afe70e716a2db92e9d0c"
+    },
+    {
+      "case": 971082,
+      "human_hash": "a44ddc4f417890d5c3a9b5b6ca8283711e1e5e86c327e1b392069d57ea1b21ad",
+      "joint_hash": "b83cf1e37244e336bfb786cf8354e49005d029b230bf90fa9152d245ee266999"
+    },
+    {
+      "case": 971083,
+      "human_hash": "b43416d0bd7a9804f9a9acf7caa3778da9c779e51e9067f6855339cc8c2fd874",
+      "joint_hash": "39aaa26b4bb020d3dac87f222cb0a7a9cea7ce71712990d5ff31a4077a4fe0b9"
+    },
+    {
+      "case": 971084,
+      "human_hash": "a0da947426434b4a09979a3e5c696007d13cba0659e6c7b797db19760c4abb36",
+      "joint_hash": "498eff23ad48a1be0d4f0995d95f65436c2880a8512789dec8c3a2192430a963"
+    },
+    {
+      "case": 971085,
+      "human_hash": "fedaed7c11506b20cd8d259c6fff9fb640552dacc143ad8ff94542b1b03f3cdb",
+      "joint_hash": "952b8d2f37d4fe2b8ae0b039b88648d13f3f8e97a31d664c03bc8620fd305587"
+    },
+    {
+      "case": 971086,
+      "human_hash": "5527d61f36a5b51683fbcba5d9964f54b572eafc567275191bf04a2e39ba5b33",
+      "joint_hash": "c75f8c9fdae7c807f7f3b496725aab53e8fb1a793818a8044317455871433fb3"
+    },
+    {
+      "case": 971087,
+      "human_hash": "f0e1aa27bd6a702a8dfe7a6efd68aeace97c64112776933dd07009d74d01d718",
+      "joint_hash": "2192ef9a9904bdfd8d2619517206cfd9c40e71a577065742f40f069c29c6f4ae"
+    },
+    {
+      "case": 971088,
+      "human_hash": "f7e504fa66c29c68656f243acd79b7825d444a808fa7bb1b6aa78c447214c686",
+      "joint_hash": "742c684ed1c08bbdde711f7428d47252a6ffd18b81e77c51464d7cab135cc8f9"
+    },
+    {
+      "case": 971089,
+      "human_hash": "aaf91025fb5f0555aa53d85b964c254f6de5c870ef9aacd00605fd0aa4e405f2",
+      "joint_hash": "6f6d317066e8853b9b07835b2b6cb83752e99a875e9441b335ba5768103e2869"
+    },
+    {
+      "case": 971090,
+      "human_hash": "08dbcb7bfadb6e16a6c155c12e2c2bf3a39e9348331f957e5dbbb51c15838c9c",
+      "joint_hash": "d3dfb26e5e9f592c6add4575ea0e2e4a980a23b9355974a306238f1e4b795b4d"
+    },
+    {
+      "case": 971091,
+      "human_hash": "4a6081c20cc194b78e798d2d75e5f479256722f493a8bafa13040c32ae6049d5",
+      "joint_hash": "8b9e64447850b71ccbaa37daab924b9e58f3377185ca4e963ecc2ee6b832188e"
+    },
+    {
+      "case": 971092,
+      "human_hash": "0a7d03700d782cc763c7157b598a937fbbe13801872d497aa34c27c9b2fbdeae",
+      "joint_hash": "e51823b5a14613d8002839174c5025532ebd7343985f0afed879a9c5d8e6f6f0"
+    },
+    {
+      "case": 971093,
+      "human_hash": "8266d033ca0996f1b45f64f7912eb08de7428e77c1e5c7c29045af93d6916bee",
+      "joint_hash": "c09067895a92833f0a3a9e00948adf3e0c52413e7b2496545e1e0e0d8ba0d3b9"
+    },
+    {
+      "case": 971094,
+      "human_hash": "aad65f7171417502bda0c2846f900cb1f1b36a193e05707d52fbb0bae67f5f9d",
+      "joint_hash": "8ca518462a6385d393b489fd952dc56d859be907e618e74003130c8e515f575c"
+    },
+    {
+      "case": 971095,
+      "human_hash": "a95f72e8211c81bb1b084697aa3fc130d2ac2609b8151c562bf5cf0530133a01",
+      "joint_hash": "6dc6ca6ea11f3a9e5e96ea8e2a85297dbc7989612ab53ed1f8cea1a6da5f9461"
+    },
+    {
+      "case": 971096,
+      "human_hash": "1ce47448f3b7c276e30ebb5e20de4bb3cdd51b9638e3ff264c8d8c20e853f7ba",
+      "joint_hash": "01d67ad91b4c83720fea306fbaa2c930820e8fd32ecc10cdd1892d56b8934123"
+    },
+    {
+      "case": 971097,
+      "human_hash": "e95b5b8bef808c422bb6543778d1ce59cd19f96cebaf4832b6e34b098db742ce",
+      "joint_hash": "1caf6b201852df3c146b02c56e36f0117cf93b4cc74a0621ef345c213cddf8b2"
+    },
+    {
+      "case": 971098,
+      "human_hash": "a869fb694c54239c19303dbea8cfd6406e4dbc27e868b7a307e983350de46b5f",
+      "joint_hash": "8bb41194d1c4f88d0e5bd65d6da9b9058aabbbfaa660e428d1bb461960786f59"
+    },
+    {
+      "case": 971099,
+      "human_hash": "4f34d7a97c2fe5df739e7c436dbe8496072d24dd07e2f3ee35cecaf845e45a49",
+      "joint_hash": "5e52cbeef98ee79f60c759e34a442eafef2674da05439002a9d4a5ffc29fc714"
+    }
+  ],
+  "actor_hashes": {
+    "repair_results/student_dagger_coverage_20260915/round16.zip": "634e8106713c0c316afc77bf345615d3a6a101789f82f182853356ab57dbc086",
+    "repair_results/dagger_ppo_nominal_20260915/initial.zip": "f1188379822d94dbd1e44ef096fa7aa84529ebc9343bb2c248c1c88f56a2a4cc"
+  },
+  "frozen_mainline": {
+    "crowd_nav/bayes_continuous/train_smoke.py": "da43d5c97d147a407f19895be3a5c2eebdd5de98e7595622222cc50c0d295d8c",
+    "crowd_nav/bayes_continuous/network.py": "6ab192213997afc9c93af997574ba30d3565298414d8f49e955e8158d4a66e5b"
+  },
+  "ineligible": [
+    {
+      "case": 971039,
+      "outcome": "collision",
+      "steps": 2
+    },
+    {
+      "case": 971088,
+      "outcome": "collision",
+      "steps": 15
+    }
+  ],
+  "strata": {
+    "False_nominal": {
+      "cases": 18,
+      "baseline": {
+        "collision": 16,
+        "timeout": 2
+      },
+      "arms": {
+        "current": {
+          "outcomes": {
+            "success": 21,
+            "timeout": 4,
+            "collision": 11
+          },
+          "mean_return_gain": 0.6869961670760502,
+          "rescued_cases": [
+            960014,
+            960078,
+            960103,
+            960108,
+            960163,
+            960215,
+            960251,
+            960270,
+            960285,
+            960362,
+            960364,
+            960401,
+            960418,
+            960493
+          ]
+        },
+        "history": {
+          "outcomes": {
+            "success": 19,
+            "timeout": 4,
+            "collision": 13
+          },
+          "mean_return_gain": 0.6096693793596115,
+          "rescued_cases": [
+            960014,
+            960078,
+            960103,
+            960108,
+            960215,
+            960251,
+            960270,
+            960362,
+            960364,
+            960401,
+            960418,
+            960463,
+            960493
+          ]
+        },
+        "oracle": {
+          "outcomes": {
+            "success": 22,
+            "timeout": 4,
+            "collision": 10
+          },
+          "mean_return_gain": 0.7025890113997907,
+          "rescued_cases": [
+            960014,
+            960078,
+            960088,
+            960103,
+            960108,
+            960215,
+            960251,
+            960270,
+            960285,
+            960362,
+            960364,
+            960401,
+            960418,
+            960493
+          ]
+        },
+        "best": {
+          "outcomes": {
+            "success": 31,
+            "timeout": 2,
+            "collision": 3
+          },
+          "mean_return_gain": 1.0186838238431866,
+          "rescued_cases": [
+            960014,
+            960071,
+            960078,
+            960088,
+            960103,
+            960108,
+            960163,
+            960215,
+            960251,
+            960270,
+            960285,
+            960362,
+            960364,
+            960401,
+            960418,
+            960437,
+            960463,
+            960493
+          ]
+        }
+      }
+    },
+    "False_train_nonstationary": {
+      "cases": 11,
+      "baseline": {
+        "collision": 11
+      },
+      "arms": {
+        "current": {
+          "outcomes": {
+            "collision": 13,
+            "success": 9
+          },
+          "mean_return_gain": 0.42237299741724676,
+          "rescued_cases": [
+            130007,
+            130021,
+            130027,
+            130031,
+            130082,
+            130153,
+            130174
+          ]
+        },
+        "history": {
+          "outcomes": {
+            "collision": 11,
+            "success": 11
+          },
+          "mean_return_gain": 0.5238547731238296,
+          "rescued_cases": [
+            130007,
+            130015,
+            130021,
+            130027,
+            130031,
+            130082,
+            130134,
+            130174
+          ]
+        },
+        "oracle": {
+          "outcomes": {
+            "collision": 9,
+            "success": 13
+          },
+          "mean_return_gain": 0.6314780566635355,
+          "rescued_cases": [
+            130015,
+            130021,
+            130027,
+            130031,
+            130082,
+            130148,
+            130153,
+            130174
+          ]
+        },
+        "best": {
+          "outcomes": {
+            "success": 20,
+            "collision": 2
+          },
+          "mean_return_gain": 0.9910821535939132,
+          "rescued_cases": [
+            130007,
+            130015,
+            130021,
+            130027,
+            130031,
+            130082,
+            130134,
+            130148,
+            130153,
+            130174,
+            130190
+          ]
+        }
+      }
+    },
+    "True_nominal": {
+      "cases": 50,
+      "baseline": {
+        "success": 47,
+        "timeout": 1,
+        "collision": 2
+      },
+      "arms": {
+        "current": {
+          "outcomes": {
+            "success": 47,
+            "collision": 3
+          },
+          "mean_return_gain": -0.0091352723161631,
+          "rescued_cases": [
+            971004
+          ]
+        },
+        "history": {
+          "outcomes": {
+            "success": 47,
+            "collision": 3
+          },
+          "mean_return_gain": -0.007610525680430672,
+          "rescued_cases": [
+            971004
+          ]
+        },
+        "oracle": {
+          "outcomes": {
+            "success": 46,
+            "timeout": 1,
+            "collision": 3
+          },
+          "mean_return_gain": -0.027562233581912392,
+          "rescued_cases": []
+        },
+        "best": {
+          "outcomes": {
+            "success": 48,
+            "collision": 2
+          },
+          "mean_return_gain": 0.05177131222414771,
+          "rescued_cases": [
+            971004
+          ]
+        }
+      }
+    },
+    "True_train_nonstationary": {
+      "cases": 50,
+      "baseline": {
+        "success": 47,
+        "collision": 2,
+        "timeout": 1
+      },
+      "arms": {
+        "current": {
+          "outcomes": {
+            "success": 43,
+            "collision": 6,
+            "timeout": 1
+          },
+          "mean_return_gain": -0.11781417893009387,
+          "rescued_cases": []
+        },
+        "history": {
+          "outcomes": {
+            "success": 45,
+            "collision": 4,
+            "timeout": 1
+          },
+          "mean_return_gain": -0.07102518945839205,
+          "rescued_cases": []
+        },
+        "oracle": {
+          "outcomes": {
+            "success": 44,
+            "collision": 5,
+            "timeout": 1
+          },
+          "mean_return_gain": -0.09468647984698601,
+          "rescued_cases": [
+            971075
+          ]
+        },
+        "best": {
+          "outcomes": {
+            "success": 49,
+            "collision": 1
+          },
+          "mean_return_gain": 0.07411705922848909,
+          "rescued_cases": [
+            971075,
+            971086
+          ]
+        }
+      }
+    }
+  }
+}

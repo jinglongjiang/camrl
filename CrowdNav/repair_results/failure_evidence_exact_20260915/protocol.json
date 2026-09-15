@@ -1,0 +1,15 @@
+{
+  "purpose": "Locate missing-information evidence, not train or design Bayes",
+  "discovery": "all failures in original 500 nominal and 200 nonstationary audit episodes",
+  "anchors": "collision: 8/16 steps before termination; timeout:64/112",
+  "candidates": "3x3 actor-local dv +/- .2 and omega +/- .4, plus stop; projected by existing unicycle planner; execute 8 steps then frozen actor",
+  "selectors": "same existing cost, margin .50: CV, four-frame acceleration clipped 1m/s2 and decayed 1s, exact human future",
+  "retrospective_upper_bound": "best realized return in same finite bank plus feedback baseline; not a global upper bound",
+  "fresh_confirmation": "50 nominal +50 train_nonstationary, layout=case=971000..971099; fixed step16 if reached",
+  "history_evidence_gate": "fresh paired History-Current return improvement 95% episode bootstrap lower bound >0 and no excess collisions",
+  "limitation": "Oracle future may include unpredictable scheduler draws; privileged value alone is not learnable information or Bayesian necessity",
+  "training_updates": 0,
+  "code_sha256": "fa994d747f5808ea468e68d3389378eb541e5321b0efab682c5b702541e9db09",
+  "actors": "nominal uses original round16; nonstationary uses original PPO-initial checkpoint; no cross-profile actor comparison",
+  "actor_sha256": "f1188379822d94dbd1e44ef096fa7aa84529ebc9343bb2c248c1c88f56a2a4cc"
+}

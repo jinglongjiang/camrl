@@ -1,0 +1,84 @@
+{
+  "discovery": {
+    "cases": 29,
+    "eligible": 29,
+    "current": {
+      "anchor_count": 58,
+      "success": 30,
+      "collision": 24,
+      "timeout": 4,
+      "mean_return_gain_vs_actor": 0.5866218613434007
+    },
+    "history": {
+      "anchor_count": 58,
+      "success": 30,
+      "collision": 24,
+      "timeout": 4,
+      "mean_return_gain_vs_actor": 0.5771190114770735
+    },
+    "oracle": {
+      "anchor_count": 58,
+      "success": 35,
+      "collision": 19,
+      "timeout": 4,
+      "mean_return_gain_vs_actor": 0.6756158906377628
+    },
+    "best": {
+      "anchor_count": 58,
+      "success": 51,
+      "collision": 5,
+      "timeout": 2,
+      "mean_return_gain_vs_actor": 1.0082142247831174
+    },
+    "history_vs_current": {
+      "mean": -0.009502849866327163,
+      "ci95": [
+        -0.11944324760616995,
+        0.09588118560443196
+      ],
+      "excess_collision_anchors": 0,
+      "passed": false
+    }
+  },
+  "fresh": {
+    "cases": 100,
+    "eligible": 98,
+    "current": {
+      "anchor_count": 98,
+      "success": 90,
+      "collision": 7,
+      "timeout": 1,
+      "mean_return_gain_vs_actor": -0.06347472562312849
+    },
+    "history": {
+      "anchor_count": 98,
+      "success": 92,
+      "collision": 5,
+      "timeout": 1,
+      "mean_return_gain_vs_actor": -0.03931785756941136
+    },
+    "oracle": {
+      "anchor_count": 98,
+      "success": 90,
+      "collision": 6,
+      "timeout": 2,
+      "mean_return_gain_vs_actor": -0.0611243567144492
+    },
+    "best": {
+      "anchor_count": 98,
+      "success": 97,
+      "collision": 1,
+      "timeout": 0,
+      "mean_return_gain_vs_actor": 0.0629441857263184
+    },
+    "history_vs_current": {
+      "mean": 0.02415686805371712,
+      "ci95": [
+        -0.0009260779195443938,
+        0.06122166893154307
+      ],
+      "excess_collision_anchors": -2,
+      "passed": false
+    }
+  }
+}
