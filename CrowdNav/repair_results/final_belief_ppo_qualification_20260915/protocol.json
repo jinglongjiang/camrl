@@ -1,0 +1,49 @@
+{
+  "seeds": [
+    2407,
+    4807,
+    7207
+  ],
+  "arms": [
+    "no_belief",
+    "map",
+    "full"
+  ],
+  "source": "repair_results/dagger_ppo_nominal_20260915/initial.zip",
+  "steps_per_run": 20480,
+  "adam_updates_per_run": 240,
+  "maximum_runs": 9,
+  "maximum_environment_steps": 184320,
+  "ppo": {
+    "lr": 1e-05,
+    "target_kl": null,
+    "clip": 0.1,
+    "n_steps": 2048,
+    "batch": 256,
+    "epochs": 3
+  },
+  "profile": "train_nonstationary",
+  "humans": 5,
+  "environment_changed": false,
+  "network_changed": false,
+  "belief_changed": false,
+  "development_layouts": [
+    91000000,
+    91000099
+  ],
+  "test_cases": [
+    291000,
+    291099
+  ],
+  "evaluation": "initial and 4096/10240/20480; same nominal and train_nonstationary cases",
+  "stopping": "finish current paired seed; if any arm fails retention or update gate, do not run later seeds or interpret as Bayes absence",
+  "positive_evidence": "all seeds complete; FULL mean nonstationary SR >= each baseline+3 percentage points, no higher CR, positive return difference in >=2/3 seeds and paired seed/layout bootstrap CI lower>0",
+  "negative_scope": "fixed-budget development qualification only; not an equivalence test or proof Bayes is useless",
+  "independent_confirmation": "not included: a positive result would require new evaluation cases before a paper claim",
+  "code_sha256": "f458339d77928ce8d10b1ff4a5c607cfaea26703af189b1fa223604a1efcc676",
+  "params_sha256": {
+    "action_model.npz": "72af13a25f4bec8e5065af26e3e751d9a1509cc2d5ec029f4f593567aea0c4dc",
+    "gdbn.npz": "d53d76f13595e79c420574801d44cb1b8e3e9fbf158e4414ab7ce918c13ca08b",
+    "gng.npz": "ae60e3a315f0be40915e38858aa545c17272d751e184a0a7741fa7bb17128c31"
+  }
+}

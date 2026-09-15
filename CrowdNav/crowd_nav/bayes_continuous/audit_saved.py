@@ -1248,6 +1248,75 @@ def failure_evidence_integrity(root, params):
     print(json.dumps({k:v for k,v in report.items() if k!='layout_hashes'},indent=2))
 
 
+def ppo_qualification_analysis(root):
+    """Paired final-budget analysis only; does not select models or tune PPO."""
+    protocol=json.loads((root/'protocol.json').read_text())
+    suite=json.loads((root/'status.json').read_text())
+    result=dict(suite_outcome=suite['outcome'],training_configuration=protocol['ppo'],
+        scope='three RL seeds with one fixed IL source; development qualification, not independent final confirmation')
+    if suite['outcome']!='all_seeds_complete_requires_paired_analysis':
+        result['verdict']='PPO qualification incomplete; no negative Bayes conclusion allowed'
+        (root/'analysis.json').write_text(json.dumps(result,indent=2));return result
+    seeds=protocol['seeds'];arms=protocol['arms'];data={};checks=[];models={}
+    for seed in seeds:
+        statuses={a:json.loads((root/f'{seed}_{a}'/'status.json').read_text()) for a in arms}
+        assert len({d['initial_policy_tensor_sha256'] for d in statuses.values()})==1
+        sequences=[[(r['layout_seed'],r['test_case']) for r in statuses[a]['training_episodes']] for a in arms]
+        shared=min(map(len,sequences));assert all(s[:shared]==sequences[0][:shared] for s in sequences)
+        checks.append(dict(seed=seed,initial_tensors_identical=True,shared_training_prefix_episodes=shared,
+                           training_episode_counts=dict(zip(arms,map(len,sequences)))))
+        for arm,d in statuses.items():
+            assert d['status']=='complete_stable' and d['actual_steps']==20480
+            assert [r['adam_steps'] for r in d['optimizer_receipts']]==[[24*i] for i in range(1,11)]
+            folder=root/f'{seed}_{arm}'
+            models[f'{seed}_{arm}']=dict(steps=d['actual_steps'],adam_updates=240,
+                actor_belief_weight_max=d['actor_belief_column_max_abs'],
+                candidate=d['candidate'],sha256=hashlib.sha256((folder/(d['candidate']+'.zip')).read_bytes()).hexdigest(),
+                final_stochastic=next(e for e in d['evaluations'] if e['tag']=='attempt0_final_stochastic'),
+                kl=[r['log'].get('train/approx_kl') for r in d['optimizer_receipts']])
+            for profile,tag in [('nominal','attempt0_20480'),('train_nonstationary','attempt0_20480_nonstationary')]:
+                record=json.loads((folder/(tag+'.json')).read_text())
+                assert len(record['records'])==100
+                data[seed,arm,profile]=record
+    result.update(contract_checks=checks,models=models,total_environment_steps=9*20480,total_adam_updates=9*240,
+                  comparisons={},per_seed={},initial={},mean_scores={})
+    rng=np.random.default_rng(20260915)
+    for profile in ('nominal','train_nonstationary'):
+        reference=data[seeds[0],arms[0],profile]['records']
+        identity=lambda rs:[(r['layout_seed'],r['test_case'],r['layout_sha256']) for r in rs]
+        assert len({r['layout_sha256'] for r in reference})==100
+        for seed in seeds:
+            for arm in arms: assert identity(data[seed,arm,profile]['records'])==identity(reference)
+        result['per_seed'][profile]={str(seed):{arm:data[seed,arm,profile]['summary'] for arm in arms} for seed in seeds}
+        initial_tag='initial_deterministic' if profile=='nominal' else 'initial_nonstationary'
+        result['initial'][profile]=json.loads((root/f'{seeds[0]}_no_belief'/(initial_tag+'.json')).read_text())['summary']
+        result['mean_scores'][profile]={arm:{k:float(np.mean([data[s,arm,profile]['summary'][k] for s in seeds]))
+            for k in ('success','collision','timeout','mean_return')} for arm in arms}
+        result['comparisons'][profile]={}
+        for left,right in [('full','no_belief'),('full','map'),('map','no_belief')]:
+            dr=np.array([[a['reward']-b['reward'] for a,b in zip(data[s,left,profile]['records'],data[s,right,profile]['records'])] for s in seeds])
+            ds=np.array([[int(a['outcome']=='success')-int(b['outcome']=='success') for a,b in zip(data[s,left,profile]['records'],data[s,right,profile]['records'])] for s in seeds])
+            dc=np.array([[int(a['outcome']=='collision')-int(b['outcome']=='collision') for a,b in zip(data[s,left,profile]['records'],data[s,right,profile]['records'])] for s in seeds])
+            draws=[]
+            for _ in range(10000):
+                si=rng.integers(0,3,3);ci=rng.integers(0,100,100)
+                draws.append([x[si][:,ci].mean() for x in (dr,ds,dc)])
+            bounds=np.quantile(draws,[.025,.975],axis=0)
+            result['comparisons'][profile][left+'-'+right]=dict(return_gain=float(dr.mean()),
+                return_ci95=bounds[:,0].tolist(),success_gain_pp=float(ds.mean()*100),
+                success_ci95_pp=(bounds[:,1]*100).tolist(),collision_gain_pp=float(dc.mean()*100),
+                collision_ci95_pp=(bounds[:,2]*100).tolist(),per_seed_return_gain=dr.mean(1).tolist(),
+                positive_return_seeds=int(np.sum(dr.mean(1)>0)))
+    comparisons=result['comparisons']['train_nonstationary']
+    passed=all(comparisons['full-'+arm]['success_gain_pp']>=3-1e-9 and
+        comparisons['full-'+arm]['collision_gain_pp']<=1e-9 and comparisons['full-'+arm]['positive_return_seeds']>=2 and
+        comparisons['full-'+arm]['return_ci95'][0]>0 for arm in ('no_belief','map'))
+    result['full_qualification_passed']=bool(passed)
+    result['verdict']='FULL passed development gate; independent confirmation still required' if passed else 'PPO coupling passed; FULL did not pass fixed-budget added-value gate'
+    (root/'analysis.json').write_text(json.dumps(result,indent=2))
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--results', type=Path, required=True)

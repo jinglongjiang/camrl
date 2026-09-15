@@ -1,0 +1,174 @@
+IL初始化 + Bayesian belief + PPO：固定预算三臂资格验收
+日期：2026-09-15
+
+一、最终结论
+
+这次不是挂起任务，也不是4096步连通性测试：9次训练全部完成。
+结论属于预先约定的第二类：PPO训练衔接通过；当前FULL没有通过独立收益门槛。
+
+工程上取得的进展：
+IL -> belief -> SetEncoder -> PPO Actor/V -> (v,omega)确实完成了足量更新，
+且三个RL seed都没有出现过去那种大规模导航崩溃。
+
+科学上没有通过的部分：
+FULL没有稳定胜过MAP；对No-Belief的平均收益也没有排除零。
+因此停止给当前FULL机制追加同类调参/长训预算，不再用新模块延长这条验收链。
+保留架构、初始IL策略和全部检查点；不据此宣布Bayes理论无用。
+
+二、冻结内容与唯一配置调整
+
+未改：环境、reward、GDBN参数与belief定义、SetEncoder、连续动作语义、IL起点。
+仍然是5人、train_nonstationary训练；没有开放机器人可见性或人机响应模型。
+没有重新采IL数据，没有Cost Critic、安全replay、TD3、Mamba或额外BC损失。
+PPO核心仍使用原生SB3训练逻辑和现有DaggerGaussianPolicy。
+
+相对旧smoke统一调整一次配置：
+learning_rate：3e-5 -> 1e-5
+target_kl：0.01 -> None，取消KL提前截断
+其余保持：rollout2048，batch256，epochs3，clip0.1，gamma0.99，GAE0.95，ent_coef0。
+初始物理动作标准差仍为[0.03,0.06]。
+
+取消KL截断不等于取消PPO裁剪，也不等于承诺策略永不退化。
+闭环停止门继续保留：nominal成功数至少90/100，非平稳不比初始低10次以上。
+只允许这一版配置；没有fallback、冻结encoder重试、挑最好checkpoint或中途换参数。
+
+三、实际预算与更新证据
+
+RL seeds：2407、4807、7207。
+每个seed：No-Belief、MAP、FULL，共9次运行。
+每次训练20,480个环境步，10个rollout，每rollout实际24次Adam更新。
+每次240次实际更新，总计184,320训练步、2,160次Adam更新。
+完整训练episode共3,770个，剩余跨rollout/未终止片段按PPO原逻辑处理。
+
+不是拿SB3的n_updates字段代替optimizer step：
+直接读取Adam状态中的step，并逐rollout断言为24、48、...、240。
+旧检查点的实际Adam step核对为：No-Belief 6、MAP 4、FULL 6。
+因此旧smoke更新不足的问题，本轮确实排除了。
+
+固定评估：初始确定性/随机策略、初始非平稳；4096/10240/20480步各两个profile；
+最后再验nominal随机策略。共90组100回合评估，即9000次episode执行。
+这些评估大量复用相同布局，绝不称为9000个独立测试样本。
+
+运行于4090服务器，沿用小网络PPO的CPU执行入口，三臂并行。
+三个seed批次的最长耗时合计约1193秒，约20分钟，不含事后归档。
+原有train_interface.py GPU任务未停止，其他项目文件和缓存未删除。
+
+四、公平性与契约检查
+
+1. 同seed三臂完整初始策略state_dict hash逐位一致，包括相同Value初始化。
+2. 所有运行使用相同IL来源，三个seed只是RL seed，不是三次独立IL训练。
+3. 初始均值与冻结来源策略逐动作核验一致；belief列开始清零但保持可训练。
+4. 同seed的训练布局/案例序列共享前缀完全一致：425、419、405个完整episode。
+   各臂策略不同，回合长度不同，所以20,480步内完成回合数可以不同。
+   公平性要求同种子和布局生成序列，不是让不同on-policy策略硬跑相同轨迹。
+5. 每个profile固定100个开发布局；所有seed和arm的case、layout hash完全配对。
+6. No-Belief相关输入权重保持0；MAP/FULL对应权重产生非零更新。
+   这说明通道没有被静默冻结，不等于仅凭权重就证明belief被有效利用。
+7. 网络文件hash未变；训练代码在启动前冻结，期间未改。
+8. 最终只比较attempt0_20480，不使用中途最高分，也没有事后回滚挑成绩。
+
+五、最终结果：非平稳开发集
+
+每个单元格是100回合中的成功/碰撞/超时。
+
+RL seed          No-Belief         MAP              FULL
+2407             89 / 11 / 0       95 / 5 / 0       94 / 6 / 0
+4807             93 /  6 / 1       91 / 8 / 1       92 / 8 / 0
+7207             87 / 12 / 1       92 / 8 / 0       89 /11 / 0
+
+三seed平均：
+方法             成功率            碰撞率            平均环境总reward
+No-Belief        89.67%            9.67%             0.769820
+MAP              92.67%            7.00%             0.813547
+FULL             91.67%            8.33%             0.797906
+
+共同初始策略：89成功、10碰撞、1超时。
+表中reward是整回合环境reward之和，不是上一轮反事实审计的折扣return。
+
+FULL相对No-Belief：成功率点估计+2个百分点，reward差+0.028086。
+FULL相对MAP：成功率点估计-1个百分点，reward差-0.015641，碰撞反而多1.33个百分点。
+FULL的reward对No-Belief在2/3 seed为正，对MAP只在1/3 seed为正。
+
+六、nominal底座有没有被训坏
+
+每个单元格是最终确定性成功数/100，所有该表剩余失败均为碰撞。
+
+RL seed          No-Belief         MAP              FULL
+2407             97               96               96
+4807             97               97               97
+7207             98               96               96
+三seed均值       97.33%           96.33%           96.33%
+
+共同初始策略为96成功、4碰撞。
+最终随机策略的nominal成功率也全部达到94%或以上。
+全部9次运行通过既定保留能力门，没有触发退化停止或重试。
+所以本轮不是“PPO先把Actor毁掉，导致无法评价Bayes”的情形。
+这只是当前预算和开发集下的衔接资格，不是无限长训稳定性保证。
+
+七、配对统计与预定门槛
+
+使用10,000次配对bootstrap，同时重采样RL seed和布局；不把3x100结果当300个独立布局。
+三个RL seed仍然较少，区间属于开发验收的不确定性估计，不替代正式独立确认。
+
+非平稳比较                 reward差         95%区间
+FULL - No-Belief            +0.028086        [-0.034858, +0.089468]
+FULL - MAP                 -0.015641        [-0.076448, +0.043052]
+MAP  - No-Belief            +0.043727        [-0.037628, +0.126118]
+
+FULL-No-Belief成功率差的95%区间为[-2.33, +6.33]个百分点。
+FULL-MAP成功率差的95%区间为[-5.33, +3.00]个百分点。
+
+执行前的FULL正证据门槛：
+- 全部seed按预算完成且通过保留能力门；
+- FULL对两个baseline的平均非平稳成功率均至少+3个百分点；
+- 碰撞率不增加；
+- reward差至少2/3 seed为正，且配对bootstrap下界大于0。
+
+结果：训练资格通过；FULL增量资格未通过。
+这个结论不是只差一个人为阈值：FULL平均就低于MAP，且两个reward比较都跨零。
+MAP虽然平均更好，其对No-Belief的区间也跨零，不能顺势宣布MAP已取得稳定正证据。
+
+八、现在应该怎么定性
+
+可以说：
+- 简洁的IL初始化 + belief输入 + PPO链路，在这次实训中可以稳定运行。
+- 之前4-6次实际更新的smoke不能代表正式验收，本轮补上了这一缺口。
+- 当前完整GDBN后验没有获得超过MAP和No-Belief的稳定导航收益证据。
+- 按有限预算协议，停止给当前FULL候选继续加码。
+
+不能说：
+- FULL绝对等价于MAP，或者理论上永远没有价值。
+- 20,480步已经证明收敛、穷尽了全部PPO配置或全部Bayesian模型。
+- 三个RL seed等于三次独立的端到端IL+Bayes训练。
+- 已经通过heldout_nonstationary、10/20人泛化或真实机器人验证。
+
+本轮没有进入这些正式测试，没有新建下一棵Oracle/Q探针诊断树。
+保留工程架构与检查点，但不能把“程序与训练跑通”写成“Bayes创新成立”。
+下一步应讨论第二篇贡献如何定位，而不是继续给同一弱belief换名字或加模块。
+
+九、文件与复现
+
+本地目录：
+/home/abc/workspace/bayes_set_continuous/CrowdNav/repair_results/final_belief_ppo_qualification_20260915
+远程目录：
+/root/continuous_repair_20260914/CrowdNav/repair_results/final_belief_ppo_qualification_20260915
+
+protocol.json：启动前冻结的配置、预算、门槛。
+status.json：9次运行状态、实际更新receipt、评估汇总和训练episode记录。
+analysis.json：配对统计、契约检查、最终检查点sha256。
+各seed_arm目录：初始/中间/最终检查点、逐回合评估JSON、训练CSV。
+REPORT_ZH.txt：本报告。
+raw_reports.tar.gz：不含模型权重的完整日志和逐回合结果归档，供Git保存。
+45个模型zip已在本地和远程保留，不把大模型权重塞入Git结果归档。
+
+训练代码提交：本地1a192c9，对应GitHub 6f1e92a。
+分支：qualification-belief-ppo-20260915。
+训练文件sha256：f458339d77928ce8d10b1ff4a5c607cfaea26703af189b1fa223604a1efcc676。
+网络文件sha256：6ab192213997afc9c93af997574ba30d3565298414d8f49e955e8158d4a66e5b。
+
+在远程CrowdNav目录，使用新的、尚不存在的输出目录可复现整套预算：
+PYTHONPATH=/root/bayes_continuous_deps:$PWD OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 \
+/root/miniconda3/envs/mamba/bin/python -m crowd_nav.bayes_continuous.train_smoke \
+  --ppo-qualification-suite --out repair_results/qualification_recheck
+
+这里只提供复现命令，没有自动启动重跑。conda名称mamba不代表使用Mamba网络。
