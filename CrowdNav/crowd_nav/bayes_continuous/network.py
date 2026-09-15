@@ -50,3 +50,25 @@ class SetEncoder(BaseFeaturesExtractor):
         maximum = encoded.masked_fill(~mask[..., None], -torch.inf).amax(1)
         maximum = torch.where(count > 0, maximum, torch.zeros_like(maximum))
         return self.fuse(torch.cat([robot, average, maximum], dim=1))
+
+
+class ContinuousSetActor(nn.Module):
+    """Standalone supervised actor: no RL policy, critic or replay object."""
+    def __init__(self, observation_space):
+        super().__init__()
+        self.observation_space=observation_space
+        self.features_extractor=SetEncoder(observation_space,features_dim=192)
+        self.mu=nn.Sequential(nn.Linear(192,256),nn.ReLU(),nn.Linear(256,256),
+                              nn.ReLU(),nn.Linear(256,2),nn.Tanh())
+        self.register_buffer('center',torch.tensor([.5,0.]))
+        self.register_buffer('scale',torch.tensor([.5,1.2]))
+
+    def forward(self, observation):
+        return self.center+self.scale*self.mu(self.features_extractor(observation))
+
+    def predict(self, observation, deterministic=True):
+        device=next(self.parameters()).device
+        with torch.no_grad():
+            batch={k:torch.as_tensor(v,device=device).unsqueeze(0) for k,v in observation.items()}
+            action=self(batch)[0].cpu().numpy()
+        return action,None

@@ -1,0 +1,16 @@
+{
+  "stage": "teacher_qualification",
+  "teacher": "cv",
+  "profile": "train_nonstationary",
+  "humans": 5,
+  "count": 200,
+  "success_gate": 0.95,
+  "collision_gate": 0.02,
+  "layout_seed_start": 74000000,
+  "test_case_start": 86000,
+  "planner_changed": false,
+  "existence": "observed=1, not entropy",
+  "risk_interface": "Gaussian moments, isotropic trace/2",
+  "parameters": "existing fitted GDBN, no refit or calibration",
+  "student_training_started": false
+}

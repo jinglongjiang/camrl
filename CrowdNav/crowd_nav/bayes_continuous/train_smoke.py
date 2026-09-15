@@ -1712,6 +1712,160 @@ def scratch_baseline_main():
         env.close()
 
 
+def bayes_il_collect_worker(task):
+    from crowd_nav.bayes_continuous.network import ContinuousSetActor
+    from crowd_nav.bayes_continuous.environment import transform_observation
+    params,case,layout,arm,checkpoint=task
+    torch.set_num_threads(1)
+    env=ActionHistory(BeliefEnv(Path(params),arm='full',seed=2407),route=True)
+    env.unwrapped.teacher_mode='gdbn'
+    actor=None
+    if checkpoint:
+        actor=ContinuousSetActor(env.observation_space)
+        actor.load_state_dict(torch.load(checkpoint,map_location='cpu',weights_only=True))
+        actor.eval()
+    obs,_=env.reset(options=dict(layout_seed=layout,test_case=case,profile='train_nonstationary'))
+    rows=[]
+    for _ in range(140):
+        label=env.unwrapped.expert_action()
+        action=label if actor is None else actor.predict(transform_observation(obs,arm))[0]
+        rows.append((obs,label.copy()))
+        obs,_,done,_,info=env.step(action)
+        if done:
+            record=dict(info['episode_result'],collector_arm=arm)
+            env.close();return record,rows
+    raise AssertionError('IL terminal contract')
+
+
+def bayes_il_evaluate(params, actor, arm, profile, scenario='baseline_circle',
+                      layout_start=78000000, case_start=89000):
+    from crowd_nav.bayes_continuous.environment import transform_observation
+    env=ActionHistory(BeliefEnv(params,arm='full',seed=2407,scenario=scenario,
+        training=profile!='heldout_nonstationary' and scenario=='baseline_circle'),route=True)
+    records=[]
+    for i in range(100):
+        obs,_=env.reset(options=dict(layout_seed=layout_start+i,test_case=case_start+i,profile=profile))
+        layout_hash=hashlib.sha256(np.asarray([[h.px,h.py,h.gx,h.gy,h.radius,h.v_pref]
+            for h in env.unwrapped.world.env.humans],dtype=np.float64).tobytes()).hexdigest()
+        for _ in range(140):
+            action=actor.predict(transform_observation(obs,arm))[0]
+            obs,_,done,_,info=env.step(action)
+            if done:
+                records.append(dict(info['episode_result'],layout_sha256=layout_hash));break
+    env.close()
+    return dict(success=sum(r['outcome']=='success' for r in records),
+                collision=sum(r['outcome']=='collision' for r in records),
+                timeout=sum(r['outcome']=='timeout' for r in records),records=records)
+
+
+def bayes_il_main():
+    import copy
+    from crowd_nav.bayes_continuous.network import ContinuousSetActor
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--params',type=Path,default=Path('repair_results/params'))
+    parser.add_argument('--teacher-gate',type=Path,required=True)
+    parser.add_argument('--out',type=Path,required=True)
+    args=parser.parse_args()
+    gate=json.loads((args.teacher_gate/'status.json').read_text())
+    teacher_protocol=json.loads((args.teacher_gate/'protocol.json').read_text())
+    if not gate.get('passed') or gate.get('completed')!=200:
+        raise ValueError('200-layout qualified teacher required before student training')
+    if teacher_protocol.get('teacher')!='gdbn' or teacher_protocol.get('profile')!='train_nonstationary':
+        raise ValueError('CV or different-profile qualification cannot unlock Bayes IL')
+    expected=hashlib.sha256((Path(__file__).parent/'teacher.py').read_bytes()).hexdigest()
+    if teacher_protocol.get('teacher_sha256')!=expected:
+        raise ValueError('Teacher adapter changed after qualification')
+    actual_params={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(args.params.glob('*.npz'))}
+    if teacher_protocol.get('params_sha256')!=actual_params:
+        raise ValueError('GDBN parameters changed after qualification')
+    args.out.mkdir(parents=True,exist_ok=False)
+    torch.set_num_threads(1);torch.manual_seed(2407)
+    arms=['no_belief','map','full']
+    protocol=dict(arms=arms,seed=2407,train_humans=5,profile='train_nonstationary',
+        demos=200,bc_updates=12000,dagger_rounds=5,rollouts_per_arm_per_round=100,
+        dagger_updates_per_round=6000,batch_size=256,learning_rate=.0003,
+        teacher='identical full-belief CEM function for all arms',
+        data_contract='union of all student-visited states; identical pooled labels and minibatch indices',
+        optimizer='Adam',rl=False,critic=False,network='SetEncoder192 + actor256/256',
+        checkpoint_selection='fixed final round, no density-based selection',results=[])
+    (args.out/'protocol.json').write_text(json.dumps(protocol,indent=2))
+    env=ActionHistory(BeliefEnv(args.params,arm='full'),route=True)
+    initial=ContinuousSetActor(env.observation_space);env.close()
+    models={arm:copy.deepcopy(initial).to('cuda') for arm in arms}
+    optimizers={arm:torch.optim.Adam(models[arm].parameters(),lr=.0003) for arm in arms}
+    permanent=[];rng=np.random.default_rng(2407)
+    for round_id in range(6):
+        if round_id==0:
+            tasks=[(str(args.params),90000+i,76000000+i,'full',None) for i in range(200)]
+        else:
+            tasks=[(str(args.params),91000+round_id*1000+i,77000000+round_id*1000+i,arm,
+                str(args.out/f'{arm}_round{round_id-1}.pt')) for arm in arms for i in range(100)]
+        collected=[];records=[]
+        with multiprocessing.get_context('spawn').Pool(6) as pool:
+            for record,rows in pool.imap_unordered(bayes_il_collect_worker,tasks):
+                records.append(record)
+                if round_id or record['outcome']=='success':
+                    collected.append((record,rows))
+                print('IL_COLLECT',round_id,len(records),flush=True)
+        collected.sort(key=lambda item:(item[0]['collector_arm'],item[0]['test_case']))
+        new_rows=[row for _,rows in collected for row in rows]
+        if not new_rows: raise ValueError('No valid expert data')
+        data=stack_obs([o for o,_ in new_rows]);labels=np.stack([a for _,a in new_rows])
+        np.savez_compressed(args.out/f'round{round_id}_labels.npz',**data,teacher_action=labels)
+        (args.out/f'round{round_id}_episodes.json').write_text(json.dumps(records,indent=2))
+        permanent.extend(new_rows)
+        observations=stack_obs([o for o,_ in permanent]);target=np.stack([a for _,a in permanent])
+        groups=[np.flatnonzero(target[:,1]<-.12),np.flatnonzero(np.abs(target[:,1])<=.12),
+                np.flatnonzero(target[:,1]>.12)]
+        if any(len(g)==0 for g in groups): raise ValueError('Missing turn direction in expert data')
+        updates=12000 if round_id==0 else 6000
+        losses={}
+        for update in range(updates):
+            indices=np.concatenate([rng.choice(g,n,replace=True) for g,n in zip(groups,[85,86,85])]);rng.shuffle(indices)
+            batch={k:torch.as_tensor(v[indices],device='cuda') for k,v in observations.items()}
+            expected=torch.as_tensor(target[indices],device='cuda')
+            for arm in arms:
+                model=models[arm];model.train()
+                x={k:v.clone() for k,v in batch.items()}
+                if arm=='no_belief':x['humans'][:,:,5:]=0
+                elif arm=='map':
+                    x['humans'][:,:,5:8]=torch.nn.functional.one_hot(x['humans'][:,:,5:8].argmax(-1),3).float()*x['mask'][:,:,None]
+                    x['humans'][:,:,8]=0
+                difference=(model(x)-expected)/torch.tensor([.5,1.2],device='cuda')
+                loss=(difference[:,0].square()+2*difference[:,1].square()).mean()
+                optimizers[arm].zero_grad();loss.backward();optimizers[arm].step()
+                losses[arm]=float(loss.detach())
+            if update%1000==999:print('IL_FIT',round_id,update+1,losses,flush=True)
+        results={}
+        for arm in arms:
+            models[arm].eval();torch.save(models[arm].state_dict(),args.out/f'{arm}_round{round_id}.pt')
+            results[arm]={profile:bayes_il_evaluate(args.params,models[arm],arm,profile)
+                for profile in ['nominal','train_nonstationary']}
+        (args.out/f'round{round_id}_evaluation.json').write_text(json.dumps(results,indent=2))
+        protocol['results'].append(dict(round=round_id,pool_steps=len(permanent),losses=losses,
+            scores={a:{p:{k:v for k,v in r.items() if k!='records'} for p,r in q.items()} for a,q in results.items()}))
+        (args.out/'status.json').write_text(json.dumps(protocol,indent=2))
+    protocol['stage']='development_complete'
+    protocol['full_passed']=all(results['full'][p]['success']>=90 for p in results['full'])
+    (args.out/'status.json').write_text(json.dumps(protocol,indent=2))
+    same=all([r['outcome'] for r in results['full'][p]['records']]==
+             [r['outcome'] for r in results[a][p]['records']]
+             for a in ['no_belief','map'] for p in results['full'])
+    if not protocol['full_passed'] or same:
+        protocol['stage']='stopped_development_gate'
+        protocol['identical_paired_outcomes']=same
+        (args.out/'status.json').write_text(json.dumps(protocol,indent=2));return
+    final={}
+    for index,(scenario,profile) in enumerate([
+        ('baseline_circle','nominal'),('baseline_circle','heldout_nonstationary'),
+        ('dense_circle','heldout_nonstationary'),('dense_square','heldout_nonstationary')]):
+        final[f'{scenario}_{profile}']={arm:bayes_il_evaluate(args.params,models[arm],arm,
+            profile,scenario,79000000+index*1000,98000+index*1000) for arm in arms}
+    (args.out/'final_evaluation.json').write_text(json.dumps(final,indent=2))
+    protocol['stage']='complete'
+    (args.out/'status.json').write_text(json.dumps(protocol,indent=2))
+
+
 def bayes_teacher_worker(task):
     import copy
     from dataclasses import replace
@@ -1771,6 +1925,8 @@ def bayes_teacher_gate_main():
         existence='observed=1, not entropy',risk_interface='Gaussian moments, isotropic trace/2',
         probability_event='physical_overlap; .50m geometric buffer retained separately',
         parameters='existing fitted GDBN, no refit or calibration',student_training_started=False)
+    protocol['teacher_sha256']=hashlib.sha256((Path(__file__).parent/'teacher.py').read_bytes()).hexdigest()
+    protocol['params_sha256']={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(args.params.glob('*.npz'))}
     (args.out/'protocol.json').write_text(json.dumps(protocol,indent=2))
     records=[]
     tasks=[(str(args.params),args.case_start+i,args.layout_start+i,args.teacher_mode) for i in range(args.count)]
@@ -1958,7 +2114,10 @@ def dagger_ppo_main():
 
 if __name__ == '__main__':
     import sys
-    if '--bayes-teacher-gate' in sys.argv:
+    if '--bayes-il' in sys.argv:
+        sys.argv.remove('--bayes-il')
+        bayes_il_main()
+    elif '--bayes-teacher-gate' in sys.argv:
         sys.argv.remove('--bayes-teacher-gate')
         bayes_teacher_gate_main()
     elif '--dagger-ppo-confirm' in sys.argv:
@@ -1982,5 +2141,8 @@ if __name__ == '__main__':
     elif '--online' in sys.argv:
         sys.argv.remove('--online')
         online_main()
-    else:
+    elif '--legacy-bc' in sys.argv:
+        sys.argv.remove('--legacy-bc')
         main()
+    else:
+        bayes_il_main()

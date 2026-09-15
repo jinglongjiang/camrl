@@ -374,6 +374,33 @@ class Contracts(unittest.TestCase):
 
 
 class GaussianTransferTests(unittest.TestCase):
+    def test_standalone_actor_has_no_critic_and_can_learn(self):
+        from crowd_nav.bayes_continuous.network import ContinuousSetActor
+        from crowd_nav.bayes_continuous.train_smoke import ActionHistory
+        env=ActionHistory(BeliefEnv(PARAMS,arm='full'),route=True)
+        obs,_=env.reset(seed=2407)
+        actor=ContinuousSetActor(env.observation_space)
+        self.assertFalse(hasattr(actor,'critic'))
+        self.assertFalse(hasattr(actor,'cost_critic'))
+        self.assertTrue(env.action_space.contains(actor.predict(obs)[0]))
+        batch={k:torch.as_tensor(v)[None] for k,v in obs.items()}
+        loss=actor(batch).square().sum();loss.backward()
+        self.assertTrue(all(p.grad is not None for p in actor.parameters()))
+        env.close()
+
+    def test_failed_teacher_gate_blocks_student_creation(self):
+        import tempfile,json,sys
+        from unittest.mock import patch
+        from pathlib import Path
+        from crowd_nav.bayes_continuous.train_smoke import bayes_il_main
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            (root/'status.json').write_text(json.dumps(dict(passed=False,completed=200)))
+            (root/'protocol.json').write_text(json.dumps(dict(teacher='gdbn',profile='train_nonstationary')))
+            with patch.object(sys,'argv',['test','--teacher-gate',str(root),'--out',str(root/'student')]):
+                with self.assertRaises(ValueError):bayes_il_main()
+            self.assertFalse((root/'student').exists())
+
     def test_teacher_margin_transfer_preserves_geometry(self):
         from dataclasses import fields, replace
         from crowd_nav.bayes_continuous.teacher import PlannerObservation,UnicycleCEMMPC,UnicycleConfig

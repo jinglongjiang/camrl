@@ -1,11 +1,31 @@
-# Continuous Bayesian Set RL: Repair Status
+# Bayesian Set Imitation Learning: Current Mainline
 
-Current entry is `train_smoke.py`. It owns teacher qualification, collection,
-five-human model refitting, BC-only evaluation, supervised critic warm-up and
-the gated online entry (`--online`). Do not create separate entry scripts for
-each stage. Only `teacher.py` and `algorithm.py` are added functional modules.
-The default stage now stops after BC evaluation, even on success. The frozen
-teacher qualification receipt is mandatory; the teacher is not re-tuned.
+Mainline: full GDBN teacher -> BC -> pooled DAgger -> standalone continuous
+SetEncoder actor. No RL, critic, safety replay or joint BC/RL objective is
+instantiated by `--bayes-il` (also the default entry).
+The network remains SetEncoder192 + actor256/256, robot10, continuous v/omega.
+Teacher qualification uses `--bayes-teacher-gate`; a passed 200-layout GDBN
+receipt with matching teacher/parameter hashes is required before training.
+The latest teacher remains UNQUALIFIED (183/200 success, 0 collisions), so
+three-arm training and final density testing have NOT been run.
+
+Teacher moments use the existing GDBN model; existing CEM risk projects position
+covariance to trace/2. This is NOT full multimodal risk integration. Observed
+existence is one, never mode entropy. The .50m geometric buffer is retained
+separately from the physical collision probability radius.
+
+All arms train on the same pooled full-observation states and expert labels.
+DAgger collectors execute their respective students; the union is shared
+before masking each student's belief inputs. Identical layouts do not imply
+identical visited states. The planned bounded budget is 200 demos, 12000 BC
+updates, five rounds of 100 rollouts per arm and 6000 updates per round.
+Those student stages are implemented but not end-to-end qualified or executed.
+
+Historical RL/BC commands and results below are retained for reproducibility,
+not the mainline. Historical default BC now requires `--legacy-bc`; existing
+explicit TD3/PPO diagnostic flags remain available but are not auto-started.
+
+## Historical Repair Notes
 
 ## Previous-Action BC Repair
 
