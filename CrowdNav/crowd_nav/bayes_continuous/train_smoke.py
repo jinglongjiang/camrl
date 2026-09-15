@@ -157,9 +157,21 @@ def supervised_warmup(model, trajectories, updates=1000, risk_train=None, risk_v
     with torch.no_grad():
         initial = [float(losses(valid, np.arange(len(valid[1])))[0]),
                    float(losses(safety_valid, np.arange(len(safety_valid[1])))[1])]
+    pos_idx = np.flatnonzero(safety_train[3].ravel() > .5)
+    neg_idx = np.flatnonzero(safety_train[3].ravel() < .5)
+    if not len(pos_idx) or not len(neg_idx):
+        raise ValueError('Balanced cost warm-up requires both transition classes')
     for _ in range(updates):
         reward_loss = losses(train, rng.integers(len(train[1]), size=128))[0]
-        cost_loss = losses(safety_train, rng.integers(len(safety_train[1]), size=128))[1]
+        indices = np.concatenate([rng.choice(pos_idx, 64, replace=True),
+                                  rng.choice(neg_idx, 64, replace=True)])
+        rng.shuffle(indices)
+        obs, act, _, costs = safety_train
+        batch_obs = obs_as_tensor({k:v[indices] for k,v in obs.items()}, model.device)
+        batch_act = torch.as_tensor(act[indices], device=model.device)
+        batch_costs = torch.as_tensor(costs[indices], device=model.device)
+        cost_loss = sum(torch.nn.functional.binary_cross_entropy_with_logits(q, batch_costs)
+                        for q in model.cost_critic(batch_obs, batch_act))
         for optimizer, loss in [(model.critic.optimizer, reward_loss), (model.cost_optimizer, cost_loss)]:
             optimizer.zero_grad()
             loss.backward()
@@ -185,6 +197,8 @@ def supervised_warmup(model, trajectories, updates=1000, risk_train=None, risk_v
     model.cost_target.load_state_dict(model.cost_critic.state_dict())
     model.warmup_updates = updates
     model.critic_validation = dict(before=initial, after=final, heldout_episodes=20,
+                                  cost_training='64 positive + 64 negative with replacement; twin BCE logits',
+                                  cost_validation='unchanged full validation transitions; twin sigmoid MSE sum',
                                   actor_unchanged=True, safety_metrics=metrics,
                                   safety_episode_counts={name:dict(
                                       positive=sum(any(r['collision_cost'] for r in ep) for ep in split),
