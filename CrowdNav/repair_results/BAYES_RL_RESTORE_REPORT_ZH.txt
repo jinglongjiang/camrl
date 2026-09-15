@@ -1,0 +1,120 @@
+贝叶斯RL主线恢复与最小训练验收
+日期：2026-09-15
+
+一、结论
+已完成清理、架构入口调整、随机种子修复、27项测试及三臂最小PPO训练。
+当前是“IL初始化 + Bayesian belief-conditioned PPO”，不是纯模仿学习。
+修正版每臂4096步全部完成，无回滚，无Cost/TD3/Mamba参与主训练。
+FULL最终普通场景96成功/4碰撞，非平稳92成功/8碰撞，各100回合。
+链路能运行且未灾难性退化，但没有证明RL增益，更没有证明Bayes不可替代。
+这不是完美导航结果，也不是正式多种子论文实验。
+
+二、保留的最小结构
+观测历史 -> 固定参数GDBN递归后验 -> 每人belief token -> SetEncoder192
+-> 连续Gaussian Actor -> (v, omega)。
+PPO训练另有独立状态价值V网络，不是动作Q或安全Critic。
+Actor隐藏层[256,256]，V隐藏层[96,96]，robot10/human9不变。
+动作v在[0,1]，omega在[-1.2,1.2]；上一实际动作与route EMA保持不变。
+机器人不可见于行人，B_action仍为0；不虚构机器人动作改变行人动力学。
+
+训练顺序：已有CEM -> 已完成BC/DAgger -> PPO初始化 -> 环境奖励驱动PPO。
+本次不重复训练BC/DAgger；复用round16对应的PPO initial.zip。
+该文件在历史PPO开始前保存，确定性均值已与round16验过等价。
+本次只复制Actor及独立V编码器初始化，不复制旧V头或optimizer。
+Bayes-aware教师资格不再是RL入口条件，老师只负责初始导航能力。
+没有Cost Critic、安全回放、TD3、BC/RL联合损失、Mamba或80动作枚举。
+
+旧实验入口必须显式加--legacy-experiment，默认入口已改为PPO。
+为复现历史证据，旧实验源代码仍保留；并非把所有旧函数物理抹除。
+主路径已解除algorithm.py的顶层导入，独立进程确认其没有被加载。
+没有创建新的训练模块或网络文件，修改现有train_smoke.py/tests.py/README.md。
+
+三、清理范围
+先把4090所有repair_results同步本地，再逐文件SHA256核对旧二进制。
+97个已归档的旧模型/回放远程重复副本被删除，共504321311字节，约481MiB。
+保留远程round16、PPO初始化、历史PPO最终模型、scratch最终模型及GDBN参数。
+旧原始数据、旧检查点与失败报告完整保留在本地，不是毁掉负结果。
+另清理远程8MiB归档日志，APT下载缓存；pip/Conda没有更多可回收包。
+本地清理约660KiB pip缓存及本项目旧pyc；未删除Conda环境和其它用户任务。
+结束时4090系统盘可用1503301632字节，约1.40GiB，仍然不宽裕。
+实际测试在4090服务器的CPU执行，三个小模型并发；没有占用用户的GPU训练任务。
+
+四、修复与验收
+1. 主入口可选no_belief/map/full，默认full，训练固定train_nonstationary。
+2. 三臂初始Actor/V参数逐张量一致；belief输入权重清零，但保持可训练。
+   保证加入belief不在第0步破坏导航，而不是再次把belief永久断开。
+3. 单元测试证实清零后belief列梯度非零，FULL输入能进入Actor训练。
+4. 修复新训练包装器先抽布局后reset seed的问题；重复reset(seed)逐位一致。
+5. 修复训练回合汇总，把初始化等价性探针排除，只统计真正PPO训练回合。
+6. 修正版27项测试通过；模型参数均有限、保存加载正常，主路径没有Cost模块。
+
+五、冻结的最小实验协议
+三臂同一IL初始化、seed2407、同一reward、同一网络、同一PPO设置。
+训练：5人baseline_circle，train_nonstationary，4096步=2个2048 rollout。
+训练layout seed范围[80000000,81000000)，开发81000000..81000099。
+开发每次100 nominal及100 train_nonstationary；test_case99000..99099。
+没有使用heldout_nonstationary，也没有使用10/20人选择模型。
+PPO：lr3e-5，batch256，n_epochs最多3，gamma.99，GAE.95，clip.1，
+ent_coef0，target_kl.01；初始物理动作std=[.03,.06]。
+Gaussian均值有tanh边界，但分布不是squashed Gaussian；采样按SB3裁剪。
+预设退化门：nominal成功数<90或非平稳比初始减少超过10才触发单次fallback。
+fallback为恢复初始化、冻结Actor编码器、lr1e-5；三臂本次均未触发。
+最终固定用4096步检查点，不选2048步中最好者。
+这些是开发门，不是安全概率证明或统计等价性检验。
+
+六、修正版结果（成功/碰撞/超时，每项100回合）
+                         nominal确定性    非平稳确定性    nominal随机执行
+共同IL初始化               96/4/0          93/7/0          99/1/0
+No-Belief 4096              96/4/0          92/8/0          97/2/1
+MAP 4096                   97/3/0          91/9/0          98/2/0
+FULL 4096                  96/4/0          92/8/0          95/4/1
+
+非平稳平均环境return：初始化.823132；No-Belief .809256；MAP .793190；FULL .808842。
+FULL未超过初始化；与No-Belief成功率相同，但100个配对case中2个结局不同。
+FULL-MAP成功率差+1pp，描述性paired bootstrap95%区间[-3,+6]pp。
+FULL-No-Belief差0pp，区间[-3,+3]pp；不能据此证明二者等价。
+这些区间只反映单seed开发case波动，不代表训练seed不确定性。
+所有已记录的训练及开发回合均无越界；三臂开发case逐一配对且每组100个不同seed。
+
+修正版训练回合：
+FULL：85完整回合，75成功/10碰撞，共4085步，剩余11步未完回合。
+MAP：85完整回合，76成功/9碰撞，共4051步，剩余45步未完回合。
+No-Belief：84完整回合，75成功/9碰撞，共4096步。
+三臂各耗时约238、240、238秒，包含训练与全部开发评估。
+on-policy访问轨迹会不同，同seed并不意味着三臂实际训练transition相同。
+
+七、到底有没有发生RL学习
+三臂policy state_dict均43个张量发生变化，参数全为有限值。
+FULL的Actor belief列最大绝对权重从0变为0.000161876；MAP为0.000117583；No-Belief仍0。
+修正版397个固定开发轨迹状态的只读干预：FULL输入belief清零后，
+速度最大变化.001911m/s，omega最大变化.009023rad/s；平均分别.000217/.001204。
+V值最大变化.000563；相对IL初始化，Actor最大变化.018643m/s、.082943rad/s。
+说明belief通路未断开，也实际影响输出，但影响较小，并非收益证据。
+
+尤其注意：target_kl提前停止了大部分epoch。
+FULL/No-Belief实际optimizer各6次，MAP4次，不是数千次梯度更新。
+三臂用相同停止规则，但实际optimizer次数不相同；不能声称实际更新次数完全一致。
+因此这只能证明保守最小更新的工程稳定，不能推出长训练稳定或RL价值已经验证。
+
+八、保留的初轮与限制
+首次三臂smoke也完成了4096步，但包装器seed契约随后修复，因此只作为历史调试记录。
+初轮FULL/No-Belief/MAP非平稳成功数分别91/90/92，未丢弃；不是最终验收版本。
+修正版重跑由发现seed问题触发，不是挑成绩更好的一轮；新旧报告都保留。
+本次没有重新标定GDBN，没有验证其mode与真实行为切换的语义对应。
+没有正式多seed训练、独立最终测试或密度泛化测试。
+“贝叶斯RL”这里具体指belief-conditioned RL，不是对神经网络权重做Bayesian posterior。
+目前完成了用户要求的简洁结构与最小训练测试，没有完成“Bayes不可替代”的论文论证。
+
+九、文件与复现
+本地根：/home/abc/workspace/bayes_set_continuous/CrowdNav
+远程根：/root/continuous_repair_20260914/CrowdNav
+最终目录：repair_results/belief_ppo_{no_belief,map,full}_verified_20260915
+初轮目录：repair_results/belief_ppo_{no_belief,map,full}_smoke_20260915
+每目录保存initial.zip、2048/4096检查点、逐case JSON、status.json、PPO CSV日志。
+本地源提交ce2268c，GitHub源提交836fc11，tree相同；GitHub通过连接器发布。
+实际train_smoke.py SHA256：da43d5c97d147a407f19895be3a5c2eebdd5de98e7595622222cc50c0d295d8c。
+源初始化SHA256：f1188379822d94dbd1e44ef096fa7aa84529ebc9343bb2c248c1c88f56a2a4cc。
+运行命令：
+python -m crowd_nav.bayes_continuous.train_smoke --arm full --out repair_results/new_run
+另两臂只替换--arm；参数默认train_nonstationary与2 stages。
+全部本轮训练已结束，没有遗留后台训练。

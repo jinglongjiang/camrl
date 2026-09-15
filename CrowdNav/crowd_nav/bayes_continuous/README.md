@@ -28,6 +28,13 @@ Training layout seeds: [80000000,81000000). Development: 81000000..81000099,
 The source PPO `initial.zip` predates all RL updates and exactly reproduces the
 round16 DAgger mean; source optimizer/value weights are not transferred.
 
+Verified smoke (2026-09-15): all three arms completed 4096 environment steps.
+Final nominal successes: No-Belief96, MAP97, FULL96 out of100. Nonstationary:
+No-Belief92, MAP91, FULL92 (initial93). No independent Bayesian/RL benefit is
+established. KL early stopping allowed only 6/4/6 optimizer steps, respectively.
+This is a minimal wiring/stability check, not a long-training qualification.
+See `repair_results/BAYES_RL_RESTORE_REPORT_ZH.txt` for complete results and limits.
+
 ## Archived Pure-IL Detour
 
 Former proposal: full GDBN teacher -> BC -> pooled DAgger -> standalone continuous
