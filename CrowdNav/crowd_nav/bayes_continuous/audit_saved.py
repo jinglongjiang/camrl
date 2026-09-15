@@ -51,7 +51,12 @@ def information_episode(task):
     torch.set_num_threads(1)
     env=ActionHistory(BeliefEnv(params,arm='full'),route=True)
     policy=PPO.load(source,device='cpu')
-    obs,_=env.reset(options=dict(layout_seed=layout,test_case=100000+index,profile='train_nonstationary'))
+    case_start=dict(train=110000,validation=120000,audit=130000,smoke=150000)[split]
+    obs,_=env.reset(options=dict(layout_seed=layout,test_case=case_start+index,profile='train_nonstationary'))
+    world=env.unwrapped.world
+    layout_hash=hashlib.sha256(np.asarray([[h.px,h.py,h.gx,h.gy,h.radius,h.v_pref]
+        for h in world.env.humans]+[[world.robot.px,world.robot.py,world.robot.gx,
+        world.robot.gy,world.robot.radius,world.robot.theta]],dtype=np.float64).tobytes()).hexdigest()
     frames=[]
     for step in range(141):
         humans=env.unwrapped.world.env.humans
@@ -82,7 +87,7 @@ def information_episode(task):
                 y[j,2:]=rotation@(future[2:]-current[2:])/2
                 valid[j]=1
             rows.append((x,oracle,y.ravel(),valid,t,person))
-    result=dict(info['episode_result'],split=split,frames=len(frames),
+    result=dict(info['episode_result'],split=split,layout_sha256=layout_hash,frames=len(frames),
                 events=dict(env.unwrapped.world.scheduler.counts))
     env.close()
     return result,frames,rows
@@ -95,6 +100,7 @@ def information_audit(args):
     source=Path('repair_results/dagger_ppo_nominal_20260915/initial.zip')
     protocol=dict(counts=dict(train=400,validation=100,audit=200),
         seed_starts=dict(train=82000000,validation=83000000,audit=84000000),
+        case_starts=dict(train=110000,validation=120000,audit=130000),
         profile='train_nonstationary',humans=5,horizons_steps=[1,2,4,8],dt=.25,
         arms=['current','history','map','full','oracle'],
         neural_seeds=[2407,4807,7207],updates=6000,batch=512,lr=.001,
@@ -109,12 +115,15 @@ def information_audit(args):
         frozen_params={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in args.params.glob('*.npz')},
         no_ppo_training=True,no_input_change=True,no_formal_heldout=True)
     (root/'protocol.json').write_text(json.dumps(protocol,indent=2))
-    started=time.time();data={}
+    started=time.time();data={};seen_layouts=set()
     for split,count in protocol['counts'].items():
         records=[];xs=[];os=[];ys=[];ms=[];ids=[];steps=[];persons=[]
         tasks=[(str(args.params),str(source),split,i,protocol['seed_starts'][split]+i) for i in range(count)]
         with multiprocessing.get_context('spawn').Pool(6) as pool:
             for record,frames,rows in pool.imap(information_episode,tasks):
+                if record['layout_sha256'] in seen_layouts:
+                    raise AssertionError('Physical layout duplication: abort before predictor training')
+                seen_layouts.add(record['layout_sha256'])
                 ep=len(records);records.append(record)
                 for x,o,y,m,t,person in rows:
                     xs.append(x);os.append(o);ys.append(y);ms.append(m);ids.append(ep);steps.append(t);persons.append(person)
