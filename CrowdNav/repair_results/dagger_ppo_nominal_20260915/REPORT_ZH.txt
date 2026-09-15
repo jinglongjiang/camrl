@@ -1,0 +1,103 @@
+DAgger -> PPO：微调及500布局配对确认报告
+日期：2026-09-15
+
+一、结论
+本次保守PPO微调没有毁掉已经学会的导航能力，工程稳定性测试通过。
+但新500布局上没有观察到可靠收益，不应把PPO替换成最终发布策略。
+保持原DAgger为当前部署基线；PPO保留为已验证可接入的候选微调方式。
+本次未测试非平稳适应、MAP/FULL、密度泛化或贝叶斯必要性。
+
+二、实际执行了什么
+1. 在原network.py、train_smoke.py、tests.py修改，没有新建算法目录。
+2. 从round16.zip读取Actor，不读取旧Q、Cost、replay或optimizer作为PPO初始化。
+3. 保留原SetEncoder192和两层256维策略网络，新增物理动作均值映射：
+   mu_physical = center + scale * tanh(preactivation)。
+   这不是盲拷TD3动作头，也不是重新BC拟合；它显式复现原Actor控制函数。
+4. PPO是原生SB3 PPO更新；策略采用自定义有界均值的Gaussian head。
+   Gaussian噪声在物理动作空间采样，沿用SB3动作裁剪和log-prob，
+   不是tanh-squashed Gaussian；不能把它称为完全默认的PPO policy。
+5. value encoder由Actor encoder复制初始化，之后独立训练；V head随机初始化。
+6. No-Belief、5人baseline_circle、nominal、10维robot输入和原reward不变。
+7. 没有BC/DAgger联合损失、Cost Critic、策略锚定、Mamba或新的Bayes模块。
+
+三、初始化与算法契约
+原始round16 SHA256：
+634e8106713c0c316afc77bf345615d3a6a101789f82f182853356ab57dbc086
+沿10个真实回合前缀检查原Actor/PPO均值动作，最大误差1.78814e-7；
+保存后再加载PPO，测试动作逐位一致。物理映射、Gaussian log-prob测试通过。
+既有20项测试及新增1项测试，共21项通过。
+初始物理动作标准差：[0.03 m/s, 0.06 rad/s]。
+初始确定性评估：98成功、2碰撞、0超时。
+初始随机策略评估：95成功、5碰撞、0超时。
+两种执行方式均达到先行90%门槛，才开始RL。
+
+四、PPO微调协议
+seed2407，CPU执行，10240步（5个2048步rollout）。
+lr3e-5，clip_range0.1，batch256，n_epochs上限3，gamma0.99，
+GAE0.95，ent_coef0，target_kl0.01，全部Actor参数允许训练。
+每2048步在固定100个nominal开发case上评估。
+SR<90%才允许从初始策略重试一次，冻结Actor SetEncoder并降lr至1e-5。
+实际未触发回滚或fallback，原DAgger权重文件未修改。
+
+开发曲线（成功/碰撞/超时）：
+初始确定性       98/2/0
+2048步           99/1/0
+4096步           99/1/0
+6144步           97/3/0
+8192步          100/0/0
+10240步          99/1/0
+最终随机执行     96/4/0
+微调加开发评估耗时272.94秒，不含后续500布局确认。
+
+实际更新核验：最终checkpoint为10240步；SB3 _n_updates=6（epoch计数），
+optimizer实际step=32。KL早停减少了更新，不能写成完整执行15轮epoch。
+43个state_dict张量发生变化，Actor encoder最大参数变化0.000623085。
+最终标准差[0.0300020,0.0600325]，因此不是“完全没更新所以不崩”。
+但这依然是很保守、很短的微调，不能外推到长训练稳定性。
+
+五、500布局独立配对确认
+训练完成后固定最后一个checkpoint attempt0_10240.zip，不选8192步最高分。
+只比较initial.zip与最终checkpoint，均确定性执行，各500回合。
+layout_seed73000000..73000499；test_case85000..85499。
+没有在这500布局上继续训练、选择checkpoint或调参。
+两臂500个layout_sha256逐一一致，500个物理布局互异，均零越界。
+
+                        微调前          微调后
+成功                    488 (97.6%)     487 (97.4%)
+碰撞                     10 (2.0%)       11 (2.2%)
+超时                      2 (0.4%)        2 (0.4%)
+平均环境总回报           0.894200        0.890484
+成功回合平均耗时/秒     12.223873       12.278747
+
+配对差（后-前），按布局bootstrap10000次，seed2407：
+成功率 -0.2个百分点，95%区间[-1.2,+0.8]个百分点。
+碰撞率 +0.2个百分点，95%区间[-0.8,+1.2]个百分点。
+平均总回报 -0.003716，95%区间[-0.019183,+0.011416]。
+3局从失败变成功，4局从成功变失败。
+共同成功的484局耗时变化+0.0677秒，95%区间[-0.0170,+0.1565]秒。
+时间比较条件于共同成功子集，不能独立代表整体效率。
+这些结果没有显示可靠收益；不能以“不显著”宣称两者严格等效。
+
+六、解释与边界
+1. 本次否定了“接任何RL都会立即破坏DAgger”的绝对判断。
+2. 没有证明PPO优于TD3：初始化、探索尺度和更新强度也不同。
+3. 没有证明RL已经有必要保留：新500布局安全与通行指标均无可靠改善。
+4. 本次没有重新做PPO均值的BC/DAgger，而采用经验证的函数转换，
+   因而不能将结果冒充“全新PPO从示范独立训练也已通过”。
+5. 非平稳任务与Bayes信息价值仍未验证，不把nominal稳定性当论文创新。
+6. 单训练种子；500个布局不能替代多训练种子的稳定性确认。
+7. 当前训练入口没有归档全部逐步训练transition；保留了checkpoint、
+   optimizer、开发逐回合、确认逐回合及CSV。不能宣称已保存全部训练轨迹。
+
+七、文件与复现
+源代码提交1584161；500布局确认代码1d10829。
+训练命令：
+python -m crowd_nav.bayes_continuous.train_smoke --dagger-ppo --out repair_results/dagger_ppo_nominal_20260915
+确认命令：
+python -m crowd_nav.bayes_continuous.train_smoke --dagger-ppo-confirm --stages repair_results/dagger_ppo_nominal_20260915
+需要同版本代码、SB3 2.7.1、repair_results/params和原round16.zip。
+目录必须不存在；复现时另指定输出目录，避免覆盖证据。
+远程根目录/root/continuous_repair_20260914/CrowdNav。
+本地根目录/home/abc/workspace/bayes_set_continuous/CrowdNav。
+模型、status、开发JSON、confirmation500的protocol/result/两臂逐回合JSON均保留。
+当前没有后续训练任务启动。

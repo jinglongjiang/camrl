@@ -1,0 +1,24 @@
+{
+  "count": 500,
+  "layout_seed_start": 73000000,
+  "test_case_start": 85000,
+  "candidate": "attempt0_10240",
+  "selection": "last budget checkpoint, not best development score",
+  "no_retraining": true,
+  "paired": true,
+  "outcomes": {
+    "initial": {
+      "success": 488,
+      "collision": 10,
+      "timeout": 2,
+      "mean_return": 0.8942002374601131
+    },
+    "final": {
+      "success": 487,
+      "collision": 11,
+      "timeout": 2,
+      "mean_return": 0.8904842141074203
+    }
+  },
+  "status": "complete"
+}

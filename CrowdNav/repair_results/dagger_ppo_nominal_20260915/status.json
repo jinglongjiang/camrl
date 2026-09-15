@@ -1,0 +1,86 @@
+{
+  "status": "complete_stable",
+  "arm": "no_belief",
+  "profile": "nominal",
+  "seed": 2407,
+  "requested_steps_per_attempt": 10240,
+  "max_attempts": 2,
+  "reward_changed": false,
+  "initialization": "exact deterministic function conversion, no new BC fit",
+  "distribution": "physical Gaussian, tanh-bounded mean, ordinary SB3 action clipping",
+  "initial_std": [
+    0.03,
+    0.06
+  ],
+  "evaluations": [
+    {
+      "tag": "initial_deterministic",
+      "deterministic": true,
+      "success": 98,
+      "collision": 2,
+      "timeout": 0,
+      "mean_return": 0.9023654801127597
+    },
+    {
+      "tag": "initial_stochastic",
+      "deterministic": false,
+      "success": 95,
+      "collision": 5,
+      "timeout": 0,
+      "mean_return": 0.8569201955419724
+    },
+    {
+      "tag": "attempt0_2048",
+      "deterministic": true,
+      "success": 99,
+      "collision": 1,
+      "timeout": 0,
+      "mean_return": 0.9170263386190386
+    },
+    {
+      "tag": "attempt0_4096",
+      "deterministic": true,
+      "success": 99,
+      "collision": 1,
+      "timeout": 0,
+      "mean_return": 0.9158713447615585
+    },
+    {
+      "tag": "attempt0_6144",
+      "deterministic": true,
+      "success": 97,
+      "collision": 3,
+      "timeout": 0,
+      "mean_return": 0.8888805561113134
+    },
+    {
+      "tag": "attempt0_8192",
+      "deterministic": true,
+      "success": 100,
+      "collision": 0,
+      "timeout": 0,
+      "mean_return": 0.9297079146196459
+    },
+    {
+      "tag": "attempt0_10240",
+      "deterministic": true,
+      "success": 99,
+      "collision": 1,
+      "timeout": 0,
+      "mean_return": 0.9171763183939003
+    },
+    {
+      "tag": "attempt0_final_stochastic",
+      "deterministic": false,
+      "success": 96,
+      "collision": 4,
+      "timeout": 0,
+      "mean_return": 0.8738177270323352
+    }
+  ],
+  "single_seed_development_only": true,
+  "source_sha256": "634e8106713c0c316afc77bf345615d3a6a101789f82f182853356ab57dbc086",
+  "mean_conversion_max_error": 1.7881393432617188e-07,
+  "elapsed_seconds": 272.9378550052643,
+  "candidate": "attempt0_10240"
+}
