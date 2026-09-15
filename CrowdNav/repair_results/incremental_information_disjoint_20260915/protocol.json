@@ -1,0 +1,57 @@
+{
+  "counts": {
+    "train": 400,
+    "validation": 100,
+    "audit": 200
+  },
+  "seed_starts": {
+    "train": 82000000,
+    "validation": 83000000,
+    "audit": 84000000
+  },
+  "case_starts": {
+    "train": 110000,
+    "validation": 120000,
+    "audit": 130000
+  },
+  "profile": "train_nonstationary",
+  "humans": 5,
+  "horizons_steps": [
+    1,
+    2,
+    4,
+    8
+  ],
+  "dt": 0.25,
+  "arms": [
+    "current",
+    "history",
+    "map",
+    "full",
+    "oracle"
+  ],
+  "neural_seeds": [
+    2407,
+    4807,
+    7207
+  ],
+  "updates": 6000,
+  "batch": 512,
+  "lr": 0.001,
+  "predictor": "180-128-128-32: diagonal Gaussian residual mean/log-std",
+  "checkpoint_selection": "lowest validation masked NLL, every 1000 updates",
+  "primary": "mean episode Gaussian NLL, horizons 4/8, averaged across three predictor seeds",
+  "gate": "FULL gain >= .02 nats/dimension and simultaneous 98.333% bootstrap lower bound > 0 vs Current/History/MAP; >=2/3 seed directions positive",
+  "positive_control": "Oracle current event type/remaining/strength, never available to policy",
+  "terminal_censoring": "per-horizon mask; no post-terminal invented labels",
+  "initialization_source_sha256": "f1188379822d94dbd1e44ef096fa7aa84529ebc9343bb2c248c1c88f56a2a4cc",
+  "audit_code_sha256": "856248d624ffb056549eeb1b72124f9ceef996a923c89f00c0edc88d3e49cdc6",
+  "frozen_params": {
+    "action_model.npz": "72af13a25f4bec8e5065af26e3e751d9a1509cc2d5ec029f4f593567aea0c4dc",
+    "gdbn.npz": "d53d76f13595e79c420574801d44cb1b8e3e9fbf158e4414ab7ce918c13ca08b",
+    "gng.npz": "ae60e3a315f0be40915e38858aa545c17272d751e184a0a7741fa7bb17128c31"
+  },
+  "no_ppo_training": true,
+  "no_input_change": true,
+  "no_formal_heldout": true
+}

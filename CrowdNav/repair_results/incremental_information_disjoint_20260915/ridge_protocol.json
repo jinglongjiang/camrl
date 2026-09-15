@@ -1,0 +1,22 @@
+{
+  "reason": "Cross-check Gaussian variance overfitting, not rescue a failed primary gate",
+  "arms": [
+    "current",
+    "history",
+    "map",
+    "full",
+    "oracle"
+  ],
+  "alpha": [
+    0.0001,
+    0.001,
+    0.01,
+    0.1,
+    1.0
+  ],
+  "selection": "minimum validation standardized masked MSE",
+  "model": "same 180 inputs plus intercept, linear residual predictor",
+  "predictor_training": "train split only",
+  "variance_calibration": "validation split only",
+  "original_gate_unchanged": true
+}

@@ -217,6 +217,57 @@ def information_audit(args):
     (root/'summary.json').write_text(json.dumps(summary,indent=2));print(json.dumps(summary),flush=True)
 
 
+def information_ridge_audit(root):
+    """Secondary fixed linear mean probe; does not replace the frozen NLL gate."""
+    protocol=dict(reason='Cross-check Gaussian variance overfitting, not rescue a failed primary gate',
+        arms=['current','history','map','full','oracle'],
+        alpha=[.0001,.001,.01,.1,1.],selection='minimum validation standardized masked MSE',
+        model='same 180 inputs plus intercept, linear residual predictor',
+        predictor_training='train split only',variance_calibration='validation split only',
+        original_gate_unchanged=True)
+    if (root/'ridge_results.json').exists():raise ValueError('Do not overwrite a completed secondary audit')
+    (root/'ridge_protocol.json').write_text(json.dumps(protocol,indent=2))
+    data={s:dict(np.load(root/f'{s}_features.npz')) for s in ['train','validation','audit']}
+    ym=np.zeros(16);ys=np.ones(16)
+    for h in range(4):
+        y=data['train']['y'][data['train']['mask'][:,h]>0,h*4:h*4+4]
+        ym[h*4:h*4+4]=y.mean(0);ys[h*4:h*4+4]=np.maximum(y.std(0),.02)
+    results={}
+    for arm in protocol['arms']:
+        raw={s:information_arm(d['x'],d['oracle'],arm).astype(np.float64) for s,d in data.items()}
+        mean=raw['train'].mean(0);scale=np.maximum(raw['train'].std(0),.01)
+        x={s:np.column_stack([(v-mean)/scale,np.ones(len(v))]) for s,v in raw.items()}
+        y={s:(d['y']-ym)/ys for s,d in data.items()}
+        grams=[];cross=[]
+        for h in range(4):
+            mask=data['train']['mask'][:,h]>0;a=x['train'][mask];b=y['train'][mask,h*4:h*4+4]
+            grams.append(a.T@a/len(a));cross.append(a.T@b/len(a))
+        best=float('inf');best_beta=None;curve=[]
+        for alpha in protocol['alpha']:
+            penalty=np.eye(181)*alpha;penalty[-1,-1]=0
+            beta=np.concatenate([np.linalg.solve(g+penalty,c) for g,c in zip(grams,cross)],axis=1)
+            error=(x['validation']@beta-y['validation']).reshape(-1,4,4)
+            mask=data['validation']['mask'];loss=float((np.mean(error**2,axis=-1)*mask).sum()/mask.sum())
+            curve.append([alpha,loss])
+            if loss<best:best=loss;best_beta=beta;chosen=alpha
+        calibration=(x['validation']@best_beta-y['validation']).reshape(-1,4,4)
+        vmask=data['validation']['mask'][:,:,None]
+        variance=np.maximum((calibration**2*vmask).sum(0)/vmask.sum(0),1e-4)
+        normalized_error=(x['audit']@best_beta-y['audit']).reshape(-1,4,4)
+        nll=(.5*normalized_error**2/variance+.5*np.log(2*np.pi*variance)).mean(-1)
+        error=normalized_error*ys.reshape(1,4,4)
+        position=np.linalg.norm(error[:,:,:2],axis=-1)*[.5,1.,2.,4.]
+        mask=data['audit']['mask'];episode=data['audit']['episode']
+        ep_position=np.stack([(position[episode==e]*mask[episode==e]).sum(0)/mask[episode==e].sum(0) for e in range(200)])
+        results[arm]=dict(alpha=chosen,validation_curve=curve,
+            position_error=((position*mask).sum(0)/mask.sum(0)).tolist(),
+            nll=((nll*mask).sum(0)/mask.sum(0)).tolist())
+        np.savez_compressed(root/f'ridge_{arm}.npz',beta=best_beta,xmean=mean,xscale=scale,
+            ymean=ym,yscale=ys,variance=variance,episode_position=ep_position,nll=nll)
+        print('RIDGE',arm,results[arm],flush=True)
+    (root/'ridge_results.json').write_text(json.dumps(results,indent=2))
+
+
 def audit_dagger(folder, params):
     from crowd_nav.bayes_continuous.train_smoke import ActionHistory, dagger_artifact
     result = json.loads((folder/'results.json').read_text())
@@ -492,7 +543,11 @@ def main():
     parser.add_argument('--dagger-diagnose', action='store_true')
     parser.add_argument('--original-collection', type=Path)
     parser.add_argument('--information-audit', action='store_true')
+    parser.add_argument('--information-ridge', action='store_true')
     args = parser.parse_args()
+    if args.information_ridge:
+        information_ridge_audit(args.results)
+        return
     if args.teacher_runs:
         audit_teachers(args.teacher_runs, args.results)
         return
