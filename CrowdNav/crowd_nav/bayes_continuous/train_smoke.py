@@ -1712,9 +1712,140 @@ def scratch_baseline_main():
         env.close()
 
 
+def dagger_ppo_main():
+    """Finite nominal PPO transfer test with exact physical-mean conversion."""
+    import copy
+    import random
+    import time
+    import traceback
+    from stable_baselines3 import PPO
+    from stable_baselines3.common.logger import configure
+    from crowd_nav.bayes_continuous.network import DaggerGaussianPolicy
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--params', type=Path, default=Path('repair_results/params'))
+    parser.add_argument('--source', type=Path, default=Path('repair_results/student_dagger_coverage_20260915/round16.zip'))
+    parser.add_argument('--out', type=Path, required=True)
+    args = parser.parse_args()
+    args.out.mkdir(parents=True, exist_ok=False)
+    torch.set_num_threads(1)
+    started = time.time()
+    report = dict(status='initializing', arm='no_belief', profile='nominal', seed=2407,
+        requested_steps_per_attempt=10240, max_attempts=2, reward_changed=False,
+        initialization='exact deterministic function conversion, no new BC fit',
+        distribution='physical Gaussian, tanh-bounded mean, ordinary SB3 action clipping',
+        initial_std=[.03,.06], evaluations=[], single_seed_development_only=True)
+    def save():
+        report['elapsed_seconds'] = time.time()-started
+        tmp=args.out/'status.tmp'
+        tmp.write_text(json.dumps(report, indent=2)); tmp.replace(args.out/'status.json')
+        print('STATUS',report['status'],round(report['elapsed_seconds'],1),flush=True)
+    def make_env(seed):
+        env=ActionHistory(BeliefEnv(args.params,arm='no_belief',seed=seed),route=True)
+        assert env.unwrapped.nonstationary_probability == 0
+        return env
+    env=make_env(2407)
+    try:
+        report['source_sha256']=hashlib.sha256(args.source.read_bytes()).hexdigest()
+        if report['source_sha256']!='634e8106713c0c316afc77bf345615d3a6a101789f82f182853356ab57dbc086':
+            raise ValueError('Unexpected DAgger source')
+        source=BayesSetTD3.load(args.source,device='cpu')
+        model=PPO(DaggerGaussianPolicy,env,learning_rate=3e-5,n_steps=2048,batch_size=256,
+            n_epochs=3,gamma=.99,gae_lambda=.95,clip_range=.1,ent_coef=0,target_kl=.01,
+            seed=2407,device='cpu',policy_kwargs=dict(features_extractor_class=SetEncoder,
+                features_extractor_kwargs=dict(features_dim=192),net_arch=dict(pi=[256,256],vf=[96,96]),
+                activation_fn=torch.nn.ReLU,share_features_extractor=False))
+        policy=model.policy
+        policy.pi_features_extractor.load_state_dict(source.actor.features_extractor.state_dict())
+        policy.mlp_extractor.policy_net.load_state_dict(source.actor.mu[:-2].state_dict())
+        policy.action_net[0].load_state_dict(source.actor.mu[-2].state_dict())
+        # Independent value encoder initialization; no action-Q or optimizer transfer.
+        policy.vf_features_extractor.load_state_dict(source.actor.features_extractor.state_dict())
+        with torch.no_grad():
+            policy.log_std.copy_(torch.tensor(np.log([.03,.06]),dtype=torch.float32))
+        max_error=0.
+        for case in range(10):
+            obs,_=env.reset(options=dict(layout_seed=920000+case,test_case=82000+case,profile='nominal'))
+            for _ in range(100):
+                a=source.predict(obs,deterministic=True)[0]
+                b=model.predict(obs,deterministic=True)[0]
+                max_error=max(max_error,float(np.max(np.abs(a-b))))
+                np.testing.assert_allclose(a,b,rtol=0,atol=2e-6)
+                obs,_,done,_,_=env.step(a)
+                if done: break
+        report['mean_conversion_max_error']=max_error
+        model.save(args.out/'initial')
+        restored=PPO.load(args.out/'initial.zip',device='cpu')
+        np.testing.assert_array_equal(model.predict(obs,deterministic=True)[0],
+                                      restored.predict(obs,deterministic=True)[0])
+        del restored,source
+        def evaluate(tag, deterministic):
+            states=(random.getstate(),np.random.get_state(),torch.get_rng_state())
+            testing=make_env(2407)
+            records=[]
+            try:
+                torch.manual_seed(4807)
+                for case in range(100):
+                    obs,_=testing.reset(options=dict(layout_seed=910000+case,test_case=81000+case,profile='nominal'))
+                    for _ in range(140):
+                        action=model.predict(obs,deterministic=deterministic)[0]
+                        obs,_,done,_,info=testing.step(action)
+                        if done:
+                            records.append(info['episode_result']); break
+                    else: raise AssertionError('Terminal contract')
+                    if case%25==24: print('EVAL',tag,case+1,flush=True)
+            finally:
+                testing.close(); random.setstate(states[0]); np.random.set_state(states[1]); torch.set_rng_state(states[2])
+            summary=dict(tag=tag,deterministic=deterministic,success=sum(r['outcome']=='success' for r in records),
+                collision=sum(r['outcome']=='collision' for r in records),timeout=sum(r['outcome']=='timeout' for r in records),
+                mean_return=float(np.mean([r['reward'] for r in records])))
+            (args.out/(tag+'.json')).write_text(json.dumps(dict(summary=summary,records=records),indent=2))
+            report['evaluations'].append(summary);save()
+            return summary
+        report['status']='initial_validation';save()
+        deterministic=evaluate('initial_deterministic',True)
+        stochastic=evaluate('initial_stochastic',False)
+        if min(deterministic['success'],stochastic['success'])<90:
+            report['status']='stopped_initial_policy_gate';save();return
+        for attempt in range(2):
+            if attempt:
+                env.close();env=make_env(2407)
+                model=PPO.load(args.out/'initial.zip',env=env,device='cpu')
+                model.learning_rate=1e-5
+                model.lr_schedule=lambda _:1e-5
+                for parameter in model.policy.pi_features_extractor.parameters(): parameter.requires_grad_(False)
+                report['fallback']='initial checkpoint, frozen actor SetEncoder, lr1e-5'
+            model.set_logger(configure(str(args.out/f'attempt{attempt}'),['csv']))
+            report['status']=f'fine_tuning_attempt{attempt}';save()
+            failed=False
+            for stage in range(1,6):
+                model.learn(total_timesteps=2048,reset_num_timesteps=False,log_interval=1)
+                tag=f'attempt{attempt}_{stage*2048}'
+                model.save(args.out/tag)
+                result=evaluate(tag,True)
+                if result['success']<90:
+                    failed=True
+                    report['rejected_checkpoint']=tag
+                    break
+                model.save(args.out/'last_accepted')
+            if not failed:
+                final_stochastic=evaluate(f'attempt{attempt}_final_stochastic',False)
+                report['status']='complete_stable' if final_stochastic['success']>=90 else 'stopped_final_sampling_gate'
+                report['candidate']=tag
+                save();return
+        report['status']='stopped_both_finetune_attempts'
+        report['retained_policy']='initial.zip; original DAgger unchanged'
+        save()
+    except Exception:
+        report.update(status='error',error=traceback.format_exc());save();raise
+    finally: env.close()
+
+
 if __name__ == '__main__':
     import sys
-    if '--scratch-baseline' in sys.argv:
+    if '--dagger-ppo' in sys.argv:
+        sys.argv.remove('--dagger-ppo')
+        dagger_ppo_main()
+    elif '--scratch-baseline' in sys.argv:
         sys.argv.remove('--scratch-baseline')
         scratch_baseline_main()
     elif '--critic-audit' in sys.argv:

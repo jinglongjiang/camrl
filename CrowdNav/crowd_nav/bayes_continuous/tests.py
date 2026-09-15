@@ -373,6 +373,32 @@ class Contracts(unittest.TestCase):
             BeliefEnv(PARAMS, scenario='dense_square', training=True)
 
 
+class GaussianTransferTests(unittest.TestCase):
+    def test_physical_mean_and_gaussian_log_probability(self):
+        from stable_baselines3 import PPO
+        from crowd_nav.bayes_continuous.network import DaggerGaussianPolicy, PhysicalActionMean
+        from crowd_nav.bayes_continuous.train_smoke import ActionHistory
+        env = ActionHistory(BeliefEnv(PARAMS, arm='no_belief'), route=True)
+        model = PPO(DaggerGaussianPolicy, env, n_steps=8, batch_size=8, device='cpu',
+            policy_kwargs=dict(features_extractor_class=SetEncoder,
+                features_extractor_kwargs=dict(features_dim=192),
+                net_arch=dict(pi=[256,256],vf=[96,96]), activation_fn=torch.nn.ReLU,
+                share_features_extractor=False))
+        mapping = PhysicalActionMean(env.action_space.low, env.action_space.high)
+        torch.testing.assert_close(mapping(torch.zeros(1,2)), torch.tensor([[.5,0.]]))
+        obs,_ = env.reset(seed=11)
+        batch={k:torch.as_tensor(v)[None] for k,v in obs.items()}
+        distribution=model.policy.get_distribution(batch)
+        mean=distribution.distribution.mean
+        np.testing.assert_allclose(model.predict(obs,deterministic=True)[0],mean.detach().numpy()[0])
+        action=distribution.get_actions()
+        _, log_prob, _=model.policy.evaluate_actions(batch,action)
+        torch.testing.assert_close(log_prob,distribution.log_prob(action))
+        self.assertTrue(torch.isfinite(log_prob).all())
+        self.assertIsNot(model.policy.pi_features_extractor,model.policy.vf_features_extractor)
+        env.close()
+
+
 if __name__ == '__main__':
     torch.set_num_threads(1)
     unittest.main()

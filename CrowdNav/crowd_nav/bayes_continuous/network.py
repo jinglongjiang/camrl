@@ -2,6 +2,32 @@
 import torch
 from torch import nn
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
+from stable_baselines3.common.policies import MultiInputActorCriticPolicy
+
+
+class PhysicalActionMean(nn.Module):
+    """TD3 normalized deterministic mean -> physical Gaussian mean for PPO."""
+    def __init__(self, low, high):
+        super().__init__()
+        self.register_buffer('center', torch.as_tensor((high+low)/2))
+        self.register_buffer('scale', torch.as_tensor((high-low)/2))
+
+    def forward(self, values):
+        return self.center + self.scale * torch.tanh(values)
+
+
+class DaggerGaussianPolicy(MultiInputActorCriticPolicy):
+    """Gaussian PPO with a bounded mean, not a squashed Gaussian distribution.
+
+    Actions retain SB3's ordinary physical-space sampling, clipping and log-prob.
+    The mean parameterization preserves the existing deterministic actor exactly.
+    """
+    def _build(self, lr_schedule):
+        super()._build(lr_schedule)
+        self.action_net = nn.Sequential(self.action_net,
+            PhysicalActionMean(self.action_space.low, self.action_space.high))
+        self.optimizer = self.optimizer_class(self.parameters(), lr=lr_schedule(1),
+                                               **self.optimizer_kwargs)
 
 
 class SetEncoder(BaseFeaturesExtractor):
