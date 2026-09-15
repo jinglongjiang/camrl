@@ -1,0 +1,23 @@
+{
+  "eligible_cases": 79,
+  "ineligible_cases": [
+    270001
+  ],
+  "branches": 1732,
+  "mean_value": 0.0002685169250654004,
+  "median_value": 0.0,
+  "maximum_value": 0.011002657640511004,
+  "value_ci": [
+    3.045082260145855e-05,
+    0.000632651306865547
+  ],
+  "meaningful_fraction": 0.012658227848101266,
+  "known_collision": 0.0189873417721519,
+  "unknown_collision": 0.0189873417721519,
+  "known_return": 0.793863206558859,
+  "unknown_return": 0.7935946896337936,
+  "baseline_return": 0.7537181522806381,
+  "baseline_collision": 0.04430379746835443,
+  "risk_only_value": 0.0,
+  "passed": false
+}
