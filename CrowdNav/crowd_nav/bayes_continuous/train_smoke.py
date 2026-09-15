@@ -431,6 +431,144 @@ def reward_critic_warmup(model, updates=1000):
                 objective='native TD3 twin MSE Bellman target, frozen actor, target smoothing, Polyak .005')
 
 
+class FineTuneTD3(TD3):
+    """Native TD3 updates, with separate fixed Actor/Critic learning rates."""
+    def _update_learning_rate(self, optimizers):
+        super()._update_learning_rate(optimizers)
+        for group in self.actor.optimizer.param_groups:
+            group['lr'] = 3e-5
+        for group in self.critic.optimizer.param_groups:
+            group['lr'] = 3e-4
+
+
+def local_td3_finetune(args):
+    import random
+    from stable_baselines3.common.utils import polyak_update
+    args.out.mkdir(exist_ok=False)
+    report = dict(protocol='empty_replay_local_finetuning',seed=2407,arm='no_belief',
+        train_humans=5,profile='nominal',robot_fields=10,buffer_size=10000,old_demo_steps=0,
+        frozen_steps=3000,actor_lr=3e-5,critic_lr=3e-4,policy_delay=10,noise_std=.1,
+        gamma=.99,tau=.005,cost_critic=False,bc_loss=False,reward_changed=False)
+    def save(stage):
+        report['stage'] = stage
+        (args.out/'status.json').write_text(json.dumps(report,indent=2))
+        print('LOCAL_TD3',stage,flush=True)
+    env = None
+    try:
+        save('initializing')
+        torch.set_num_threads(1)
+        checkpoint = args.stages/'round16.zip'
+        report['source_sha256'] = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+        if report['source_sha256'] != '634e8106713c0c316afc77bf345615d3a6a101789f82f182853356ab57dbc086':
+            raise ValueError('Wrong source actor')
+        env = ActionHistory(BeliefEnv(args.params,arm='no_belief',seed=2407),route=True)
+        source = BayesSetTD3.load(checkpoint,device='cuda')
+        model = FineTuneTD3('MultiInputPolicy',env,learning_rate=3e-4,buffer_size=10000,batch_size=128,
+            learning_starts=0,train_freq=(1,'step'),gradient_steps=1,policy_delay=10,tau=.005,gamma=.99,
+            action_noise=NormalActionNoise(np.zeros(2),.1*np.ones(2)),device='cuda',seed=2407,
+            policy_kwargs=dict(features_extractor_class=SetEncoder,
+                features_extractor_kwargs=dict(features_dim=192),net_arch=dict(pi=[256,256],qf=[96,96]),
+                share_features_extractor=False))
+        model.actor.load_state_dict(source.actor.state_dict())
+        model.actor_target.load_state_dict(source.actor.state_dict())
+        del source
+        assert FineTuneTD3.train is TD3.train and not hasattr(model,'cost_critic')
+        assert model.replay_buffer.size() == 0
+        actor_before = {k:v.clone() for k,v in model.actor.state_dict().items()}
+        model.actor.requires_grad_(False)
+        obs,_ = env.reset(seed=2407)
+        noise_rng = np.random.default_rng(2407)
+        losses,rows = [],[]
+        save('frozen_actor_local_collection_3000')
+        for step in range(3000):
+            physical = model.predict(obs,deterministic=True)[0]
+            normalized = np.clip(model.policy.scale_action(physical)+noise_rng.normal(0,.1,2),-1,1).astype(np.float32)
+            action = model.policy.unscale_action(normalized)
+            nxt,reward,done,truncated,info = env.step(action)
+            model.replay_buffer.add({k:v[None] for k,v in obs.items()},
+                {k:v[None] for k,v in nxt.items()},normalized[None],np.array([reward]),np.array([done or truncated]),[{}])
+            rows.append(dict(observation=obs,next_observation=nxt,action=info['action'],
+                             reward=reward,done=done or truncated))
+            data = model.replay_buffer.sample(128)
+            with torch.no_grad():
+                noise = (torch.randn_like(data.actions)*model.target_policy_noise).clamp(
+                    -model.target_noise_clip,model.target_noise_clip)
+                next_actions = (model.actor_target(data.next_observations)+noise).clamp(-1,1)
+                next_q = torch.cat(model.critic_target(data.next_observations,next_actions),1).min(1,keepdim=True).values
+                target = data.rewards+(1-data.dones)*model.gamma*next_q
+            loss = sum(torch.nn.functional.mse_loss(q,target) for q in model.critic(data.observations,data.actions))
+            if not torch.isfinite(loss):
+                raise FloatingPointError('Nonfinite local critic loss')
+            model.critic.optimizer.zero_grad(); loss.backward(); model.critic.optimizer.step()
+            polyak_update(model.critic.parameters(),model.critic_target.parameters(),model.tau)
+            losses.append(float(loss.detach()))
+            obs = nxt
+            if done or truncated:
+                obs,_ = env.reset()
+            if (step+1)%500 == 0:
+                print('LOCAL_FROZEN',step+1,losses[-1],flush=True)
+        assert all(torch.equal(actor_before[k],v) for k,v in model.actor.state_dict().items())
+        report['frozen_actor_unchanged'] = True
+        report['frozen_critic_losses'] = losses
+        report['frozen_episode_records'] = list(env.unwrapped.episode_records)
+        report['replay_after_frozen'] = model.replay_buffer.size()
+        torch.save(rows,args.out/'frozen_transitions.pt')
+        model.actor.requires_grad_(True)
+        # Save a 500-state, speed-only Q slice without modifying any training RNG.
+        ids = np.random.default_rng(9507).choice(len(rows),500,replace=False)
+        probe_obs = stack_obs([rows[i]['observation'] for i in ids])
+        acts = model.predict(probe_obs,deterministic=True)[0]
+        values = []
+        with torch.no_grad():
+            tensor_obs = obs_as_tensor(probe_obs,model.device)
+            for speed in np.linspace(0,1,11):
+                candidate = acts.copy(); candidate[:,0] = speed
+                tensor_act = torch.as_tensor(model.policy.scale_action(candidate),device=model.device)
+                values.append(torch.cat(model.critic(tensor_obs,tensor_act),1).min(1).values.cpu().numpy())
+        values = np.stack(values,1)
+        winners = values.argmax(1)
+        report['speed_probe'] = dict(states=500,argmax_counts=np.bincount(winners,minlength=11).tolist(),
+            full_speed_fraction=float((winners==10).mean()),
+            scope='Critic preference only, not counterfactual return or proof of gradient error')
+        (args.out/'speed_probe.json').write_text(json.dumps(dict(row_indices=ids.tolist(),
+            actor_actions=acts.tolist(),speeds=np.linspace(0,1,11).tolist(),q_min=values.tolist())))
+        del rows
+        model.save(args.out/'frozen_actor_3000')
+        def evaluate():
+            states = random.getstate(),np.random.get_state(),torch.get_rng_state(),torch.cuda.get_rng_state_all()
+            try:
+                rec,_,_ = episodes(args.params,100,530000,actor=model,case_offset=30000,arm='no_belief')
+                return rec
+            finally:
+                random.setstate(states[0]); np.random.set_state(states[1])
+                torch.set_rng_state(states[2]); torch.cuda.set_rng_state_all(states[3])
+        save('frozen_baseline_evaluation')
+        baseline = evaluate()
+        report['baseline'] = receipt(baseline)
+        (args.out/'baseline_episodes.json').write_text(json.dumps(baseline))
+        report['evaluations'] = []
+        for step in (1000,2000):
+            save('finetune_to_'+str(step))
+            model.learn(total_timesteps=1000,reset_num_timesteps=step==1000)
+            assert all(g['lr']==3e-5 for g in model.actor.optimizer.param_groups)
+            assert all(g['lr']==3e-4 for g in model.critic.optimizer.param_groups)
+            model.save(args.out/('rl_'+str(step)))
+            rec = evaluate()
+            report['evaluations'].append(dict(finetune_steps=model.num_timesteps,
+                total_env_steps=3000+model.num_timesteps,**receipt(rec)))
+            (args.out/('evaluation_'+str(step)+'.json')).write_text(json.dumps(rec))
+            (args.out/'training_episodes.json').write_text(json.dumps(env.unwrapped.episode_records))
+            if report['evaluations'][-1]['success_rate'] < .8:
+                save('stopped_below_80_percent')
+                return
+        save('completed_2000_finetuning')
+    except Exception as exc:
+        report['error'] = repr(exc); save('failed'); raise
+    finally:
+        if env is not None:
+            env.close()
+
+
 def native_td3_main():
     import random
     parser = argparse.ArgumentParser()
@@ -438,7 +576,10 @@ def native_td3_main():
     parser.add_argument('--stages',type=Path,default=Path('repair_results/student_dagger_coverage_20260915'))
     parser.add_argument('--demos',type=Path,default=Path('repair_results/student_bc_history_continued_20260914'))
     parser.add_argument('--out',type=Path,required=True)
+    parser.add_argument('--finetune',action='store_true')
     args = parser.parse_args()
+    if args.finetune:
+        return local_td3_finetune(args)
     args.out.mkdir(exist_ok=False)
     report = dict(algorithm='stable_baselines3.TD3',arm='no_belief',seed=2407,train_humans=5,
                   profile='nominal',robot_fields=10,cost_critic=False,bc_loss=False,

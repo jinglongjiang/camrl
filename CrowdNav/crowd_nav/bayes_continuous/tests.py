@@ -15,6 +15,22 @@ PARAMS = Path(__file__).resolve().parents[2] / 'repair_results/params'
 
 
 class Contracts(unittest.TestCase):
+    def test_finetune_learning_rates_survive_native_train(self):
+        from stable_baselines3 import TD3
+        from crowd_nav.bayes_continuous.train_smoke import ActionHistory, FineTuneTD3
+        env = ActionHistory(BeliefEnv(PARAMS,arm='no_belief'),route=True)
+        model = FineTuneTD3('MultiInputPolicy',env,learning_rate=3e-4,buffer_size=100,
+            batch_size=2,learning_starts=0,train_freq=(1,'step'),gradient_steps=1,
+            policy_delay=10,device='cpu',policy_kwargs=dict(features_extractor_class=SetEncoder,
+                features_extractor_kwargs=dict(features_dim=96),net_arch=[32,32],share_features_extractor=False))
+        model.learn(10)
+        self.assertIs(FineTuneTD3.train,TD3.train)
+        self.assertEqual(model._n_updates,10)
+        self.assertTrue(all(g['lr']==3e-5 for g in model.actor.optimizer.param_groups))
+        self.assertTrue(all(g['lr']==3e-4 for g in model.critic.optimizer.param_groups))
+        self.assertFalse(hasattr(model,'cost_critic'))
+        env.close()
+
     def test_native_reward_warmup_does_not_update_actor(self):
         from stable_baselines3 import TD3
         from crowd_nav.bayes_continuous.train_smoke import ActionHistory, reward_critic_warmup
