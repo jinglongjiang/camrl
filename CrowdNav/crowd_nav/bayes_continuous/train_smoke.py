@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import gymnasium as gym
+from stable_baselines3 import TD3
 from stable_baselines3.common.noise import NormalActionNoise
 from stable_baselines3.common.utils import obs_as_tensor
 from crowd_nav.bayes_continuous.environment import BeliefEnv, ARMS
@@ -395,6 +396,144 @@ def online_main():
     model.save(args.out/'final')
     (args.out/'episodes.json').write_text(json.dumps(env.episode_records, indent=2))
     (args.out/'losses.json').write_text(json.dumps(model.loss_history))
+
+
+def reward_critic_warmup(model, updates=1000):
+    """Fixed-actor Bellman warm-up for native TD3, without cost or BC losses."""
+    from stable_baselines3.common.utils import polyak_update
+    if type(model) is not TD3 or hasattr(model, 'cost_critic'):
+        raise TypeError('Reward warm-up requires native TD3')
+    before = {k:v.clone() for k,v in model.actor.state_dict().items()}
+    model.actor.requires_grad_(False)
+    model.critic.set_training_mode(True)
+    losses = []
+    for step in range(updates):
+        data = model.replay_buffer.sample(model.batch_size)
+        with torch.no_grad():
+            noise = torch.randn_like(data.actions)*model.target_policy_noise
+            actions = (model.actor_target(data.next_observations)+noise.clamp(
+                -model.target_noise_clip,model.target_noise_clip)).clamp(-1,1)
+            next_q = torch.cat(model.critic_target(data.next_observations,actions),1).min(1,keepdim=True).values
+            target = data.rewards+(1-data.dones)*model.gamma*next_q
+        loss = sum(torch.nn.functional.mse_loss(q,target) for q in model.critic(data.observations,data.actions))
+        if not torch.isfinite(loss):
+            raise FloatingPointError('Nonfinite reward critic warm-up loss')
+        model.critic.optimizer.zero_grad()
+        loss.backward()
+        model.critic.optimizer.step()
+        polyak_update(model.critic.parameters(),model.critic_target.parameters(),model.tau)
+        losses.append(float(loss.detach()))
+        if (step+1)%200 == 0:
+            print('REWARD_WARMUP',step+1,losses[-1],flush=True)
+    assert all(torch.equal(before[k],v) for k,v in model.actor.state_dict().items())
+    model.actor.requires_grad_(True)
+    return dict(updates=updates,actor_unchanged=True,losses=losses,
+                objective='native TD3 twin MSE Bellman target, frozen actor, target smoothing, Polyak .005')
+
+
+def native_td3_main():
+    import random
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--params',type=Path,default=Path('repair_results/params'))
+    parser.add_argument('--stages',type=Path,default=Path('repair_results/student_dagger_coverage_20260915'))
+    parser.add_argument('--demos',type=Path,default=Path('repair_results/student_bc_history_continued_20260914'))
+    parser.add_argument('--out',type=Path,required=True)
+    args = parser.parse_args()
+    args.out.mkdir(exist_ok=False)
+    report = dict(algorithm='stable_baselines3.TD3',arm='no_belief',seed=2407,train_humans=5,
+                  profile='nominal',robot_fields=10,cost_critic=False,bc_loss=False,
+                  reward_changed=False,requested_steps=2000,diagnostic_only=True)
+    def save(stage):
+        report['stage'] = stage
+        (args.out/'status.json').write_text(json.dumps(report,indent=2))
+        print('NATIVE_TD3',stage,flush=True)
+    env = None
+    try:
+        save('initializing')
+        torch.set_num_threads(1)
+        checkpoint = args.stages/'round16.zip'
+        report['actor_source_sha256'] = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+        if report['actor_source_sha256'] != '634e8106713c0c316afc77bf345615d3a6a101789f82f182853356ab57dbc086':
+            raise ValueError('Unexpected source actor')
+        env = ActionHistory(BeliefEnv(args.params,arm='no_belief',seed=2407),route=True)
+        source = BayesSetTD3.load(checkpoint,device='cuda')
+        model = TD3('MultiInputPolicy',env,learning_rate=3e-4,buffer_size=50000,batch_size=128,
+            learning_starts=0,train_freq=(1,'step'),gradient_steps=1,policy_delay=2,tau=.005,gamma=.99,
+            action_noise=NormalActionNoise(np.zeros(2),.1*np.ones(2)),device='cuda',seed=2407,
+            policy_kwargs=dict(features_extractor_class=SetEncoder,
+                features_extractor_kwargs=dict(features_dim=192),
+                net_arch=dict(pi=[256,256],qf=[96,96]),share_features_extractor=False))
+        model.actor.load_state_dict(source.actor.state_dict())
+        model.actor_target.load_state_dict(source.actor.state_dict())
+        obs,_ = env.reset(seed=2407)
+        np.testing.assert_array_equal(model.predict(obs,deterministic=True)[0],source.predict(obs,deterministic=True)[0])
+        assert all(torch.equal(v,source.actor.state_dict()[k]) for k,v in model.actor.state_dict().items())
+        assert not hasattr(model,'cost_critic') and type(model) is TD3
+        report['actor_transfer_exact'] = True
+        del source
+        teacher = torch.load(args.demos/'collection.pt',weights_only=False)
+        add_route_history(teacher['trajectories'])
+        student = torch.load(args.stages/'round16_collection.pt',weights_only=False)
+        if len(student['trajectories']) != 1000 or student['arm'] != 'no_belief':
+            raise ValueError('Expected round16 1000 student rollouts')
+        teacher_rows = [r for rec,ep in zip(teacher['records'],teacher['trajectories'])
+                        if rec['outcome']=='success' for r in ep]
+        student_rows = [r for ep in student['trajectories'] for r in ep]
+        all_rows = teacher_rows+student_rows
+        # Randomize insertion so a finite replay does not discard only the teacher prefix.
+        order = np.random.default_rng(2407).permutation(len(all_rows))
+        for i in order:
+            row = all_rows[i]
+            if row['observation']['robot'].shape != (10,) or row['next_observation']['robot'].shape != (10,):
+                raise ValueError('Replay observation mismatch')
+            action = np.asarray(row['action'],np.float32)
+            if not env.action_space.contains(action):
+                raise ValueError('Invalid executed replay action')
+            model.replay_buffer.add({k:v[None] for k,v in row['observation'].items()},
+                {k:v[None] for k,v in row['next_observation'].items()},
+                model.policy.scale_action(action[None]),np.array([row['reward']]),
+                np.array([row['done']]),[{}])
+        retained = order[-50000:]
+        report['replay'] = dict(teacher_success_steps=len(teacher_rows),student_actual_steps=len(student_rows),
+            size=model.replay_buffer.size(),retained_teacher_steps=int((retained<len(teacher_rows)).sum()),
+            retained_student_steps=int((retained>=len(teacher_rows)).sum()),action_field='action, never teacher_action',
+            capacity=50000,source_student_episodes=1000)
+        del teacher,student,teacher_rows,student_rows,all_rows
+        save('reward_warmup_1000')
+        report['warmup'] = reward_critic_warmup(model,1000)
+        model.save(args.out/'reward_warmup')
+        def evaluate():
+            states = random.getstate(),np.random.get_state(),torch.get_rng_state(),torch.cuda.get_rng_state_all()
+            try:
+                rec,_,_ = episodes(args.params,100,530000,actor=model,case_offset=30000,arm='no_belief')
+                return rec
+            finally:
+                random.setstate(states[0]); np.random.set_state(states[1])
+                torch.set_rng_state(states[2]); torch.cuda.set_rng_state_all(states[3])
+        save('baseline_evaluation')
+        baseline = evaluate()
+        report['baseline'] = receipt(baseline)
+        (args.out/'baseline_episodes.json').write_text(json.dumps(baseline))
+        report['evaluations'] = []
+        for step in (1000,2000):
+            save('td3_to_'+str(step))
+            model.learn(total_timesteps=1000,reset_num_timesteps=step==1000)
+            model.save(args.out/('rl_'+str(step)))
+            rec = evaluate()
+            report['evaluations'].append(dict(steps=model.num_timesteps,**receipt(rec)))
+            (args.out/('evaluation_'+str(step)+'.json')).write_text(json.dumps(rec))
+            (args.out/'training_episodes.json').write_text(json.dumps(env.unwrapped.episode_records))
+            if report['evaluations'][-1]['success_rate'] < .8:
+                save('stopped_below_80_percent')
+                return
+        save('completed_2000')
+    except Exception as exc:
+        report['error'] = repr(exc)
+        save('failed')
+        raise
+    finally:
+        if env is not None:
+            env.close()
 
 
 def episodes(params, count, offset, actor=None, collect=False, case_offset=0, diagnostics=False,
@@ -1006,7 +1145,10 @@ def main():
 
 if __name__ == '__main__':
     import sys
-    if '--dagger' in sys.argv:
+    if '--native-td3' in sys.argv:
+        sys.argv.remove('--native-td3')
+        native_td3_main()
+    elif '--dagger' in sys.argv:
         sys.argv.remove('--dagger')
         dagger_main()
     elif '--online' in sys.argv:

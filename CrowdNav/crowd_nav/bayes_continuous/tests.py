@@ -15,6 +15,30 @@ PARAMS = Path(__file__).resolve().parents[2] / 'repair_results/params'
 
 
 class Contracts(unittest.TestCase):
+    def test_native_reward_warmup_does_not_update_actor(self):
+        from stable_baselines3 import TD3
+        from crowd_nav.bayes_continuous.train_smoke import ActionHistory, reward_critic_warmup
+        env = ActionHistory(BeliefEnv(PARAMS,arm='no_belief'),route=True)
+        model = TD3('MultiInputPolicy',env,buffer_size=100,batch_size=2,device='cpu',
+            policy_kwargs=dict(features_extractor_class=SetEncoder,
+                features_extractor_kwargs=dict(features_dim=96),net_arch=[32,32],
+                share_features_extractor=False))
+        obs,_ = env.reset(seed=2407)
+        action = np.array([.2,.1],np.float32)
+        nxt,reward,done,_,_ = env.step(action)
+        model.replay_buffer.add({k:v[None] for k,v in obs.items()},
+            {k:v[None] for k,v in nxt.items()},model.policy.scale_action(action[None]),
+            np.array([reward]),np.array([done]),[{}])
+        actor = {k:v.clone() for k,v in model.actor.state_dict().items()}
+        critic = {k:v.clone() for k,v in model.critic.state_dict().items()}
+        result = reward_critic_warmup(model,updates=2)
+        self.assertTrue(result['actor_unchanged'])
+        self.assertTrue(all(torch.equal(actor[k],v) for k,v in model.actor.state_dict().items()))
+        self.assertTrue(any(not torch.equal(critic[k],v) for k,v in model.critic.state_dict().items()))
+        self.assertFalse(hasattr(model,'cost_critic'))
+        self.assertEqual(model._n_updates,0)
+        env.close()
+
     def test_directed_safety_suffix_and_quotas(self):
         from types import SimpleNamespace
         from crowd_nav.bayes_continuous.train_smoke import collect_safety_replay
