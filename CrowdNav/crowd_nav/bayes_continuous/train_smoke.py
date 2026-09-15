@@ -2024,17 +2024,27 @@ def dagger_ppo_main():
     parser.add_argument('--arm', choices=ARMS, default='full')
     parser.add_argument('--profile', choices=['nominal','train_nonstationary'], default='train_nonstationary')
     parser.add_argument('--stages', type=int, default=2)
+    parser.add_argument('--qualification', action='store_true')
+    parser.add_argument('--seed', type=int, default=2407)
     args = parser.parse_args()
-    if not 1 <= args.stages <= 5:
+    if not 1 <= args.stages <= (10 if args.qualification else 5):
         raise ValueError('Bounded smoke: 1..5 PPO rollouts')
+    if args.qualification and (args.stages!=10 or args.profile!='train_nonstationary'):
+        raise ValueError('Qualification freezes ten rollouts and train_nonstationary')
     args.out.mkdir(parents=True, exist_ok=False)
     torch.set_num_threads(1)
     started = time.time()
-    report = dict(status='initializing', arm=args.arm, profile=args.profile, seed=2407,
-        requested_steps_per_attempt=2048*args.stages, max_attempts=2, reward_changed=False,
+    report = dict(status='initializing', arm=args.arm, profile=args.profile, seed=args.seed,
+        requested_steps_per_attempt=2048*args.stages, max_attempts=1 if args.qualification else 2, reward_changed=False,
         initialization='exact deterministic function conversion, no new BC fit',
         distribution='physical Gaussian, tanh-bounded mean, ordinary SB3 action clipping',
-        initial_std=[.03,.06], evaluations=[], single_seed_development_only=True)
+        initial_std=[.03,.06], evaluations=[], single_seed_development_only=True,
+        qualification=args.qualification, optimizer_receipts=[],
+        ppo_config=dict(learning_rate=1e-5 if args.qualification else 3e-5,
+            target_kl=None if args.qualification else .01,n_steps=2048,batch_size=256,n_epochs=3,
+            clip_range=.1,gamma=.99,gae_lambda=.95,ent_coef=0),
+        safety_gate='nominal SR >=90/100 and nonstationary SR >= initial-10/100',
+        qualified_budget='20480 environment steps and exactly 240 Adam steps; no fallback')
     def save():
         report['elapsed_seconds'] = time.time()-started
         tmp=args.out/'status.tmp'
@@ -2042,13 +2052,13 @@ def dagger_ppo_main():
         print('STATUS',report['status'],round(report['elapsed_seconds'],1),flush=True)
     def make_env(seed):
         return ActionHistory(BeliefPPOEnv(args.params,args.arm,args.profile,seed),route=True)
-    env=make_env(2407)
+    env=make_env(args.seed)
     try:
         report['source_sha256']=hashlib.sha256(args.source.read_bytes()).hexdigest()
         source=PPO.load(args.source,device='cpu')
-        model=PPO(DaggerGaussianPolicy,env,learning_rate=3e-5,n_steps=2048,batch_size=256,
-            n_epochs=3,gamma=.99,gae_lambda=.95,clip_range=.1,ent_coef=0,target_kl=.01,
-            seed=2407,device='cpu',policy_kwargs=dict(features_extractor_class=SetEncoder,
+        model=PPO(DaggerGaussianPolicy,env,learning_rate=report['ppo_config']['learning_rate'],n_steps=2048,batch_size=256,
+            n_epochs=3,gamma=.99,gae_lambda=.95,clip_range=.1,ent_coef=0,target_kl=report['ppo_config']['target_kl'],
+            seed=args.seed,device='cpu',policy_kwargs=dict(features_extractor_class=SetEncoder,
                 features_extractor_kwargs=dict(features_dim=192),net_arch=dict(pi=[256,256],vf=[96,96]),
                 activation_fn=torch.nn.ReLU,share_features_extractor=False))
         policy=model.policy
@@ -2063,6 +2073,8 @@ def dagger_ppo_main():
             with torch.no_grad(): first.weight[:,5:9].zero_()
         with torch.no_grad():
             policy.log_std.copy_(torch.tensor(np.log([.03,.06]),dtype=torch.float32))
+        report['initial_policy_tensor_sha256']=hashlib.sha256(b''.join(
+            v.detach().cpu().numpy().tobytes() for v in policy.state_dict().values())).hexdigest()
         max_error=0.
         for case in range(10):
             obs,_=env.reset(options=dict(layout_seed=920000+case,test_case=82000+case,profile='nominal'))
@@ -2088,12 +2100,15 @@ def dagger_ppo_main():
             try:
                 torch.manual_seed(4807)
                 for case in range(100):
-                    obs,_=testing.reset(options=dict(layout_seed=81000000+case,test_case=99000+case,profile=profile))
+                    obs,_=testing.reset(options=dict(layout_seed=(91000000 if args.qualification else 81000000)+case,
+                        test_case=(291000 if args.qualification else 99000)+case,profile=profile))
+                    layout_hash=hashlib.sha256(np.asarray([[h.px,h.py,h.gx,h.gy,h.radius,h.v_pref]
+                        for h in testing.unwrapped.world.env.humans],np.float64).tobytes()).hexdigest()
                     for _ in range(140):
                         action=model.predict(obs,deterministic=deterministic)[0]
                         obs,_,done,_,info=testing.step(action)
                         if done:
-                            records.append(info['episode_result']); break
+                            records.append(dict(info['episode_result'],layout_sha256=layout_hash)); break
                     else: raise AssertionError('Terminal contract')
                     if case%25==24: print('EVAL',tag,case+1,flush=True)
             finally:
@@ -2110,7 +2125,7 @@ def dagger_ppo_main():
         initial_dynamic=evaluate('initial_nonstationary',True,'train_nonstationary')
         if min(deterministic['success'],stochastic['success'])<90:
             report['status']='stopped_initial_policy_gate';save();return
-        for attempt in range(2):
+        for attempt in range(report['max_attempts']):
             if attempt:
                 env.close();env=make_env(2407)
                 model=PPO.load(args.out/'initial.zip',env=env,device='cpu')
@@ -2124,6 +2139,16 @@ def dagger_ppo_main():
             before={k:v.detach().clone() for k,v in model.policy.state_dict().items()}
             for stage in range(1,args.stages+1):
                 model.learn(total_timesteps=2048,reset_num_timesteps=False,log_interval=1)
+                adam_steps=sorted({int(s['step'].item()) for s in model.policy.optimizer.state.values() if 'step' in s})
+                receipt=dict(stage=stage,environment_steps=model.num_timesteps,adam_steps=adam_steps,
+                    log={k:float(v) for k,v in model.logger.name_to_value.items() if k.startswith('train/')})
+                report['optimizer_receipts'].append(receipt)
+                if args.qualification and adam_steps!=[stage*24]:
+                    raise AssertionError('PPO did not execute the full frozen optimizer budget')
+                report['actual_steps']=model.num_timesteps
+                save()
+                if args.qualification and stage not in (2,5,10):
+                    continue
                 tag=f'attempt{attempt}_{stage*2048}'
                 model.save(args.out/tag)
                 result=evaluate(tag,True)
@@ -2144,12 +2169,61 @@ def dagger_ppo_main():
                 report['training_episodes']=[r for r in env.unwrapped.episode_records
                     if 80000000 <= r['layout_seed'] < 81000000]
                 save();return
-        report['status']='stopped_both_finetune_attempts'
+        report['status']='stopped_qualification_retention_gate' if args.qualification else 'stopped_both_finetune_attempts'
         report['retained_policy']='initial.zip; original DAgger unchanged'
+        report['training_episodes']=[r for r in env.unwrapped.episode_records
+            if 80000000 <= r['layout_seed'] < 81000000]
         save()
     except Exception:
         report.update(status='error',error=traceback.format_exc());save();raise
     finally: env.close()
+
+
+def ppo_qualification_suite():
+    """One frozen configuration; no tuning after observing arm comparisons."""
+    import subprocess
+    import sys
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--out',type=Path,required=True)
+    args=parser.parse_args();args.out.mkdir(parents=True,exist_ok=False)
+    protocol=dict(seeds=[2407,4807,7207],arms=['no_belief','map','full'],
+        source='repair_results/dagger_ppo_nominal_20260915/initial.zip',steps_per_run=20480,
+        adam_updates_per_run=240,maximum_runs=9,maximum_environment_steps=184320,
+        ppo=dict(lr=1e-5,target_kl=None,clip=.1,n_steps=2048,batch=256,epochs=3),
+        profile='train_nonstationary',humans=5,environment_changed=False,network_changed=False,belief_changed=False,
+        development_layouts=[91000000,91000099],test_cases=[291000,291099],
+        evaluation='initial and 4096/10240/20480; same nominal and train_nonstationary cases',
+        stopping='finish current paired seed; if any arm fails retention or update gate, do not run later seeds or interpret as Bayes absence',
+        positive_evidence='all seeds complete; FULL mean nonstationary SR >= each baseline+3 percentage points, no higher CR, positive return difference in >=2/3 seeds and paired seed/layout bootstrap CI lower>0',
+        negative_scope='fixed-budget development qualification only; not an equivalence test or proof Bayes is useless',
+        independent_confirmation='not included: a positive result would require new evaluation cases before a paper claim',
+        code_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        params_sha256={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in Path('repair_results/params').glob('*.npz')})
+    (args.out/'protocol.json').write_text(json.dumps(protocol,indent=2))
+    results=[]
+    for seed in protocol['seeds']:
+        processes=[]
+        for arm in protocol['arms']:
+            folder=args.out/f'{seed}_{arm}'
+            log=(args.out/f'{seed}_{arm}.log').open('w')
+            cmd=[sys.executable,'-m','crowd_nav.bayes_continuous.train_smoke','--dagger-ppo',
+                '--qualification','--seed',str(seed),'--arm',arm,'--stages','10','--out',str(folder)]
+            processes.append((arm,folder,log,subprocess.Popen(cmd,stdout=log,stderr=subprocess.STDOUT)))
+        for arm,folder,log,p in processes:
+            code=p.wait();log.close()
+            status=json.loads((folder/'status.json').read_text()) if (folder/'status.json').exists() else {}
+            results.append(dict(seed=seed,arm=arm,exit_code=code,status=status))
+        current=results[-3:]
+        initial_hashes={r['status'].get('initial_policy_tensor_sha256') for r in current}
+        if len(initial_hashes)!=1 or None in initial_hashes:
+            outcome='invalid_initialization_contract'
+        elif any(r['exit_code'] or r['status'].get('status')!='complete_stable' for r in current):
+            outcome='stopped_ppo_qualification_not_bayes_verdict'
+        else:outcome='seed_passed'
+        (args.out/'status.json').write_text(json.dumps(dict(outcome=outcome,runs=results),indent=2))
+        print('QUALIFICATION',seed,outcome,flush=True)
+        if outcome!='seed_passed':return
+    (args.out/'status.json').write_text(json.dumps(dict(outcome='all_seeds_complete_requires_paired_analysis',runs=results),indent=2))
 
 
 if __name__ == '__main__':
@@ -2160,7 +2234,10 @@ if __name__ == '__main__':
         raise SystemExit('Archived experiment: requires --legacy-experiment; mainline is IL-initialized PPO.')
     if '--legacy-experiment' in sys.argv:
         sys.argv.remove('--legacy-experiment')
-    if '--bayes-il' in sys.argv:
+    if '--ppo-qualification-suite' in sys.argv:
+        sys.argv.remove('--ppo-qualification-suite')
+        ppo_qualification_suite()
+    elif '--bayes-il' in sys.argv:
         sys.argv.remove('--bayes-il')
         bayes_il_main()
     elif '--bayes-teacher-gate' in sys.argv:
