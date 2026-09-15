@@ -1,0 +1,83 @@
+{
+  "stage": "blocked_critic_gate",
+  "arm": "no_belief",
+  "seed": 2407,
+  "robot_fields": 10,
+  "train_humans": 5,
+  "profile": "nominal",
+  "requested_steps": 2000,
+  "diagnostic_only": true,
+  "independent_safety_gate_waived": false,
+  "formal_training_authorized": false,
+  "checkpoint_sha256": "634e8106713c0c316afc77bf345615d3a6a101789f82f182853356ab57dbc086",
+  "execution": {
+    "learning_starts": 0,
+    "train_freq": [
+      1,
+      "step"
+    ],
+    "gradient_steps": 1,
+    "policy_delay": 2,
+    "tau": 0.005,
+    "gamma": 0.99,
+    "normalized_action_noise_std": 0.1
+  },
+  "safety_path": "repair_results/safety_no_belief_directed",
+  "safety_counts": {
+    "protocol": "directed_suffix_v1",
+    "target_per_class": 30,
+    "max_attempts_per_split": 300,
+    "trigger_surface_clearance": 1.0,
+    "intervention_steps": 15,
+    "use": "cost_critic_only_not_BC_DAgger_or_reward_replay",
+    "scope": "Outcome-stratified intervention data, not deployment calibration",
+    "train": {
+      "positive_trajectories": 30,
+      "negative_trajectories": 30,
+      "attempts": 61,
+      "adequate": true,
+      "quota_complete": true
+    },
+    "validation": {
+      "positive_trajectories": 30,
+      "negative_trajectories": 30,
+      "attempts": 62,
+      "adequate": true,
+      "quota_complete": true
+    }
+  },
+  "critic": {
+    "before": [
+      0.6370972394943237,
+      0.49686819314956665
+    ],
+    "after": [
+      0.0036826981231570244,
+      0.11442172527313232
+    ],
+    "heldout_episodes": 20,
+    "cost_training": "64 positive + 64 negative with replacement; twin BCE logits",
+    "cost_validation": "unchanged full validation transitions; twin sigmoid MSE sum",
+    "actor_unchanged": true,
+    "safety_metrics": {
+      "positive_mse": 0.1710410714149475,
+      "negative_mse": 0.04309796541929245,
+      "brier": 0.0578203909099102,
+      "auroc": 0.9567975071618837,
+      "positive_mean": 0.7814139723777771,
+      "negative_mean": 0.0604555644094944,
+      "scope": "transition metrics on separate, class-enriched trajectory validation; not deployment calibration"
+    },
+    "safety_episode_counts": {
+      "train": {
+        "positive": 30,
+        "negative": 30
+      },
+      "validation": {
+        "positive": 30,
+        "negative": 30
+      }
+    },
+    "passed": false
+  }
+}

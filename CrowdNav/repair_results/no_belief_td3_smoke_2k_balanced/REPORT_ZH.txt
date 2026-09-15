@@ -1,0 +1,67 @@
+Cost Critic均衡采样+BCE预热：结果报告
+
+一、结论
+按要求完成1000次预热，Cost Critic仍未通过原门槛。
+状态：blocked_critic_gate，任务已退出，TD3环境步数仍为0。
+Actor在预热中保持不变。本次没有重新采集数据，没有改教师、DAgger、Bayes、Actor或门槛。
+按用户要求停止调整采样，不追加训练、不放宽验收。
+
+二、唯一训练修改
+代码提交：93efc9f，分支repair-continuous-training-20260914，仓库jinglongjiang/camrl。
+在原train_smoke.py的supervised_warmup内，仅改变Cost训练：
+每批64个碰撞类transition+64个安全类transition，有放回采样，打乱后计算双头BCEWithLogits。
+Reward仍使用原均匀transition采样及双头Huber损失，没有做类别均衡。
+验证不重采样，仍使用全部验证transition计算双头sigmoid MSE之和及其他原指标。
+Reward和Cost沿用共享随机数生成器；采样调用改变后，Reward批次序列可能与旧运行不同，
+但Reward训练规则未改变。这不是严格逐批次锁定的Reward对照。
+
+三、输入与范围
+从原始student_dagger_coverage_20260915/round16.zip重新加载，未继续失败的预热检查点。
+输入模型SHA256：634e8106713c0c316afc77bf345615d3a6a101789f82f182853356ab57dbc086
+No-Belief、5人、nominal、seed=2407、10维robot输入、Actor冻结。
+完整复用safety_no_belief_directed，不采新数据：训练与验证各30碰撞+30非碰撞。
+train.pt SHA256：f2edc09fbd0c8c7b3b375497633c6c4d528fcefc5ce7348c4f268a9538bd3fed
+validation.pt SHA256：ea11d22149242a1cadffe492c52fe8844297fae8e2cd5de5ae33a80bbd052c6e
+两项数据哈希再次从远程读取，与前次报告一致。
+训练碰撞/安全transition仍为155/1593；只改变训练batch构成，不改变数据。
+远程17项现有契约测试通过；真实1000次预热及原门槛验收已实际执行。
+
+四、原始验证集结果
+指标                           旧均匀采样+MSE    新均衡采样+BCE    原要求
+Reward双头Huber损失             0.004141          0.003683          <=0.2
+Cost双头sigmoid MSE之和         0.104868          0.114422          <=0.04
+碰撞类MSE（双头概率取max）      0.402326          0.171041          <=0.04
+安全类MSE（同上）               0.006657          0.043098          <=0.04
+Brier（同上）                   0.052187          0.057820          描述性
+AUROC（同上）                   0.906974          0.956798          >0.5
+碰撞类预测均值                  0.501752          0.781414          >安全类均值
+安全类预测均值                  0.018202          0.060456          描述性
+Cost整体验收                    失败              失败
+
+新运行预热前Reward/Cost验证损失为0.637097/0.496868，与前次初值一致。
+新运行碰撞类、非碰撞类MSE及双头Cost验证损失均超过0.04。
+Reward门、AUROC门及均值排序门通过，但不能替代未通过的门槛。
+以上为transition层面指标，未计算布局聚类置信区间，不宣称统计显著改善。
+
+五、结果怎么解释
+改变采样及训练损失后，危险样本区分与预测幅度改善；原不平衡确实值得处理。
+但这是采样+BCE两项联合修改的一次结果，不能把改善单独归因于其中之一。
+安全类误差同时增大，总体验证损失没有改善，不能说Cost Critic已经学好。
+碰撞类均值0.781略低于0.8，不应夸大成“明显低于0.8”；即使均值达到0.8，
+当前MSE门槛仍需逐项通过，不能拿均值替代验收。
+本轮不支持“学生被RL训坏”，因为RL及其导航评价尚未执行。
+
+六、下一步边界
+停止继续调采样或增加预热步数。本次未启动下一项研究或训练。
+若后续继续，优先审查标签与Bellman后续策略的一致性：正后缀来自持续危险控制，
+负轨迹来自正常学生，其最终结果不天然等于同一学生后续策略的碰撞到达概率。
+这是待检验问题，不是本轮已经证明的唯一失败根因。
+
+七、文件
+本地目录：/home/abc/workspace/bayes_set_continuous/CrowdNav/repair_results/no_belief_td3_smoke_2k_balanced/
+REPORT_ZH.txt：本报告。
+status.json：原始最终状态、全部指标及Actor不变断言结果。
+critic_warmup.zip：本轮预热检查点，已下载本地，不上传Git。
+相邻no_belief_td3_smoke_2k_balanced.launch.log：原始阶段日志。
+远程对应目录：/root/continuous_repair_20260914/CrowdNav/repair_results/no_belief_td3_smoke_2k_balanced/
+旧实验、原模型和原安全数据全部保留，未覆盖。
