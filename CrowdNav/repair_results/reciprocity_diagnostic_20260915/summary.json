@@ -1,0 +1,60 @@
+{
+  "stage": "information_complete",
+  "environment": {
+    "matched_branches": 188,
+    "type_position_change_rate": 0.10106382978723404,
+    "action_position_change_rate": 0.5175438596491229,
+    "max_first_step_action_effect": 0.0,
+    "passed": true
+  },
+  "information_gate": false,
+  "comparisons": {
+    "current": {
+      "relative_mse_gain": -0.0713619738817215,
+      "absolute_ci": [
+        -0.004280915158235742,
+        -0.0013186998741900298
+      ],
+      "positive_seeds": 0,
+      "passed": false
+    },
+    "history": {
+      "relative_mse_gain": -0.04456428810954094,
+      "absolute_ci": [
+        -0.0038772812907417274,
+        0.00022863850068163382
+      ],
+      "positive_seeds": 0,
+      "passed": false
+    },
+    "map": {
+      "relative_mse_gain": -0.004257912281900644,
+      "absolute_ci": [
+        -0.0015895162964368434,
+        0.0011719399055755968
+      ],
+      "positive_seeds": 1,
+      "passed": false
+    }
+  },
+  "posterior": {
+    "train": {
+      "brier": 0.2818101226418009,
+      "accuracy": 0.5585576805944695,
+      "ambiguity_fraction": 0.8487513704470703
+    },
+    "validation": {
+      "brier": 0.3340862938386912,
+      "accuracy": 0.49462665736217726,
+      "ambiguity_fraction": 0.8226796929518493
+    },
+    "audit": {
+      "brier": 0.33744041850077106,
+      "accuracy": 0.47006178618236283,
+      "ambiguity_fraction": 0.835461524059165
+    }
+  },
+  "elapsed_seconds": 131.9125783443451,
+  "decision_gate": "not_started_information_failed",
+  "PPO_started": false
+}
