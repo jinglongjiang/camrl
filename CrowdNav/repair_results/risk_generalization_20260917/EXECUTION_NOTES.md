@@ -85,6 +85,25 @@ states. All of these student states are retained; combined IL data size is
 
 ## Interpretation limits
 
+### Separate terminal IL diagnostic
+
+The corrected original experiment also failed its all-runs qualification gate:
+CV seed 7207 and EWMA seed 4807 each scored 88/100 nominal. The Bayesian arm
+and the physical baseline passed their own gates for all three seeds. PPO was
+NOT started. This distinction matters: the cohort gate failure is not evidence
+that the Bayesian actor itself failed to learn five-human navigation.
+
+To answer the user's actual generalization question rather than stop at that
+gate, a separate protocol was committed as `a5a70a7` before completing the new
+deployment evaluation. It evaluates all twelve frozen DAgger policies, with no
+checkpoint selection or further training, on the originally planned six scenes
+and two profiles (50 layouts per cell, 7,200 episodes). It is stored under
+`il_diagnostic/` and must be called a supplemental IL-only diagnostic, not a
+passed original experiment or an IL+PPO result. The original failed gate and
+its analysis are retained unchanged. Original audit assertions about the absence
+of high-density testing refer only to that original protocol's output folder,
+not to this explicitly separate supplemental evaluation.
+
 - The Bayesian channel uses the existing fitted GDBN's predictive mean and
   isotropized covariance, not a newly validated likelihood or a full mixture
   collision integral.
@@ -99,3 +118,18 @@ states. All of these student states are retained; combined IL data size is
 - A failed five-human qualification gate makes the generalization question
   inconclusive. It does not prove that Bayesian generalization is impossible.
 - No PDF is generated; the FCS1 manuscript is not edited.
+
+## Final checks
+
+- All 7,200 deployment records are present, covering 300 physical layouts;
+  episode action-bound violation counts sum to zero.
+- Four sampled episodes were replayed across different arms, seeds, crowd sizes
+  and profiles. Their entire saved episode dictionaries matched exactly.
+- All 50 files in `il_artifacts.tar.gz` matched their on-disk SHA-256 digests.
+- The evaluation auditor's code digest matches the digest frozen in the
+  supplemental protocol. The original training-code hashes also still match.
+- FCS2 source copies match; static checks found 12 unique labels, four resolved
+  references, ten cited bibliography keys and balanced environments. No PDF
+  compilation was performed.
+- FCS1 was not edited by this work. Its hash changed externally near closeout;
+  that concurrent change was neither overwritten nor reverted.

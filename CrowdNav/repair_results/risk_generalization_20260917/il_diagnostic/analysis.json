@@ -1,0 +1,1456 @@
+{
+  "status": "EVALUATION_COMPLETE",
+  "protocol": {
+    "arms": [
+      "base",
+      "cv",
+      "ewma",
+      "bayes"
+    ],
+    "seeds": [
+      2407,
+      4807,
+      7207
+    ],
+    "train_humans": 5,
+    "teacher_attempts": 240,
+    "bc_updates": 3000,
+    "dagger_fallback": "once, 30 episodes per arm/seed pooled, 3000 updates",
+    "ppo_steps": 20480,
+    "ppo_adam_steps": 240,
+    "dev_gate": "each run: nominal >=90/100, train_nonstationary >=80/100",
+    "test_scenes": [
+      "baseline_circle",
+      "dense_circle",
+      "large_circle",
+      "baseline_square",
+      "dense_square",
+      "large_square"
+    ],
+    "test_profiles": [
+      "nominal",
+      "heldout_nonstationary"
+    ],
+    "test_layouts_per_cell": 50,
+    "test_before_gate": false,
+    "source_sha256": "f1188379822d94dbd1e44ef096fa7aa84529ebc9343bb2c248c1c88f56a2a4cc",
+    "runtime": {
+      "python": "3.8.10",
+      "sb3": "2.3.2",
+      "torch": "2.1.0+cu121",
+      "numpy": "1.23.5",
+      "scipy": "1.3.3"
+    },
+    "params_sha256": {
+      "gdbn.npz": "d53d76f13595e79c420574801d44cb1b8e3e9fbf158e4414ab7ce918c13ca08b",
+      "action_model.npz": "72af13a25f4bec8e5065af26e3e751d9a1509cc2d5ec029f4f593567aea0c4dc",
+      "gng.npz": "ae60e3a315f0be40915e38858aa545c17272d751e184a0a7741fa7bb17128c31"
+    },
+    "code_sha256": {
+      "risk_generalization.py": "7f2c8e139a81dddaacd7d75582ba4c2573c91332105b9a1bce1fa864b5e2e8c0",
+      "network.py": "6d10dc3abbd5b33691c151c18c7dca527b953d62b3012c72b0792ed19bc88e23",
+      "environment.py": "43e10def83c12492a692f7b0efa51d371b32ca4012b217274af6e51a475ae98c",
+      "teacher.py": "4bf5400e1a0481415ed9b49dddde4cdd0592234100f1c9846a4f762cc7dc0add"
+    },
+    "mechanism": "learned zero-initialized log-risk attention bias; physical tokens identical",
+    "cv_variance": "(.1+.2*t)^2",
+    "ewma_variance": ".01+EWMA(dv^2)*t^3/(3*dt), alpha=.15",
+    "bayes": "existing GDBN predictive mean and trace/2 covariance, floor=.01; B_action=0",
+    "risk": "maximum Gaussian-disc overlap over 7 fixed robot arcs and 8 steps; no claim of union probability",
+    "collection_case_ranges": {
+      "teacher": [
+        620000,
+        620239
+      ],
+      "dagger": [
+        625000,
+        625359
+      ],
+      "development": [
+        630000,
+        630099
+      ]
+    },
+    "statistical_rule": "Primary: mean OOD SR, 5 non-baseline configurations x 2 profiles equally weighted; paired seed/layout bootstrap with shared profile pairs; 98.333% CI for each of 3 Bayes-control contrasts (Bonferroni).",
+    "benefit_gate": "Bayes >=3pp over each of base/CV/EWMA on primary OOD metric, all CI lower bounds >0; no >2pp nominal 5-human loss against base.",
+    "strong_generalization_gate": "Separately report whether 20-human nominal SR reaches 80%; a relative gain alone does not establish strong generalization."
+  },
+  "stages": {
+    "bc": [
+      {
+        "stage": "bc",
+        "seed": 2407,
+        "arm": "base",
+        "updates": 3000,
+        "transitions": 10322,
+        "final_loss": 0.0313284732401371,
+        "risk_gain": -0.005798610858619213,
+        "development": {
+          "nominal": {
+            "success": 86,
+            "collision": 13,
+            "timeout": 1,
+            "n": 100
+          },
+          "train_nonstationary": {
+            "success": 82,
+            "collision": 17,
+            "timeout": 1,
+            "n": 100
+          }
+        }
+      },
+      {
+        "stage": "bc",
+        "seed": 2407,
+        "arm": "cv",
+        "updates": 3000,
+        "transitions": 10322,
+        "final_loss": 0.03447419032454491,
+        "risk_gain": 0.05916784331202507,
+        "development": {
+          "nominal": {
+            "success": 85,
+            "collision": 12,
+            "timeout": 3,
+            "n": 100
+          },
+          "train_nonstationary": {
+            "success": 86,
+            "collision": 14,
+            "timeout": 0,
+            "n": 100
+          }
+        }
+      },
+      {
+        "stage": "bc",
+        "seed": 2407,
+        "arm": "ewma",
+        "updates": 3000,
+        "transitions": 10322,
+        "final_loss": 0.03320860117673874,
+        "risk_gain": 0.06457829475402832,
+        "development": {
+          "nominal": {
+            "success": 89,
+            "collision": 10,
+            "timeout": 1,
+            "n": 100
+          },
+          "train_nonstationary": {
+            "success": 85,
+            "collision": 12,
+            "timeout": 3,
+            "n": 100
+          }
+        }
+      },
+      {
+        "stage": "bc",
+        "seed": 2407,
+        "arm": "bayes",
+        "updates": 3000,
+        "transitions": 10322,
+        "final_loss": 0.03476892411708832,
+        "risk_gain": 0.054221417754888535,
+        "development": {
+          "nominal": {
+            "success": 84,
+            "collision": 15,
+            "timeout": 1,
+            "n": 100
+          },
+          "train_nonstationary": {
+            "success": 85,
+            "collision": 15,
+            "timeout": 0,
+            "n": 100
+          }
+        }
+      },
+      {
+        "stage": "bc",
+        "seed": 4807,
+        "arm": "base",
+        "updates": 3000,
+        "transitions": 10322,
+        "final_loss": 0.03275872394442558,
+        "risk_gain": -0.003299252362921834,
+        "development": {
+          "nominal": {
+            "success": 86,
+            "collision": 11,
+            "timeout": 3,
+            "n": 100
+          },
+          "train_nonstationary": {
+            "success": 84,
+            "collision": 13,
+            "timeout": 3,
+            "n": 100
+          }
+        }
+      },
+      {
+        "stage": "bc",
+        "seed": 4807,
+        "arm": "cv",
+        "updates": 3000,
+        "transitions": 10322,
+        "final_loss": 0.03268219903111458,
+        "risk_gain": 0.056791577488183975,
+        "development": {
+          "nominal": {
+            "success": 88,
+            "collision": 9,
+            "timeout": 3,
+            "n": 100
+          },
+          "train_nonstationary": {
+            "success": 89,
+            "collision": 9,
+            "timeout": 2,
+            "n": 100
+          }
+        }
+      },
+      {
+        "stage": "bc",
+        "seed": 4807,
+        "arm": "ewma",
+        "updates": 3000,
+        "transitions": 10322,
+        "final_loss": 0.034885793924331665,
+        "risk_gain": 0.05290265753865242,
+        "development": {
+          "nominal": {
+            "success": 89,
+            "collision": 10,
+            "timeout": 1,
+            "n": 100
+          },
+          "train_nonstationary": {
+            "success": 86,
+            "collision": 10,
+            "timeout": 4,
+            "n": 100
+          }
+        }
+      },
+      {
+        "stage": "bc",
+        "seed": 4807,
+        "arm": "bayes",
+        "updates": 3000,
+        "transitions": 10322,
+        "final_loss": 0.034857045859098434,
+        "risk_gain": 0.04302123561501503,
+        "development": {
+          "nominal": {
+            "success": 89,
+            "collision": 9,
+            "timeout": 2,
+            "n": 100
+          },
+          "train_nonstationary": {
+            "success": 88,
+            "collision": 11,
+            "timeout": 1,
+            "n": 100
+          }
+        }
+      },
+      {
+        "stage": "bc",
+        "seed": 7207,
+        "arm": "base",
+        "updates": 3000,
+        "transitions": 10322,
+        "final_loss": 0.03719458356499672,
+        "risk_gain": -0.00613242294639349,
+        "development": {
+          "nominal": {
+            "success": 85,
+            "collision": 14,
+            "timeout": 1,
+            "n": 100
+          },
+          "train_nonstationary": {
+            "success": 85,
+            "collision": 13,
+            "timeout": 2,
+            "n": 100
+          }
+        }
+      },
+      {
+        "stage": "bc",
+        "seed": 7207,
+        "arm": "cv",
+        "updates": 3000,
+        "transitions": 10322,
+        "final_loss": 0.03506026417016983,
+        "risk_gain": 0.05925842374563217,
+        "development": {
+          "nominal": {
+            "success": 90,
+            "collision": 9,
+            "timeout": 1,
+            "n": 100
+          },
+          "train_nonstationary": {
+            "success": 85,
+            "collision": 14,
+            "timeout": 1,
+            "n": 100
+          }
+        }
+      },
+      {
+        "stage": "bc",
+        "seed": 7207,
+        "arm": "ewma",
+        "updates": 3000,
+        "transitions": 10322,
+        "final_loss": 0.03843546658754349,
+        "risk_gain": 0.06365392357110977,
+        "development": {
+          "nominal": {
+            "success": 87,
+            "collision": 12,
+            "timeout": 1,
+            "n": 100
+          },
+          "train_nonstationary": {
+            "success": 85,
+            "collision": 15,
+            "timeout": 0,
+            "n": 100
+          }
+        }
+      },
+      {
+        "stage": "bc",
+        "seed": 7207,
+        "arm": "bayes",
+        "updates": 3000,
+        "transitions": 10322,
+        "final_loss": 0.03450815752148628,
+        "risk_gain": 0.054064393043518066,
+        "development": {
+          "nominal": {
+            "success": 88,
+            "collision": 11,
+            "timeout": 1,
+            "n": 100
+          },
+          "train_nonstationary": {
+            "success": 88,
+            "collision": 11,
+            "timeout": 1,
+            "n": 100
+          }
+        }
+      }
+    ],
+    "dagger": [
+      {
+        "stage": "dagger",
+        "seed": 2407,
+        "arm": "base",
+        "updates": 3000,
+        "transitions": 26456,
+        "final_loss": 0.11660240590572357,
+        "risk_gain": 0.005113709717988968,
+        "development": {
+          "nominal": {
+            "success": 90,
+            "collision": 8,
+            "timeout": 2,
+            "n": 100
+          },
+          "train_nonstationary": {
+            "success": 89,
+            "collision": 7,
+            "timeout": 4,
+            "n": 100
+          }
+        }
+      },
+      {
+        "stage": "dagger",
+        "seed": 2407,
+        "arm": "cv",
+        "updates": 3000,
+        "transitions": 26456,
+        "final_loss": 0.1056557297706604,
+        "risk_gain": 0.11540383845567703,
+        "development": {
+          "nominal": {
+            "success": 91,
+            "collision": 8,
+            "timeout": 1,
+            "n": 100
+          },
+          "train_nonstationary": {
+            "success": 90,
+            "collision": 8,
+            "timeout": 2,
+            "n": 100
+          }
+        }
+      },
+      {
+        "stage": "dagger",
+        "seed": 2407,
+        "arm": "ewma",
+        "updates": 3000,
+        "transitions": 26456,
+        "final_loss": 0.10049450397491455,
+        "risk_gain": 0.10298611223697662,
+        "development": {
+          "nominal": {
+            "success": 90,
+            "collision": 7,
+            "timeout": 3,
+            "n": 100
+          },
+          "train_nonstationary": {
+            "success": 93,
+            "collision": 6,
+            "timeout": 1,
+            "n": 100
+          }
+        }
+      },
+      {
+        "stage": "dagger",
+        "seed": 2407,
+        "arm": "bayes",
+        "updates": 3000,
+        "transitions": 26456,
+        "final_loss": 0.11557208001613617,
+        "risk_gain": 0.10344717651605606,
+        "development": {
+          "nominal": {
+            "success": 93,
+            "collision": 6,
+            "timeout": 1,
+            "n": 100
+          },
+          "train_nonstationary": {
+            "success": 96,
+            "collision": 3,
+            "timeout": 1,
+            "n": 100
+          }
+        }
+      },
+      {
+        "stage": "dagger",
+        "seed": 4807,
+        "arm": "base",
+        "updates": 3000,
+        "transitions": 26456,
+        "final_loss": 0.0921599492430687,
+        "risk_gain": 0.0026531924959272146,
+        "development": {
+          "nominal": {
+            "success": 92,
+            "collision": 6,
+            "timeout": 2,
+            "n": 100
+          },
+          "train_nonstationary": {
+            "success": 95,
+            "collision": 2,
+            "timeout": 3,
+            "n": 100
+          }
+        }
+      },
+      {
+        "stage": "dagger",
+        "seed": 4807,
+        "arm": "cv",
+        "updates": 3000,
+        "transitions": 26456,
+        "final_loss": 0.09222252666950226,
+        "risk_gain": 0.10543683171272278,
+        "development": {
+          "nominal": {
+            "success": 92,
+            "collision": 5,
+            "timeout": 3,
+            "n": 100
+          },
+          "train_nonstationary": {
+            "success": 91,
+            "collision": 6,
+            "timeout": 3,
+            "n": 100
+          }
+        }
+      },
+      {
+        "stage": "dagger",
+        "seed": 4807,
+        "arm": "ewma",
+        "updates": 3000,
+        "transitions": 26456,
+        "final_loss": 0.10594455897808075,
+        "risk_gain": 0.09555916488170624,
+        "development": {
+          "nominal": {
+            "success": 88,
+            "collision": 7,
+            "timeout": 5,
+            "n": 100
+          },
+          "train_nonstationary": {
+            "success": 93,
+            "collision": 6,
+            "timeout": 1,
+            "n": 100
+          }
+        }
+      },
+      {
+        "stage": "dagger",
+        "seed": 4807,
+        "arm": "bayes",
+        "updates": 3000,
+        "transitions": 26456,
+        "final_loss": 0.09574287384748459,
+        "risk_gain": 0.08815088868141174,
+        "development": {
+          "nominal": {
+            "success": 94,
+            "collision": 6,
+            "timeout": 0,
+            "n": 100
+          },
+          "train_nonstationary": {
+            "success": 91,
+            "collision": 7,
+            "timeout": 2,
+            "n": 100
+          }
+        }
+      },
+      {
+        "stage": "dagger",
+        "seed": 7207,
+        "arm": "base",
+        "updates": 3000,
+        "transitions": 26456,
+        "final_loss": 0.1002730131149292,
+        "risk_gain": -0.00919530913233757,
+        "development": {
+          "nominal": {
+            "success": 90,
+            "collision": 8,
+            "timeout": 2,
+            "n": 100
+          },
+          "train_nonstationary": {
+            "success": 90,
+            "collision": 8,
+            "timeout": 2,
+            "n": 100
+          }
+        }
+      },
+      {
+        "stage": "dagger",
+        "seed": 7207,
+        "arm": "cv",
+        "updates": 3000,
+        "transitions": 26456,
+        "final_loss": 0.09904021769762039,
+        "risk_gain": 0.11936488747596741,
+        "development": {
+          "nominal": {
+            "success": 88,
+            "collision": 11,
+            "timeout": 1,
+            "n": 100
+          },
+          "train_nonstationary": {
+            "success": 92,
+            "collision": 6,
+            "timeout": 2,
+            "n": 100
+          }
+        }
+      },
+      {
+        "stage": "dagger",
+        "seed": 7207,
+        "arm": "ewma",
+        "updates": 3000,
+        "transitions": 26456,
+        "final_loss": 0.09475059062242508,
+        "risk_gain": 0.11065982282161713,
+        "development": {
+          "nominal": {
+            "success": 91,
+            "collision": 8,
+            "timeout": 1,
+            "n": 100
+          },
+          "train_nonstationary": {
+            "success": 90,
+            "collision": 8,
+            "timeout": 2,
+            "n": 100
+          }
+        }
+      },
+      {
+        "stage": "dagger",
+        "seed": 7207,
+        "arm": "bayes",
+        "updates": 3000,
+        "transitions": 26456,
+        "final_loss": 0.08942734450101852,
+        "risk_gain": 0.1031763106584549,
+        "development": {
+          "nominal": {
+            "success": 91,
+            "collision": 5,
+            "timeout": 4,
+            "n": 100
+          },
+          "train_nonstationary": {
+            "success": 91,
+            "collision": 7,
+            "timeout": 2,
+            "n": 100
+          }
+        }
+      }
+    ]
+  },
+  "data": {
+    "demos": {
+      "episodes": 240,
+      "transitions": 10322,
+      "unique_layouts": 240,
+      "outcomes": {
+        "success": 234,
+        "collision": 5,
+        "timeout": 1
+      },
+      "conditions": {
+        "circle_crossing/train_nonstationary": 60,
+        "square_crossing/train_nonstationary": 60,
+        "circle_crossing/nominal": 60,
+        "square_crossing/nominal": 60
+      },
+      "sha256": "7cb0ec6ec7632a21c1b2d6b78f89f1dbf5a75888f10785a6d79f4bc96af5f553"
+    },
+    "dagger": {
+      "episodes": 360,
+      "transitions": 16134,
+      "unique_layouts": 360,
+      "outcomes": {
+        "success": 311,
+        "collision": 43,
+        "timeout": 6
+      },
+      "conditions": {
+        "circle_crossing/nominal": 90,
+        "square_crossing/nominal": 90,
+        "circle_crossing/train_nonstationary": 90,
+        "square_crossing/train_nonstationary": 90
+      },
+      "sha256": "5d35f64a9dcc5786152ee760576ba289b2f560d1d412abe573f41c64ef06ad2d"
+    }
+  },
+  "checks": {
+    "five_human_training_only": true,
+    "train_development_layout_disjoint": true,
+    "source_hash_matches": {
+      "risk_generalization.py": true,
+      "network.py": true,
+      "environment.py": true,
+      "teacher.py": true
+    },
+    "initial_checkpoint_unchanged": true,
+    "test_layout_disjoint_and_paired": true,
+    "ppo_adam_updates_per_run": 0
+  },
+  "evaluation_episodes": 7200,
+  "cells": [
+    {
+      "arm": "base",
+      "scene": "baseline_circle",
+      "profile": "nominal",
+      "n": 150,
+      "success": 147,
+      "collision": 0,
+      "timeout": 3,
+      "mean_return": 0.8984211103166441,
+      "success_by_seed": [
+        49,
+        49,
+        49
+      ]
+    },
+    {
+      "arm": "base",
+      "scene": "baseline_circle",
+      "profile": "heldout_nonstationary",
+      "n": 150,
+      "success": 134,
+      "collision": 14,
+      "timeout": 2,
+      "mean_return": 0.7608794270537553,
+      "success_by_seed": [
+        42,
+        45,
+        47
+      ]
+    },
+    {
+      "arm": "base",
+      "scene": "dense_circle",
+      "profile": "nominal",
+      "n": 150,
+      "success": 118,
+      "collision": 31,
+      "timeout": 1,
+      "mean_return": 0.5773174588008753,
+      "success_by_seed": [
+        37,
+        40,
+        41
+      ]
+    },
+    {
+      "arm": "base",
+      "scene": "dense_circle",
+      "profile": "heldout_nonstationary",
+      "n": 150,
+      "success": 86,
+      "collision": 62,
+      "timeout": 2,
+      "mean_return": 0.2541595959022081,
+      "success_by_seed": [
+        31,
+        28,
+        27
+      ]
+    },
+    {
+      "arm": "base",
+      "scene": "large_circle",
+      "profile": "nominal",
+      "n": 150,
+      "success": 100,
+      "collision": 50,
+      "timeout": 0,
+      "mean_return": 0.39826490313907553,
+      "success_by_seed": [
+        32,
+        33,
+        35
+      ]
+    },
+    {
+      "arm": "base",
+      "scene": "large_circle",
+      "profile": "heldout_nonstationary",
+      "n": 150,
+      "success": 49,
+      "collision": 99,
+      "timeout": 2,
+      "mean_return": -0.08177989659033137,
+      "success_by_seed": [
+        16,
+        16,
+        17
+      ]
+    },
+    {
+      "arm": "base",
+      "scene": "baseline_square",
+      "profile": "nominal",
+      "n": 150,
+      "success": 73,
+      "collision": 77,
+      "timeout": 0,
+      "mean_return": 0.15977317407320266,
+      "success_by_seed": [
+        28,
+        25,
+        20
+      ]
+    },
+    {
+      "arm": "base",
+      "scene": "baseline_square",
+      "profile": "heldout_nonstationary",
+      "n": 150,
+      "success": 62,
+      "collision": 88,
+      "timeout": 0,
+      "mean_return": 0.03764633583475618,
+      "success_by_seed": [
+        20,
+        19,
+        23
+      ]
+    },
+    {
+      "arm": "base",
+      "scene": "dense_square",
+      "profile": "nominal",
+      "n": 150,
+      "success": 13,
+      "collision": 137,
+      "timeout": 0,
+      "mean_return": -0.45032686564851093,
+      "success_by_seed": [
+        6,
+        2,
+        5
+      ]
+    },
+    {
+      "arm": "base",
+      "scene": "dense_square",
+      "profile": "heldout_nonstationary",
+      "n": 150,
+      "success": 5,
+      "collision": 145,
+      "timeout": 0,
+      "mean_return": -0.5303485230152679,
+      "success_by_seed": [
+        2,
+        0,
+        3
+      ]
+    },
+    {
+      "arm": "base",
+      "scene": "large_square",
+      "profile": "nominal",
+      "n": 150,
+      "success": 14,
+      "collision": 136,
+      "timeout": 0,
+      "mean_return": -0.4266738182268337,
+      "success_by_seed": [
+        4,
+        6,
+        4
+      ]
+    },
+    {
+      "arm": "base",
+      "scene": "large_square",
+      "profile": "heldout_nonstationary",
+      "n": 150,
+      "success": 13,
+      "collision": 136,
+      "timeout": 1,
+      "mean_return": -0.44320481565763753,
+      "success_by_seed": [
+        5,
+        3,
+        5
+      ]
+    },
+    {
+      "arm": "cv",
+      "scene": "baseline_circle",
+      "profile": "nominal",
+      "n": 150,
+      "success": 141,
+      "collision": 6,
+      "timeout": 3,
+      "mean_return": 0.837572748675496,
+      "success_by_seed": [
+        47,
+        47,
+        47
+      ]
+    },
+    {
+      "arm": "cv",
+      "scene": "baseline_circle",
+      "profile": "heldout_nonstationary",
+      "n": 150,
+      "success": 136,
+      "collision": 11,
+      "timeout": 3,
+      "mean_return": 0.7836991869790315,
+      "success_by_seed": [
+        47,
+        44,
+        45
+      ]
+    },
+    {
+      "arm": "cv",
+      "scene": "dense_circle",
+      "profile": "nominal",
+      "n": 150,
+      "success": 125,
+      "collision": 23,
+      "timeout": 2,
+      "mean_return": 0.6524121640493036,
+      "success_by_seed": [
+        43,
+        42,
+        40
+      ]
+    },
+    {
+      "arm": "cv",
+      "scene": "dense_circle",
+      "profile": "heldout_nonstationary",
+      "n": 150,
+      "success": 89,
+      "collision": 60,
+      "timeout": 1,
+      "mean_return": 0.2820880752265696,
+      "success_by_seed": [
+        27,
+        29,
+        33
+      ]
+    },
+    {
+      "arm": "cv",
+      "scene": "large_circle",
+      "profile": "nominal",
+      "n": 150,
+      "success": 101,
+      "collision": 45,
+      "timeout": 4,
+      "mean_return": 0.39957527056709724,
+      "success_by_seed": [
+        37,
+        30,
+        34
+      ]
+    },
+    {
+      "arm": "cv",
+      "scene": "large_circle",
+      "profile": "heldout_nonstationary",
+      "n": 150,
+      "success": 64,
+      "collision": 84,
+      "timeout": 2,
+      "mean_return": 0.0599702953467752,
+      "success_by_seed": [
+        21,
+        16,
+        27
+      ]
+    },
+    {
+      "arm": "cv",
+      "scene": "baseline_square",
+      "profile": "nominal",
+      "n": 150,
+      "success": 79,
+      "collision": 71,
+      "timeout": 0,
+      "mean_return": 0.21523300199519918,
+      "success_by_seed": [
+        31,
+        25,
+        23
+      ]
+    },
+    {
+      "arm": "cv",
+      "scene": "baseline_square",
+      "profile": "heldout_nonstationary",
+      "n": 150,
+      "success": 68,
+      "collision": 80,
+      "timeout": 2,
+      "mean_return": 0.09009880202896008,
+      "success_by_seed": [
+        24,
+        23,
+        21
+      ]
+    },
+    {
+      "arm": "cv",
+      "scene": "dense_square",
+      "profile": "nominal",
+      "n": 150,
+      "success": 8,
+      "collision": 141,
+      "timeout": 1,
+      "mean_return": -0.49668519666953653,
+      "success_by_seed": [
+        4,
+        1,
+        3
+      ]
+    },
+    {
+      "arm": "cv",
+      "scene": "dense_square",
+      "profile": "heldout_nonstationary",
+      "n": 150,
+      "success": 9,
+      "collision": 141,
+      "timeout": 0,
+      "mean_return": -0.49041633652551053,
+      "success_by_seed": [
+        1,
+        4,
+        4
+      ]
+    },
+    {
+      "arm": "cv",
+      "scene": "large_square",
+      "profile": "nominal",
+      "n": 150,
+      "success": 18,
+      "collision": 132,
+      "timeout": 0,
+      "mean_return": -0.38236298240013655,
+      "success_by_seed": [
+        6,
+        5,
+        7
+      ]
+    },
+    {
+      "arm": "cv",
+      "scene": "large_square",
+      "profile": "heldout_nonstationary",
+      "n": 150,
+      "success": 15,
+      "collision": 133,
+      "timeout": 2,
+      "mean_return": -0.42489750861581344,
+      "success_by_seed": [
+        3,
+        4,
+        8
+      ]
+    },
+    {
+      "arm": "ewma",
+      "scene": "baseline_circle",
+      "profile": "nominal",
+      "n": 150,
+      "success": 144,
+      "collision": 3,
+      "timeout": 3,
+      "mean_return": 0.8672228918486025,
+      "success_by_seed": [
+        49,
+        47,
+        48
+      ]
+    },
+    {
+      "arm": "ewma",
+      "scene": "baseline_circle",
+      "profile": "heldout_nonstationary",
+      "n": 150,
+      "success": 130,
+      "collision": 20,
+      "timeout": 0,
+      "mean_return": 0.7268407825806819,
+      "success_by_seed": [
+        45,
+        40,
+        45
+      ]
+    },
+    {
+      "arm": "ewma",
+      "scene": "dense_circle",
+      "profile": "nominal",
+      "n": 150,
+      "success": 120,
+      "collision": 26,
+      "timeout": 4,
+      "mean_return": 0.6004154232932298,
+      "success_by_seed": [
+        40,
+        40,
+        40
+      ]
+    },
+    {
+      "arm": "ewma",
+      "scene": "dense_circle",
+      "profile": "heldout_nonstationary",
+      "n": 150,
+      "success": 90,
+      "collision": 59,
+      "timeout": 1,
+      "mean_return": 0.29870062449714635,
+      "success_by_seed": [
+        32,
+        30,
+        28
+      ]
+    },
+    {
+      "arm": "ewma",
+      "scene": "large_circle",
+      "profile": "nominal",
+      "n": 150,
+      "success": 97,
+      "collision": 51,
+      "timeout": 2,
+      "mean_return": 0.3633423961811202,
+      "success_by_seed": [
+        32,
+        31,
+        34
+      ]
+    },
+    {
+      "arm": "ewma",
+      "scene": "large_circle",
+      "profile": "heldout_nonstationary",
+      "n": 150,
+      "success": 65,
+      "collision": 84,
+      "timeout": 1,
+      "mean_return": 0.06613382132464153,
+      "success_by_seed": [
+        26,
+        18,
+        21
+      ]
+    },
+    {
+      "arm": "ewma",
+      "scene": "baseline_square",
+      "profile": "nominal",
+      "n": 150,
+      "success": 82,
+      "collision": 68,
+      "timeout": 0,
+      "mean_return": 0.2500662434905023,
+      "success_by_seed": [
+        25,
+        29,
+        28
+      ]
+    },
+    {
+      "arm": "ewma",
+      "scene": "baseline_square",
+      "profile": "heldout_nonstationary",
+      "n": 150,
+      "success": 64,
+      "collision": 85,
+      "timeout": 1,
+      "mean_return": 0.04541272110285915,
+      "success_by_seed": [
+        21,
+        19,
+        24
+      ]
+    },
+    {
+      "arm": "ewma",
+      "scene": "dense_square",
+      "profile": "nominal",
+      "n": 150,
+      "success": 11,
+      "collision": 138,
+      "timeout": 1,
+      "mean_return": -0.4742519940552985,
+      "success_by_seed": [
+        3,
+        6,
+        2
+      ]
+    },
+    {
+      "arm": "ewma",
+      "scene": "dense_square",
+      "profile": "heldout_nonstationary",
+      "n": 150,
+      "success": 7,
+      "collision": 142,
+      "timeout": 1,
+      "mean_return": -0.5186496608851204,
+      "success_by_seed": [
+        0,
+        4,
+        3
+      ]
+    },
+    {
+      "arm": "ewma",
+      "scene": "large_square",
+      "profile": "nominal",
+      "n": 150,
+      "success": 16,
+      "collision": 134,
+      "timeout": 0,
+      "mean_return": -0.40987102297622263,
+      "success_by_seed": [
+        5,
+        7,
+        4
+      ]
+    },
+    {
+      "arm": "ewma",
+      "scene": "large_square",
+      "profile": "heldout_nonstationary",
+      "n": 150,
+      "success": 8,
+      "collision": 142,
+      "timeout": 0,
+      "mean_return": -0.4853355193980813,
+      "success_by_seed": [
+        3,
+        2,
+        3
+      ]
+    },
+    {
+      "arm": "bayes",
+      "scene": "baseline_circle",
+      "profile": "nominal",
+      "n": 150,
+      "success": 144,
+      "collision": 4,
+      "timeout": 2,
+      "mean_return": 0.8696502779924334,
+      "success_by_seed": [
+        49,
+        48,
+        47
+      ]
+    },
+    {
+      "arm": "bayes",
+      "scene": "baseline_circle",
+      "profile": "heldout_nonstationary",
+      "n": 150,
+      "success": 132,
+      "collision": 16,
+      "timeout": 2,
+      "mean_return": 0.7460074920830965,
+      "success_by_seed": [
+        44,
+        43,
+        45
+      ]
+    },
+    {
+      "arm": "bayes",
+      "scene": "dense_circle",
+      "profile": "nominal",
+      "n": 150,
+      "success": 120,
+      "collision": 29,
+      "timeout": 1,
+      "mean_return": 0.6017251214245631,
+      "success_by_seed": [
+        39,
+        41,
+        40
+      ]
+    },
+    {
+      "arm": "bayes",
+      "scene": "dense_circle",
+      "profile": "heldout_nonstationary",
+      "n": 150,
+      "success": 82,
+      "collision": 66,
+      "timeout": 2,
+      "mean_return": 0.2132830680596147,
+      "success_by_seed": [
+        23,
+        28,
+        31
+      ]
+    },
+    {
+      "arm": "bayes",
+      "scene": "large_circle",
+      "profile": "nominal",
+      "n": 150,
+      "success": 103,
+      "collision": 46,
+      "timeout": 1,
+      "mean_return": 0.4224835278960379,
+      "success_by_seed": [
+        35,
+        32,
+        36
+      ]
+    },
+    {
+      "arm": "bayes",
+      "scene": "large_circle",
+      "profile": "heldout_nonstationary",
+      "n": 150,
+      "success": 65,
+      "collision": 84,
+      "timeout": 1,
+      "mean_return": 0.06564782783258223,
+      "success_by_seed": [
+        23,
+        21,
+        21
+      ]
+    },
+    {
+      "arm": "bayes",
+      "scene": "baseline_square",
+      "profile": "nominal",
+      "n": 150,
+      "success": 78,
+      "collision": 71,
+      "timeout": 1,
+      "mean_return": 0.20076781844167507,
+      "success_by_seed": [
+        25,
+        27,
+        26
+      ]
+    },
+    {
+      "arm": "bayes",
+      "scene": "baseline_square",
+      "profile": "heldout_nonstationary",
+      "n": 150,
+      "success": 58,
+      "collision": 90,
+      "timeout": 2,
+      "mean_return": -0.006708452594372752,
+      "success_by_seed": [
+        21,
+        19,
+        18
+      ]
+    },
+    {
+      "arm": "bayes",
+      "scene": "dense_square",
+      "profile": "nominal",
+      "n": 150,
+      "success": 11,
+      "collision": 139,
+      "timeout": 0,
+      "mean_return": -0.46509291473669556,
+      "success_by_seed": [
+        4,
+        2,
+        5
+      ]
+    },
+    {
+      "arm": "bayes",
+      "scene": "dense_square",
+      "profile": "heldout_nonstationary",
+      "n": 150,
+      "success": 10,
+      "collision": 137,
+      "timeout": 3,
+      "mean_return": -0.4986311074943395,
+      "success_by_seed": [
+        6,
+        2,
+        2
+      ]
+    },
+    {
+      "arm": "bayes",
+      "scene": "large_square",
+      "profile": "nominal",
+      "n": 150,
+      "success": 20,
+      "collision": 129,
+      "timeout": 1,
+      "mean_return": -0.37088225513336953,
+      "success_by_seed": [
+        6,
+        5,
+        9
+      ]
+    },
+    {
+      "arm": "bayes",
+      "scene": "large_square",
+      "profile": "heldout_nonstationary",
+      "n": 150,
+      "success": 12,
+      "collision": 138,
+      "timeout": 0,
+      "mean_return": -0.45326142740830294,
+      "success_by_seed": [
+        4,
+        2,
+        6
+      ]
+    }
+  ],
+  "comparisons": {
+    "base": {
+      "ood_success_gain_pp": 1.7333333333333332,
+      "ci98333_pp": [
+        -2.2,
+        5.733333333333333
+      ],
+      "gain_by_seed_pp": [
+        1.0,
+        1.4000000000000001,
+        2.8000000000000003
+      ]
+    },
+    "cv": {
+      "ood_success_gain_pp": -1.1333333333333333,
+      "ci98333_pp": [
+        -5.2,
+        3.0000000000000004
+      ],
+      "gain_by_seed_pp": [
+        -2.1999999999999997,
+        0.0,
+        -1.2
+      ]
+    },
+    "ewma": {
+      "ood_success_gain_pp": -0.06666666666666667,
+      "ci98333_pp": [
+        -4.2,
+        3.8000000000000003
+      ],
+      "gain_by_seed_pp": [
+        -0.2,
+        -1.4000000000000001,
+        1.4000000000000001
+      ]
+    }
+  },
+  "nominal_five_human_loss_vs_base_pp": 2.0,
+  "benefit_gate_passed": false,
+  "twenty_human_nominal_sr": {
+    "dense_square": 7.333333333333333,
+    "large_square": 13.333333333333334
+  },
+  "strong_generalization_passed": false,
+  "stage": "frozen_IL_only",
+  "confirmatory_PPO_experiment": false,
+  "interpretation": "Supplemental frozen IL diagnostic; does not override the original failed qualification gate or establish an IL+PPO result."
+}
