@@ -11,6 +11,7 @@ from pathlib import Path
 import platform
 import types
 import zipfile
+from dataclasses import replace
 
 import gymnasium as gym
 import numpy as np
@@ -25,6 +26,7 @@ from crowd_nav.bayes_continuous.environment import BeliefEnv
 from crowd_nav.bayes_continuous.network import SetEncoder, DaggerGaussianPolicy
 from crowd_nav.bayes_continuous.stage_audit import ActionHistory, sequential_spawn, FrozenActor
 from crowd_nav.bayes_continuous.teacher import gdbn_teacher_moments
+from crowd_nav.bayes_continuous.teacher import UnicycleCEMMPC, UnicycleConfig, PlannerObservation
 
 ROOT = Path(__file__).resolve().parents[2]
 PARAMS = ROOT/'repair_results/params'
@@ -600,6 +602,215 @@ def local_summary(out):
     print('LOCAL_FINAL',json.dumps(dict(ood=aggregate,comparisons=comparisons,passed=passed)),flush=True)
 
 
+class LearnedPredictiveController(UnicycleCEMMPC):
+    """Existing CEM executor, with IL proposals and return-trained cost parameters."""
+    def __init__(self, arm, theta):
+        self.theta = np.asarray(theta,dtype=float)
+        margin = .05+.5/(1+np.exp(-self.theta[0]))
+        super().__init__(UnicycleConfig(population=128,iterations=3,horizon=16,
+            omega_max=1.2,human_margin=margin,goal_terminal_weight=9*np.exp(.5*self.theta[3])))
+        self.arm = arm
+        self.il_action = np.zeros(2)
+        self.psi = None
+        self.nu = None
+
+    def _seed_trajectories(self, obs):
+        seeds=super()._seed_trajectories(obs)
+        proposal=seeds[0].copy()
+        proposal[:2]=self.il_action*np.array([1.,self.cfg.dt])
+        return np.concatenate([seeds,proposal[None]],axis=0)
+
+    def _rollout(self, samples, obs):
+        params,velocities,positions=super()._rollout(samples,obs)
+        self.candidate_parameters=params
+        return params,velocities,positions
+
+    def _cost(self, controls, obs, positions, human_clearance, occupancy_probability, belief_hazard):
+        from scipy.special import ndtr, stdtr
+        cost=super()._cost(controls,obs,positions,human_clearance,occupancy_probability,None)
+        active,_,_=self._active_until_goal(positions,obs)
+        physical=self.candidate_parameters[:,0]*np.array([1.,1/self.cfg.dt])
+        anchor=((physical-self.il_action)/[1.,1.2])**2
+        cost+=2*np.exp(self.theta[2])*anchor.sum(1)
+        if self.arm!='cv' and len(obs.entities):
+            t=np.arange(1,self.cfg.horizon+1)*self.cfg.dt
+            mean=obs.entities[:,None,:2]+obs.entities[:,None,2:4]*t[None,:,None]
+            relative=mean[None]-positions[:,None]
+            distance=np.linalg.norm(relative,axis=-1)
+            direction=relative/np.maximum(distance[:,:,:,None],1e-12)
+            factor=self.cfg.dt**2*np.cumsum(np.arange(1,self.cfg.horizon+1,dtype=float)**2)
+            projected=np.einsum('pnhi,nij,pnhj->pnh',direction,self.psi,direction)*factor[None,None]
+            denominator=self.nu-1 if self.arm=='bayes' else self.nu-3
+            z=(obs.entities[None,:,None,4]+obs.robot_radius-distance)/np.sqrt(np.maximum(projected/denominator,1e-12))
+            probability=stdtr(self.nu-1,z) if self.arm=='bayes' else ndtr(z)
+            exposure=self.cfg.dt*(probability*active[:,None]).sum(axis=(1,2))
+            cost+=5*np.exp(self.theta[1])*exposure
+        return cost
+
+
+class ModelSearchActor:
+    def __init__(self, actor, env, arm, theta, config):
+        self.env=env
+        self.tracker=LocalRiskActor(actor,env,'nearest',config)
+        self.planner=LearnedPredictiveController(arm,theta)
+        self.config=config
+        self.il_deviation=[]
+
+    def predict(self, obs):
+        il_action=self.tracker.predict(obs)
+        world=self.env.unwrapped.world.env
+        r=world.robot
+        entities=np.array([[h.px,h.py,h.vx,h.vy,h.radius] for h in world.humans])
+        self.planner.nu=self.config['nu0']+len(self.tracker.residuals)
+        self.planner.psi=np.broadcast_to(np.eye(2)*(self.config['nu0']-3)*self.config['q'],(len(entities),2,2)).copy()
+        if self.tracker.residuals:
+            self.planner.psi+=np.sum(self.tracker.residuals,axis=0)
+        self.planner.il_action=il_action
+        observation=PlannerObservation(robot_xy=np.array([r.px,r.py]),robot_velocity=np.array([r.vx,r.vy]),
+            robot_radius=r.radius,goal_xy=np.array([r.gx,r.gy]),entities=entities,
+            human_segment_start=None,human_segment_end=None,human_uncertainty_buffer=None,
+            human_position_covariance=None,human_existence=None,human_visible=None,
+            unknown=None,occupancy_probability=None,provenance='observable_model_policy_search',robot_heading=r.theta)
+        command,_=self.planner.plan(observation,seed=3407+round(world.global_time/.25))
+        action=np.asarray([command[0],command[1]/.25],np.float32)
+        self.il_deviation.append(float(np.linalg.norm((action-il_action)/[1.,1.2])))
+        return action
+
+
+def model_search_episode(env, actor, arm, theta, config, case, profile, training=False):
+    from crowd_nav.bayes_continuous.stage_audit import episode
+    if training:
+        w=env.unwrapped.world.env
+        # Diverse local encounters without ever adding a sixth human.
+        w.test_sim='circle_crossing' if case%2==0 else 'square_crossing'
+        w.circle_radius=(2.5,3.5,4.5)[case%3]
+        w.square_width=(5.,7.,10.)[case%3]
+    policy=actor if arm=='il' else ModelSearchActor(actor,env,arm,theta,config)
+    record=episode(env,policy,310000000+case,case,profile)
+    if training:
+        assert record['humans']==5
+        record['training_circle_radius']=env.unwrapped.world.env.circle_radius
+        record['training_square_width']=env.unwrapped.world.env.square_width
+    if arm!='il':
+        record['mean_il_action_deviation']=float(np.mean(policy.il_deviation))
+    return record
+
+
+def ars_step(theta, directions, rewards, lr=.08, top=2):
+    """ARS V1-t update; paired layouts reduce simulation variance."""
+    chosen=np.argsort(-rewards.max(axis=1),kind='stable')[:top]
+    std=float(rewards[chosen].std())
+    if std<1e-8:
+        return theta.copy()
+    update=((rewards[chosen,0]-rewards[chosen,1])[:,None]*directions[chosen]).mean(0)
+    return np.clip(theta+lr*update/std,-2.,2.)
+
+
+def model_search_train(task):
+    from crowd_nav.bayes_continuous.stage_audit import make_env, INITIAL
+    out,arm,seed,config,iterations=task
+    torch.set_num_threads(1)
+    rng=np.random.default_rng(seed)
+    env=make_env('baseline_circle','no_belief')
+    actor=FrozenActor(INITIAL,env.observation_space)
+    theta=np.zeros(4)
+    def validate(parameters):
+        return [model_search_episode(env,actor,arm,parameters,config,760000+i,
+            'nominal' if i%4<2 else 'train_nonstationary',True) for i in range(40)]
+    initial=validate(theta)
+    receipts=[]
+    records=[]
+    for iteration in range(iterations):
+        directions=rng.standard_normal((4,4))
+        rewards=np.zeros((4,2))
+        for j in range(4):
+            cases=[750000+iteration*8+j*2+k for k in range(2)]
+            for sign_index,sign in enumerate((1,-1)):
+                candidate=np.clip(theta+sign*.25*directions[j],-2.,2.)
+                batch=[model_search_episode(env,actor,arm,candidate,config,c,
+                    'nominal' if c%4<2 else 'train_nonstationary',True) for c in cases]
+                # The optimized reward is exactly the environment episode return.
+                rewards[j,sign_index]=np.mean([r['reward'] for r in batch])
+                records.extend(dict(iteration=iteration,direction=j,sign=sign,**r) for r in batch)
+        old=theta.copy()
+        theta=ars_step(theta,directions,rewards)
+        receipts.append(dict(iteration=iteration,theta_before=old.tolist(),theta_after=theta.tolist(),
+            directions=directions.tolist(),paired_returns=rewards.tolist()))
+        print('ARS_UPDATE',arm,seed,iteration,theta.tolist(),flush=True)
+    final=validate(theta)
+    env.close()
+    result=dict(arm=arm,seed=seed,theta=theta.tolist(),initial_validation=initial,
+        final_validation=final,updates=receipts,training_records=records,
+        environment_steps=sum(r['steps'] for r in records),training_episodes=len(records),
+        il_source_sha256=hashlib.sha256(INITIAL.read_bytes()).hexdigest(),
+        nonzero_parameter_update=bool(np.any(theta!=0)))
+    (Path(out)/f'train_{arm}_{seed}.json').write_text(json.dumps(result,allow_nan=False))
+    return result
+
+
+def model_search_evaluate(task):
+    from crowd_nav.bayes_continuous.stage_audit import make_env, INITIAL
+    out,scene,profile,arm,seed,first,count,config=task
+    torch.set_num_threads(1)
+    env=make_env(scene,'no_belief')
+    actor=FrozenActor(INITIAL,env.observation_space)
+    source=json.loads((Path(out)/f'train_{arm if arm in ("cv","gaussian","bayes") else "bayes"}_{seed}.json').read_text())
+    theta=np.zeros(4) if arm in ('initial','il') else np.asarray(source['theta'])
+    model_arm='bayes' if arm=='initial' else arm
+    records=[model_search_episode(env,actor,model_arm,theta,config,
+        770000+TESTS.index(scene)*1000+i,profile) for i in range(first,first+count)]
+    env.close()
+    result=dict(scene=scene,profile=profile,arm=arm,seed=seed,theta=theta.tolist(),records=records)
+    (Path(out)/'evaluation'/f'{scene}_{profile}_{arm}_{seed}_{first}.json').write_text(json.dumps(result,allow_nan=False))
+    print('ARS_EVAL',scene,profile,arm,seed,first,sum(r['outcome']=='success' for r in records),flush=True)
+    return None
+
+
+def model_search_run(out,workers,count,iterations):
+    from crowd_nav.bayes_continuous.stage_audit import INITIAL
+    out.mkdir(parents=True,exist_ok=True)
+    calibration=local_calibration()
+    protocol=dict(rl='ARS V1-t on four predictive-policy parameters; not PPO or Q learning',
+        arms=['cv','gaussian','bayes','initial','il'],seeds=SEEDS,iterations=iterations,
+        directions=4,top_directions=2,perturbation_std=.25,learning_rate=.08,
+        episodes_per_direction_sign=2,humans_in_training=5,
+        train_cases=[750000,750000+iterations*8-1],validation_cases=[760000,760039],
+        test_cases='770000 + scene_index*1000 + index',count_per_cell=count,
+        geometry='Five humans only; train circle radius 2.5/3.5/4.5 or square width 5/7/10',
+        reward='unchanged environment episode return',calibration=calibration,
+        source_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        il_source_sha256=hashlib.sha256(INITIAL.read_bytes()).hexdigest(),
+        planner=dict(population=128,iterations=3,horizon=16,omega_max=1.2),
+        gate='All final five-human validation SR >= 80%; parameters really updated; no OOD selection',
+        positive='Bayes > CV and Gaussian and untrained Bayes on paired OOD SR; 98.333% CIs; 20-human nominal SR >=80%',
+        novelty='Feasibility only: residual MPC and Bayesian residual policy learning have prior work')
+    p=out/'protocol.json'
+    if p.exists():
+        assert json.loads(p.read_text())==json.loads(json.dumps(protocol))
+    else:
+        p.write_text(json.dumps(protocol,indent=2))
+    tasks=[(str(out),arm,seed,calibration['selected'],iterations)
+        for arm in ('cv','gaussian','bayes') for seed in SEEDS
+        if not (out/f'train_{arm}_{seed}.json').exists()]
+    map_tasks(model_search_train,tasks,workers)
+    receipts=[json.loads((out/f'train_{a}_{s}.json').read_text()) for a in ('cv','gaussian','bayes') for s in SEEDS]
+    passed=all(r['nonzero_parameter_update'] and sum(x['outcome']=='success' for x in r['final_validation'])>=32 for r in receipts)
+    (out/'gate.json').write_text(json.dumps(dict(passed=passed,runs=[dict(arm=r['arm'],seed=r['seed'],
+        initial_success=sum(x['outcome']=='success' for x in r['initial_validation']),
+        final_success=sum(x['outcome']=='success' for x in r['final_validation']),theta=r['theta'],
+        environment_steps=r['environment_steps'],nonzero_update=r['nonzero_parameter_update']) for r in receipts]),indent=2))
+    if not passed:
+        print('ARS_GATE_FAILED: no OOD evaluation',flush=True)
+        return
+    (out/'evaluation').mkdir(exist_ok=True)
+    tasks=[(str(out),scene,profile,arm,seed,first,min(5,count-first),calibration['selected'])
+        for scene in TESTS for profile in ('nominal','heldout_nonstationary')
+        for arm in protocol['arms'] for seed in SEEDS for first in range(0,count,5)
+        if not (out/'evaluation'/f'{scene}_{profile}_{arm}_{seed}_{first}.json').exists()]
+    map_tasks(model_search_evaluate,tasks,workers)
+    print('ARS_EVALUATION_COMPLETE',flush=True)
+
+
 if __name__=='__main__':
     parser=argparse.ArgumentParser()
     parser.add_argument('--out',type=Path,required=True)
@@ -607,8 +818,12 @@ if __name__=='__main__':
     parser.add_argument('--resume-bc',type=Path)
     parser.add_argument('--local-risk',action='store_true')
     parser.add_argument('--count',type=int,default=50)
+    parser.add_argument('--model-search',action='store_true')
+    parser.add_argument('--ars-iterations',type=int,default=6)
     args=parser.parse_args()
-    if args.local_risk:
+    if args.model_search:
+        model_search_run(args.out,args.workers,args.count,args.ars_iterations)
+    elif args.local_risk:
         local_run(args.out,args.workers,args.count)
     else:
         run(args.out,args.workers,args.resume_bc)

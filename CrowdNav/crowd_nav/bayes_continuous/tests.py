@@ -696,6 +696,39 @@ class LocalRiskContracts(unittest.TestCase):
             env.close()
 
 
+class ModelPolicySearchContracts(unittest.TestCase):
+    def test_ars_update_and_zero_signal(self):
+        from crowd_nav.bayes_continuous.risk_generalization import ars_step
+        theta=np.zeros(4)
+        directions=np.eye(4)
+        returns=np.array([[1.,-1.],[.5,-.5],[0.,0.],[0.,0.]])
+        updated=ars_step(theta,directions,returns)
+        self.assertGreater(updated[0],updated[1])
+        self.assertGreater(updated[1],0.)
+        np.testing.assert_array_equal(updated[2:],np.zeros(2))
+        np.testing.assert_array_equal(ars_step(theta,directions,np.ones((4,2))),theta)
+
+    def test_predictive_policy_does_not_read_private_human_goals(self):
+        from crowd_nav.bayes_continuous.risk_generalization import ModelSearchActor
+        from crowd_nav.bayes_continuous.stage_audit import make_env,FrozenActor,INITIAL
+        env=make_env('baseline_circle','no_belief')
+        obs,_=env.reset(options=dict(layout_seed=310749001,test_case=749001,profile='nominal'))
+        actor=FrozenActor(INITIAL,env.observation_space)
+        config=dict(window=4,nu0=5,q=.006)
+        for arm in ('cv','gaussian','bayes'):
+            before=ModelSearchActor(actor,env,arm,np.zeros(4),config).predict(obs)
+            humans=env.unwrapped.world.env.humans
+            old=[(h.gx,h.gy) for h in humans]
+            for h in humans:
+                h.gx,h.gy=999.,-999.
+            after=ModelSearchActor(actor,env,arm,np.zeros(4),config).predict(obs)
+            for h,goal in zip(humans,old):
+                h.gx,h.gy=goal
+            np.testing.assert_array_equal(before,after)
+            self.assertTrue(env.action_space.contains(after))
+        env.close()
+
+
 if __name__ == '__main__':
     torch.set_num_threads(1)
     unittest.main()
