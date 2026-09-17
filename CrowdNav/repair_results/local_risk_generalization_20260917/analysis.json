@@ -1,0 +1,730 @@
+{
+  "cells": [
+    {
+      "scene": "baseline_circle",
+      "profile": "nominal",
+      "arm": "all",
+      "n": 150,
+      "success": 144,
+      "collision": 3,
+      "timeout": 3,
+      "mean_return": 0.8539073642246696
+    },
+    {
+      "scene": "baseline_circle",
+      "profile": "nominal",
+      "arm": "nearest",
+      "n": 150,
+      "success": 144,
+      "collision": 3,
+      "timeout": 3,
+      "mean_return": 0.8539073642246696
+    },
+    {
+      "scene": "baseline_circle",
+      "profile": "nominal",
+      "arm": "cv_local",
+      "n": 150,
+      "success": 144,
+      "collision": 3,
+      "timeout": 3,
+      "mean_return": 0.8539073642246696
+    },
+    {
+      "scene": "baseline_circle",
+      "profile": "nominal",
+      "arm": "gaussian_local",
+      "n": 150,
+      "success": 144,
+      "collision": 3,
+      "timeout": 3,
+      "mean_return": 0.8539073642246696
+    },
+    {
+      "scene": "baseline_circle",
+      "profile": "nominal",
+      "arm": "bayes_local",
+      "n": 150,
+      "success": 144,
+      "collision": 3,
+      "timeout": 3,
+      "mean_return": 0.8539073642246696
+    },
+    {
+      "scene": "baseline_circle",
+      "profile": "heldout_nonstationary",
+      "arm": "all",
+      "n": 150,
+      "success": 133,
+      "collision": 16,
+      "timeout": 1,
+      "mean_return": 0.7626084802598884
+    },
+    {
+      "scene": "baseline_circle",
+      "profile": "heldout_nonstationary",
+      "arm": "nearest",
+      "n": 150,
+      "success": 133,
+      "collision": 16,
+      "timeout": 1,
+      "mean_return": 0.7626084802598884
+    },
+    {
+      "scene": "baseline_circle",
+      "profile": "heldout_nonstationary",
+      "arm": "cv_local",
+      "n": 150,
+      "success": 133,
+      "collision": 16,
+      "timeout": 1,
+      "mean_return": 0.7626084802598884
+    },
+    {
+      "scene": "baseline_circle",
+      "profile": "heldout_nonstationary",
+      "arm": "gaussian_local",
+      "n": 150,
+      "success": 133,
+      "collision": 16,
+      "timeout": 1,
+      "mean_return": 0.7626084802598884
+    },
+    {
+      "scene": "baseline_circle",
+      "profile": "heldout_nonstationary",
+      "arm": "bayes_local",
+      "n": 150,
+      "success": 133,
+      "collision": 16,
+      "timeout": 1,
+      "mean_return": 0.7626084802598884
+    },
+    {
+      "scene": "dense_circle",
+      "profile": "nominal",
+      "arm": "all",
+      "n": 150,
+      "success": 126,
+      "collision": 24,
+      "timeout": 0,
+      "mean_return": 0.6721157054763396
+    },
+    {
+      "scene": "dense_circle",
+      "profile": "nominal",
+      "arm": "nearest",
+      "n": 150,
+      "success": 120,
+      "collision": 24,
+      "timeout": 6,
+      "mean_return": 0.5912689601140401
+    },
+    {
+      "scene": "dense_circle",
+      "profile": "nominal",
+      "arm": "cv_local",
+      "n": 150,
+      "success": 134,
+      "collision": 14,
+      "timeout": 2,
+      "mean_return": 0.7253686393730008
+    },
+    {
+      "scene": "dense_circle",
+      "profile": "nominal",
+      "arm": "gaussian_local",
+      "n": 150,
+      "success": 129,
+      "collision": 17,
+      "timeout": 4,
+      "mean_return": 0.6762423066478269
+    },
+    {
+      "scene": "dense_circle",
+      "profile": "nominal",
+      "arm": "bayes_local",
+      "n": 150,
+      "success": 130,
+      "collision": 16,
+      "timeout": 4,
+      "mean_return": 0.687384180663134
+    },
+    {
+      "scene": "dense_circle",
+      "profile": "heldout_nonstationary",
+      "arm": "all",
+      "n": 150,
+      "success": 94,
+      "collision": 56,
+      "timeout": 0,
+      "mean_return": 0.33287086852453984
+    },
+    {
+      "scene": "dense_circle",
+      "profile": "heldout_nonstationary",
+      "arm": "nearest",
+      "n": 150,
+      "success": 107,
+      "collision": 40,
+      "timeout": 3,
+      "mean_return": 0.4591263093195492
+    },
+    {
+      "scene": "dense_circle",
+      "profile": "heldout_nonstationary",
+      "arm": "cv_local",
+      "n": 150,
+      "success": 107,
+      "collision": 40,
+      "timeout": 3,
+      "mean_return": 0.4493183119596233
+    },
+    {
+      "scene": "dense_circle",
+      "profile": "heldout_nonstationary",
+      "arm": "gaussian_local",
+      "n": 150,
+      "success": 103,
+      "collision": 41,
+      "timeout": 6,
+      "mean_return": 0.40535309145777937
+    },
+    {
+      "scene": "dense_circle",
+      "profile": "heldout_nonstationary",
+      "arm": "bayes_local",
+      "n": 150,
+      "success": 106,
+      "collision": 38,
+      "timeout": 6,
+      "mean_return": 0.43228392187412795
+    },
+    {
+      "scene": "large_circle",
+      "profile": "nominal",
+      "arm": "all",
+      "n": 150,
+      "success": 97,
+      "collision": 51,
+      "timeout": 2,
+      "mean_return": 0.3659154027910485
+    },
+    {
+      "scene": "large_circle",
+      "profile": "nominal",
+      "arm": "nearest",
+      "n": 150,
+      "success": 120,
+      "collision": 30,
+      "timeout": 0,
+      "mean_return": 0.596881227052143
+    },
+    {
+      "scene": "large_circle",
+      "profile": "nominal",
+      "arm": "cv_local",
+      "n": 150,
+      "success": 124,
+      "collision": 26,
+      "timeout": 0,
+      "mean_return": 0.6335386683328718
+    },
+    {
+      "scene": "large_circle",
+      "profile": "nominal",
+      "arm": "gaussian_local",
+      "n": 150,
+      "success": 128,
+      "collision": 22,
+      "timeout": 0,
+      "mean_return": 0.6757746937893554
+    },
+    {
+      "scene": "large_circle",
+      "profile": "nominal",
+      "arm": "bayes_local",
+      "n": 150,
+      "success": 128,
+      "collision": 22,
+      "timeout": 0,
+      "mean_return": 0.6761373927471351
+    },
+    {
+      "scene": "large_circle",
+      "profile": "heldout_nonstationary",
+      "arm": "all",
+      "n": 150,
+      "success": 46,
+      "collision": 104,
+      "timeout": 0,
+      "mean_return": -0.10932658610132989
+    },
+    {
+      "scene": "large_circle",
+      "profile": "heldout_nonstationary",
+      "arm": "nearest",
+      "n": 150,
+      "success": 80,
+      "collision": 66,
+      "timeout": 4,
+      "mean_return": 0.19458676595294264
+    },
+    {
+      "scene": "large_circle",
+      "profile": "heldout_nonstationary",
+      "arm": "cv_local",
+      "n": 150,
+      "success": 81,
+      "collision": 66,
+      "timeout": 3,
+      "mean_return": 0.2059843642455023
+    },
+    {
+      "scene": "large_circle",
+      "profile": "heldout_nonstationary",
+      "arm": "gaussian_local",
+      "n": 150,
+      "success": 74,
+      "collision": 74,
+      "timeout": 2,
+      "mean_return": 0.1460310947127731
+    },
+    {
+      "scene": "large_circle",
+      "profile": "heldout_nonstationary",
+      "arm": "bayes_local",
+      "n": 150,
+      "success": 72,
+      "collision": 78,
+      "timeout": 0,
+      "mean_return": 0.13106459813639063
+    },
+    {
+      "scene": "baseline_square",
+      "profile": "nominal",
+      "arm": "all",
+      "n": 150,
+      "success": 52,
+      "collision": 98,
+      "timeout": 0,
+      "mean_return": -0.04158911128873519
+    },
+    {
+      "scene": "baseline_square",
+      "profile": "nominal",
+      "arm": "nearest",
+      "n": 150,
+      "success": 84,
+      "collision": 65,
+      "timeout": 1,
+      "mean_return": 0.25645246976956126
+    },
+    {
+      "scene": "baseline_square",
+      "profile": "nominal",
+      "arm": "cv_local",
+      "n": 150,
+      "success": 84,
+      "collision": 65,
+      "timeout": 1,
+      "mean_return": 0.26083353058625586
+    },
+    {
+      "scene": "baseline_square",
+      "profile": "nominal",
+      "arm": "gaussian_local",
+      "n": 150,
+      "success": 85,
+      "collision": 64,
+      "timeout": 1,
+      "mean_return": 0.2631633018760725
+    },
+    {
+      "scene": "baseline_square",
+      "profile": "nominal",
+      "arm": "bayes_local",
+      "n": 150,
+      "success": 84,
+      "collision": 65,
+      "timeout": 1,
+      "mean_return": 0.25674490665554517
+    },
+    {
+      "scene": "baseline_square",
+      "profile": "heldout_nonstationary",
+      "arm": "all",
+      "n": 150,
+      "success": 53,
+      "collision": 97,
+      "timeout": 0,
+      "mean_return": -0.047575729254989534
+    },
+    {
+      "scene": "baseline_square",
+      "profile": "heldout_nonstationary",
+      "arm": "nearest",
+      "n": 150,
+      "success": 84,
+      "collision": 66,
+      "timeout": 0,
+      "mean_return": 0.24757051395450663
+    },
+    {
+      "scene": "baseline_square",
+      "profile": "heldout_nonstationary",
+      "arm": "cv_local",
+      "n": 150,
+      "success": 87,
+      "collision": 63,
+      "timeout": 0,
+      "mean_return": 0.2738010731951251
+    },
+    {
+      "scene": "baseline_square",
+      "profile": "heldout_nonstationary",
+      "arm": "gaussian_local",
+      "n": 150,
+      "success": 97,
+      "collision": 53,
+      "timeout": 0,
+      "mean_return": 0.3847707361573439
+    },
+    {
+      "scene": "baseline_square",
+      "profile": "heldout_nonstationary",
+      "arm": "bayes_local",
+      "n": 150,
+      "success": 91,
+      "collision": 58,
+      "timeout": 1,
+      "mean_return": 0.32189307858356697
+    },
+    {
+      "scene": "dense_square",
+      "profile": "nominal",
+      "arm": "all",
+      "n": 150,
+      "success": 3,
+      "collision": 147,
+      "timeout": 0,
+      "mean_return": -0.5188563569185884
+    },
+    {
+      "scene": "dense_square",
+      "profile": "nominal",
+      "arm": "nearest",
+      "n": 150,
+      "success": 37,
+      "collision": 113,
+      "timeout": 0,
+      "mean_return": -0.22982106812783254
+    },
+    {
+      "scene": "dense_square",
+      "profile": "nominal",
+      "arm": "cv_local",
+      "n": 150,
+      "success": 30,
+      "collision": 118,
+      "timeout": 2,
+      "mean_return": -0.28718126240037095
+    },
+    {
+      "scene": "dense_square",
+      "profile": "nominal",
+      "arm": "gaussian_local",
+      "n": 150,
+      "success": 22,
+      "collision": 128,
+      "timeout": 0,
+      "mean_return": -0.36169983701807684
+    },
+    {
+      "scene": "dense_square",
+      "profile": "nominal",
+      "arm": "bayes_local",
+      "n": 150,
+      "success": 26,
+      "collision": 124,
+      "timeout": 0,
+      "mean_return": -0.32171675326877885
+    },
+    {
+      "scene": "dense_square",
+      "profile": "heldout_nonstationary",
+      "arm": "all",
+      "n": 150,
+      "success": 5,
+      "collision": 145,
+      "timeout": 0,
+      "mean_return": -0.5175302321885719
+    },
+    {
+      "scene": "dense_square",
+      "profile": "heldout_nonstationary",
+      "arm": "nearest",
+      "n": 150,
+      "success": 25,
+      "collision": 125,
+      "timeout": 0,
+      "mean_return": -0.3342523559167442
+    },
+    {
+      "scene": "dense_square",
+      "profile": "heldout_nonstationary",
+      "arm": "cv_local",
+      "n": 150,
+      "success": 26,
+      "collision": 124,
+      "timeout": 0,
+      "mean_return": -0.32190992315162326
+    },
+    {
+      "scene": "dense_square",
+      "profile": "heldout_nonstationary",
+      "arm": "gaussian_local",
+      "n": 150,
+      "success": 28,
+      "collision": 122,
+      "timeout": 0,
+      "mean_return": -0.30253984549017765
+    },
+    {
+      "scene": "dense_square",
+      "profile": "heldout_nonstationary",
+      "arm": "bayes_local",
+      "n": 150,
+      "success": 31,
+      "collision": 118,
+      "timeout": 1,
+      "mean_return": -0.2828986847168496
+    },
+    {
+      "scene": "large_square",
+      "profile": "nominal",
+      "arm": "all",
+      "n": 150,
+      "success": 20,
+      "collision": 130,
+      "timeout": 0,
+      "mean_return": -0.35045277013379633
+    },
+    {
+      "scene": "large_square",
+      "profile": "nominal",
+      "arm": "nearest",
+      "n": 150,
+      "success": 41,
+      "collision": 109,
+      "timeout": 0,
+      "mean_return": -0.15932435944074358
+    },
+    {
+      "scene": "large_square",
+      "profile": "nominal",
+      "arm": "cv_local",
+      "n": 150,
+      "success": 48,
+      "collision": 101,
+      "timeout": 1,
+      "mean_return": -0.10589240599711215
+    },
+    {
+      "scene": "large_square",
+      "profile": "nominal",
+      "arm": "gaussian_local",
+      "n": 150,
+      "success": 50,
+      "collision": 100,
+      "timeout": 0,
+      "mean_return": -0.07544616131544024
+    },
+    {
+      "scene": "large_square",
+      "profile": "nominal",
+      "arm": "bayes_local",
+      "n": 150,
+      "success": 64,
+      "collision": 86,
+      "timeout": 0,
+      "mean_return": 0.05450973789219707
+    },
+    {
+      "scene": "large_square",
+      "profile": "heldout_nonstationary",
+      "arm": "all",
+      "n": 150,
+      "success": 16,
+      "collision": 134,
+      "timeout": 0,
+      "mean_return": -0.40238299114303294
+    },
+    {
+      "scene": "large_square",
+      "profile": "heldout_nonstationary",
+      "arm": "nearest",
+      "n": 150,
+      "success": 36,
+      "collision": 114,
+      "timeout": 0,
+      "mean_return": -0.22770864763916787
+    },
+    {
+      "scene": "large_square",
+      "profile": "heldout_nonstationary",
+      "arm": "cv_local",
+      "n": 150,
+      "success": 64,
+      "collision": 86,
+      "timeout": 0,
+      "mean_return": 0.03295749383959738
+    },
+    {
+      "scene": "large_square",
+      "profile": "heldout_nonstationary",
+      "arm": "gaussian_local",
+      "n": 150,
+      "success": 42,
+      "collision": 108,
+      "timeout": 0,
+      "mean_return": -0.16865187964359005
+    },
+    {
+      "scene": "large_square",
+      "profile": "heldout_nonstationary",
+      "arm": "bayes_local",
+      "n": 150,
+      "success": 46,
+      "collision": 104,
+      "timeout": 0,
+      "mean_return": -0.12667851763965832
+    }
+  ],
+  "ood": {
+    "all": {
+      "success": 512,
+      "collision": 986,
+      "episodes": 1500,
+      "mean_return": -0.061681180023711625
+    },
+    "nearest": {
+      "success": 734,
+      "collision": 752,
+      "episodes": 1500,
+      "mean_return": 0.13947798150382545
+    },
+    "cv_local": {
+      "success": 785,
+      "collision": 703,
+      "episodes": 1500,
+      "mean_return": 0.18668184899828702
+    },
+    "gaussian_local": {
+      "success": 758,
+      "collision": 729,
+      "episodes": 1500,
+      "mean_return": 0.16429975011738662
+    },
+    "bayes_local": {
+      "success": 778,
+      "collision": 709,
+      "episodes": 1500,
+      "mean_return": 0.182872386092681
+    }
+  },
+  "comparisons": [
+    {
+      "control": "all",
+      "difference": [
+        0.17733333333333334,
+        -0.18466666666666667,
+        0.2445535661163925
+      ],
+      "simultaneous_ci_98_75": [
+        [
+          0.116,
+          0.23767083333333358
+        ],
+        [
+          -0.24433749999999999,
+          -0.126
+        ],
+        [
+          0.15503102527178458,
+          0.33083695661846585
+        ]
+      ]
+    },
+    {
+      "control": "nearest",
+      "difference": [
+        0.029333333333333333,
+        -0.028666666666666667,
+        0.043394404588855566
+      ],
+      "simultaneous_ci_98_75": [
+        [
+          -0.029333333333333333,
+          0.08466666666666667
+        ],
+        [
+          -0.082,
+          0.028
+        ],
+        [
+          -0.040682443875124714,
+          0.12413783768217763
+        ]
+      ]
+    },
+    {
+      "control": "cv_local",
+      "difference": [
+        -0.004666666666666667,
+        0.004,
+        -0.0038094629056059878
+      ],
+      "simultaneous_ci_98_75": [
+        [
+          -0.056,
+          0.044
+        ],
+        [
+          -0.045004166666666665,
+          0.05767083333333358
+        ],
+        [
+          -0.07942202988604821,
+          0.0669609257052564
+        ]
+      ]
+    },
+    {
+      "control": "gaussian_local",
+      "difference": [
+        0.013333333333333334,
+        -0.013333333333333334,
+        0.01857263597529437
+      ],
+      "simultaneous_ci_98_75": [
+        [
+          -0.018666666666666668,
+          0.046
+        ],
+        [
+          -0.046,
+          0.018
+        ],
+        [
+          -0.030523975979083653,
+          0.06802777390972835
+        ]
+      ]
+    }
+  ],
+  "bayesian_increment_gate": false,
+  "five_human_bitwise_identity": true,
+  "evidence_scope": "Frozen IL/PPO backbone with Bayesian deployment interface; no new RL optimization",
+  "total_episodes": 9000
+}

@@ -1,0 +1,60 @@
+{
+  "unit_tests": {
+    "run": 39,
+    "failures": 0,
+    "errors": 0
+  },
+  "replays": [
+    {
+      "scene": "baseline_circle",
+      "profile": "nominal",
+      "test_case": 720000,
+      "trace_sha256": "4b5b1af59c9bbbdd71a26f1494f1e8846738d7c2b94073a25d9d7b47c4e15a7d",
+      "exact": true
+    },
+    {
+      "scene": "dense_circle",
+      "profile": "heldout_nonstationary",
+      "test_case": 721000,
+      "trace_sha256": "baaafa3766853ac001e77876428d73889728c5e19deff7ed6c253d357c9fa24c",
+      "exact": true
+    },
+    {
+      "scene": "large_circle",
+      "profile": "nominal",
+      "test_case": 722000,
+      "trace_sha256": "52a3242943b879500cb0ea83e1b899b3ce1038d92d64e1da2843a5970a355c3b",
+      "exact": true
+    },
+    {
+      "scene": "baseline_square",
+      "profile": "heldout_nonstationary",
+      "test_case": 723000,
+      "trace_sha256": "a8327eee0c14bb2926f06ec246b12f5905c207948b78c17878255ceafcdbdc2e",
+      "exact": true
+    },
+    {
+      "scene": "dense_square",
+      "profile": "nominal",
+      "test_case": 724000,
+      "trace_sha256": "ab55efb61f745fbeb3523942f40e545d5d1e582b895f240597cee0b8a7f5abf7",
+      "exact": true
+    },
+    {
+      "scene": "large_square",
+      "profile": "heldout_nonstationary",
+      "test_case": 725000,
+      "trace_sha256": "8e1a63c96523e4523d92a0da15bf6e774f0107dd13e25a49aaadbc06e934dab2",
+      "exact": true
+    }
+  ],
+  "episodes": 9000,
+  "unique_physical_layouts": 300,
+  "calibration_physical_hash_overlap": [],
+  "checkpoint_hashes_unchanged": {
+    "2407": true,
+    "4807": true,
+    "7207": true
+  },
+  "source_hash_unchanged": true
+}

@@ -1,0 +1,34 @@
+{
+  "ppo_sources.tar.gz": {
+    "bytes": 6107291,
+    "sha256": "b95fd615658ffa5165e212d6e2d24dd0197aa899fa90a0325d3938bcf080b2e7"
+  },
+  "episodes.tar.gz": {
+    "bytes": 13516987,
+    "sha256": "1c72f6160d24e4c6162da7380e84c24be76fcb08beb1b3980da0ad7b98149e04"
+  },
+  "protocol.json": {
+    "bytes": 7832,
+    "sha256": "b8bcb9806c016a31bd9bffd3ecc000c892cbf41b135685b9e620daee3e7dd27f"
+  },
+  "source_case_audit.json": {
+    "bytes": 1005,
+    "sha256": "5bf42b60ee7e2c69fc3662a9b4b3068ae172a83eac75a0aeaeba7f2e9c32f35b"
+  },
+  "discarded_rank_degenerate.tar.gz": {
+    "bytes": 2489973,
+    "sha256": "ea36a3922ed545c85c2b396768d458fd573fb67aea221df62ef58a33ec95c5d2"
+  },
+  "analysis.json": {
+    "bytes": 16233,
+    "sha256": "936cace75a3b940653c0d2b9d7ec278fdfa672ea481aa1ca8a8b7accfa86494c"
+  },
+  "REPORT_ZH.md": {
+    "bytes": 11712,
+    "sha256": "d87e71a3af50e5ecc2416884e179ecf413e059bb40d6f6784a255c4628f906ac"
+  },
+  "validation.json": {
+    "bytes": 1619,
+    "sha256": "3f432e9b933f6f399a92280fb7598cf9ff8f7c326cb9fedf69af864423d3badd"
+  }
+}
