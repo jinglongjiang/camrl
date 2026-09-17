@@ -379,10 +379,235 @@ def run(out,workers,resume_bc=None):
         episodes=12*6*2*50),indent=2))
 
 
+LOCAL_ARMS = ('all', 'nearest', 'cv_local', 'gaussian_local', 'bayes_local')
+
+
+def local_calibration():
+    """Fit an inverse-Wishart predictive model using five-human demos only."""
+    from scipy.special import gammaln
+    source = ROOT/'repair_results/risk_generalization_20260917/demos.pt'
+    data = torch.load(source, map_location='cpu', weights_only=False)
+    sequences, offset = [], 0
+    for record in data['records']:
+        if record['outcome'] != 'success':
+            continue
+        length = record['steps']
+        sl = slice(offset, offset+length)
+        obs, actions = data['obs'], data['actions'][sl]
+        assert np.all(obs['mask'][sl].sum(1) == 5)
+        velocity = 2*(obs['humans'][sl,:5,2:4]+obs['robot'][sl,None,2:4])
+        heading = np.r_[0., np.cumsum(actions[:-1,1]*.25)]
+        c, s = np.cos(heading)[:,None], np.sin(heading)[:,None]
+        fixed = np.stack([c*velocity[:,:,0]-s*velocity[:,:,1],
+                          s*velocity[:,:,0]+c*velocity[:,:,1]], axis=-1)
+        sequences.append((record['test_case'], np.diff(fixed, axis=0)))
+        offset += length
+    assert offset == len(data['actions'])
+    train = [x for case,x in sequences if case % 5 != 0]
+    q = float(np.mean(np.concatenate(train)**2))
+    candidates = []
+    for window in (4, 8, 16, 32):
+        for nu0 in (5, 10):
+            for scale in (.5, 1., 2.):
+                losses = []
+                for case, x in sequences:
+                    if case % 5 != 0:
+                        continue
+                    outer = x[:,:,:,None]*x[:,:,None,:]
+                    sums = np.concatenate([np.zeros_like(outer[:1]), np.cumsum(outer,axis=0)])
+                    t = np.arange(len(x)); start = np.maximum(0,t-window)
+                    psi = sums[t]-sums[start]+np.eye(2)*(nu0-3)*q*scale
+                    df = nu0+np.minimum(t,window)-1
+                    matrix = psi/df[:,None,None,None]
+                    mahal = np.einsum('tni,tnij,tnj->tn',x,np.linalg.inv(matrix),x)
+                    logpdf = (gammaln((df+2)/2)-gammaln(df/2)-np.log(df*np.pi))[:,None]
+                    logpdf = logpdf-.5*np.linalg.slogdet(matrix)[1]-(df[:,None]+2)/2*np.log1p(mahal/df[:,None])
+                    losses.extend((-logpdf).ravel().tolist())
+                candidates.append(dict(window=window,nu0=nu0,q=q*scale,nll=float(np.mean(losses))))
+    best = min(candidates,key=lambda x:x['nll'])
+    return dict(selected=best,candidates=candidates,source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+                train_cases=[c for c,_ in sequences if c%5!=0],validation_cases=[c for c,_ in sequences if c%5==0])
+
+
+class LocalRiskActor:
+    """Causal Bayesian local-set interface; the IL/PPO actor remains frozen."""
+    def __init__(self, actor, env, arm, config):
+        self.actor, self.env, self.arm, self.config = actor, env, arm, config
+        self.previous = None
+        self.residuals = []
+        self.last_time = None
+
+    @staticmethod
+    def subset(obs, indices):
+        result = {k:v.copy() for k,v in obs.items()}
+        result['mask'][:] = 0
+        result['mask'][indices] = 1
+        result['humans'][result['mask']==0] = 0
+        return result
+
+    def predict(self, obs):
+        from scipy.special import stdtr, ndtr
+        world = self.env.unwrapped.world.env
+        robot = world.robot
+        # Current positions/velocities are observable; goals/types are never read.
+        people = np.array([[h.px,h.py,h.vx,h.vy,h.radius] for h in world.humans])
+        velocity = people[:,2:4]
+        if self.previous is not None and self.last_time != world.global_time:
+            delta = velocity-self.previous
+            self.residuals.append(delta[:,:,None]*delta[:,None,:])
+            self.residuals = self.residuals[-self.config['window']:]
+        self.previous = velocity.copy()
+        self.last_time = world.global_time
+        n = len(people)
+        if n <= 5 or self.arm == 'all':
+            return self.actor.predict(obs)
+        nearest = np.argsort(np.linalg.norm(people[:,:2]-[robot.px,robot.py],axis=1),kind='stable')[:5]
+        action = self.actor.predict(self.subset(obs,nearest))
+        if self.arm == 'nearest':
+            return action
+        nu = self.config['nu0']+len(self.residuals)
+        psi = np.broadcast_to(np.eye(2)*(self.config['nu0']-3)*self.config['q'],(n,2,2)).copy()
+        if self.residuals:
+            psi += np.sum(self.residuals,axis=0)
+        t = np.arange(1,9)*.25
+        factor = .25**2*np.cumsum(np.arange(1,9,dtype=float)**2)
+        mu = people[:,None,:2]+velocity[:,None,:]*t[None,:,None]
+        scores = np.full(n,-np.inf)
+        # Two fixed passes account for the action change after selecting neighbors.
+        for _ in range(2):
+            headings = robot.theta+action[1]*t
+            path = [robot.px,robot.py]+np.cumsum(action[0]*.25*np.stack([np.cos(headings),np.sin(headings)],axis=-1),axis=0)
+            relative = mu-path[None]
+            distance = np.linalg.norm(relative,axis=-1)
+            clearance = distance-people[:,None,4]-robot.radius
+            if self.arm == 'cv_local':
+                current = -clearance.min(axis=1)
+            else:
+                direction = relative/np.maximum(distance[:,:,None],1e-12)
+                projected = np.einsum('nhi,nij,nhj->nh',direction,psi,direction)*factor[None]
+                denominator = nu-1 if self.arm=='bayes_local' else nu-3
+                z = -clearance/np.sqrt(np.maximum(projected/denominator,1e-12))
+                probability = stdtr(nu-1,z) if self.arm=='bayes_local' else ndtr(z)
+                # Marginal half-space upper bound, NOT a trajectory collision probability.
+                current = probability.max(axis=1)
+            scores = np.maximum(scores,current)
+            indices = np.argsort(-scores,kind='stable')[:5]
+            action = self.actor.predict(self.subset(obs,indices))
+        return action
+
+
+def local_worker(task):
+    from crowd_nav.bayes_continuous.stage_audit import make_env, episode, SOURCE as PPO_SOURCE
+    out,scene,profile,arm,seed,first,count,config = task
+    torch.set_num_threads(1)
+    env = make_env(scene,'no_belief')
+    checkpoint = PPO_SOURCE/f'{seed}_no_belief/attempt0_20480.zip'
+    actor = FrozenActor(checkpoint,env.observation_space)
+    records = []
+    index = TESTS.index(scene)
+    for i in range(first,first+count):
+        wrapper = LocalRiskActor(actor,env,arm,config)
+        records.append(episode(env,wrapper,270000000+index*10000+i,710000+index*1000+i,profile))
+    env.close()
+    result = dict(scene=scene,profile=profile,arm=arm,seed=seed,records=records,
+                  checkpoint_sha256=hashlib.sha256(checkpoint.read_bytes()).hexdigest())
+    destination = Path(out)/'episodes'/f'{scene}_{profile}_{arm}_{seed}_{first}.json'
+    destination.write_text(json.dumps(result,allow_nan=False))
+    print('LOCAL',scene,profile,arm,seed,first,sum(r['outcome']=='success' for r in records),flush=True)
+    return str(destination)
+
+
+def local_run(out, workers, count):
+    from crowd_nav.bayes_continuous.stage_audit import SOURCE as PPO_SOURCE
+    out.mkdir(parents=True,exist_ok=True)
+    calibration = local_calibration()
+    protocol = dict(arms=LOCAL_ARMS,seeds=SEEDS,scenes=TESTS,profiles=['nominal','heldout_nonstationary'],
+        count_per_cell=count,total_episodes=5*3*6*2*count,calibration=calibration,
+        case_start=710000,neighbors=5,passes=2,horizon_seconds=2,
+        intervention='Frozen five-human IL/PPO actor; deployment-only local-set interface, not joint belief PPO training',
+        primary='Bayes minus CV and adaptive Gaussian on OOD success; paired seed/layout bootstrap, multiplicity adjusted',
+        source_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        checkpoints={str(s):hashlib.sha256((PPO_SOURCE/f'{s}_no_belief/attempt0_20480.zip').read_bytes()).hexdigest() for s in SEEDS})
+    path=out/'protocol.json'
+    if path.exists():
+        assert json.loads(path.read_text())==json.loads(json.dumps(protocol))
+    else:
+        path.write_text(json.dumps(protocol,indent=2))
+    (out/'episodes').mkdir(exist_ok=True)
+    tasks=[(str(out),scene,profile,arm,seed,first,min(10,count-first),calibration['selected'])
+        for scene in TESTS for profile in protocol['profiles'] for arm in LOCAL_ARMS
+        for seed in SEEDS for first in range(0,count,10)
+        if not (out/'episodes'/f'{scene}_{profile}_{arm}_{seed}_{first}.json').exists()]
+    map_tasks(local_worker,tasks,workers)
+    local_summary(out)
+
+
+def local_summary(out):
+    protocol = json.loads((out/'protocol.json').read_text())
+    groups = {}
+    for path in sorted((out/'episodes').glob('*.json')):
+        cell = json.loads(path.read_text())
+        key = (cell['scene'],cell['profile'],cell['arm'],cell['seed'])
+        groups.setdefault(key,[]).extend(cell['records'])
+        assert cell['checkpoint_sha256'] == protocol['checkpoints'][str(cell['seed'])]
+    n = protocol['count_per_cell']
+    assert len(groups)==6*2*5*3
+    for key, records in groups.items():
+        records.sort(key=lambda r:r['test_case'])
+        assert len(records)==n and len({r['test_case'] for r in records})==n
+        assert all(r['bound_violations']==0 for r in records)
+    def values(scene,profile,arm):
+        return np.asarray([[[r['outcome']=='success',r['outcome']=='collision',r['reward']]
+            for r in groups[scene,profile,arm,s]] for s in SEEDS],float)
+    cells = []
+    for scene in TESTS:
+        for profile in protocol['profiles']:
+            ref = groups[scene,profile,'all',SEEDS[0]]
+            for arm in LOCAL_ARMS:
+                for seed in SEEDS:
+                    rs = groups[scene,profile,arm,seed]
+                    assert [r['layout_sha256'] for r in rs]==[r['layout_sha256'] for r in ref]
+                    if scene=='baseline_circle':
+                        assert [r['executed_trace_sha256'] for r in rs]==[
+                            r['executed_trace_sha256'] for r in groups[scene,profile,'all',seed]]
+                v=values(scene,profile,arm)
+                cells.append(dict(scene=scene,profile=profile,arm=arm,n=3*n,
+                    success=int(v[:,:,0].sum()),collision=int(v[:,:,1].sum()),
+                    timeout=int(3*n-v[:,:,:2].sum()),mean_return=float(v[:,:,2].mean())))
+    # Resample policy seeds and physical layouts; retain both profiles of each layout.
+    arrays={a:np.stack([np.stack([values(sc,p,a) for p in protocol['profiles']],axis=2)
+        for sc in TESTS[1:]],axis=1) for a in LOCAL_ARMS}
+    rng=np.random.default_rng(20260917)
+    comparisons=[]
+    for control in LOCAL_ARMS[:-1]:
+        difference=arrays['bayes_local']-arrays[control]
+        boot=[]
+        for _ in range(10000):
+            seeds=rng.integers(0,3,3)
+            sampled=np.stack([difference[seeds,j][:,rng.integers(0,n,n)] for j in range(5)],axis=1)
+            boot.append(sampled.mean(axis=(0,1,2,3)))
+        comparisons.append(dict(control=control,difference=difference.mean(axis=(0,1,2,3)).tolist(),
+            simultaneous_ci_98_75=np.quantile(boot,[.00625,.99375],axis=0).T.tolist()))
+    aggregate={a:dict(success=int(v[...,0].sum()),collision=int(v[...,1].sum()),
+                      episodes=int(np.prod(v.shape[:-1])),mean_return=float(v[...,2].mean())) for a,v in arrays.items()}
+    passed=all(c['simultaneous_ci_98_75'][0][0]>0 for c in comparisons)
+    result=dict(cells=cells,ood=aggregate,comparisons=comparisons,
+        bayesian_increment_gate=passed,five_human_bitwise_identity=True,
+        evidence_scope='Frozen IL/PPO backbone with Bayesian deployment interface; no new RL optimization',
+        total_episodes=sum(len(x) for x in groups.values()))
+    (out/'analysis.json').write_text(json.dumps(result,indent=2,allow_nan=False))
+    print('LOCAL_FINAL',json.dumps(dict(ood=aggregate,comparisons=comparisons,passed=passed)),flush=True)
+
+
 if __name__=='__main__':
     parser=argparse.ArgumentParser()
     parser.add_argument('--out',type=Path,required=True)
     parser.add_argument('--workers',type=int,default=4)
     parser.add_argument('--resume-bc',type=Path)
+    parser.add_argument('--local-risk',action='store_true')
+    parser.add_argument('--count',type=int,default=50)
     args=parser.parse_args()
-    run(args.out,args.workers,args.resume_bc)
+    if args.local_risk:
+        local_run(args.out,args.workers,args.count)
+    else:
+        run(args.out,args.workers,args.resume_bc)

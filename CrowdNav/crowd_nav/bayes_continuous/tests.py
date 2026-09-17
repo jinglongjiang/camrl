@@ -638,6 +638,44 @@ class RiskGeneralizationContracts(unittest.TestCase):
             env.close()
 
 
+class LocalRiskContracts(unittest.TestCase):
+    def test_calibration_uses_disjoint_five_person_episodes(self):
+        from crowd_nav.bayes_continuous.risk_generalization import local_calibration
+        result = local_calibration()
+        self.assertFalse(set(result['train_cases']) & set(result['validation_cases']))
+        self.assertGreater(result['selected']['q'],0.)
+        self.assertTrue(all(np.isfinite(r['nll']) for r in result['candidates']))
+
+    def test_identity_causality_and_no_entity_deletion(self):
+        from crowd_nav.bayes_continuous.risk_generalization import LocalRiskActor, LOCAL_ARMS
+        from crowd_nav.bayes_continuous.stage_audit import make_env, FrozenActor, SOURCE
+        config=dict(window=4,nu0=5,q=.006)
+        for scene,count in [('baseline_circle',5),('dense_square',20)]:
+            env=make_env(scene,'no_belief')
+            obs,_=env.reset(options=dict(layout_seed=290000002,test_case=709902,profile='nominal'))
+            actor=FrozenActor(SOURCE/'2407_no_belief/attempt0_20480.zip',env.observation_space)
+            before={k:v.copy() for k,v in obs.items()}
+            for arm in LOCAL_ARMS:
+                routed=LocalRiskActor(actor,env,arm,config)
+                action=routed.predict(obs)
+                np.testing.assert_array_equal(action,routed.predict(obs))
+                self.assertEqual(len(routed.residuals),0)
+                self.assertTrue(env.action_space.contains(action))
+                if count==5:
+                    np.testing.assert_array_equal(action,actor.predict(obs))
+                self.assertEqual(len(env.unwrapped.world.env.humans),count)
+                for key in obs:
+                    np.testing.assert_array_equal(obs[key],before[key])
+            routed=LocalRiskActor(actor,env,'bayes_local',config)
+            action=routed.predict(obs)
+            obs,_,_,_,_=env.step(action)
+            routed.predict(obs)
+            self.assertEqual(len(routed.residuals),1)
+            routed.predict(obs)
+            self.assertEqual(len(routed.residuals),1)
+            env.close()
+
+
 if __name__ == '__main__':
     torch.set_num_threads(1)
     unittest.main()
