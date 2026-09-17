@@ -1,5 +1,135 @@
 # CrowdNav
 
+## Completed overnight result (2026-09-18)
+
+**Verdict: the implementation and bounded IL/RL study completed, but this
+Bayesian update did NOT establish a generalization advantage over its fixed
+predictive-prior control. Do not promote it as a validated Bayesian method.**
+
+All training and model selection used five-human circle layouts. The robot
+remained invisible; human response types, occlusion, Mamba, DAgger, PPO and
+GDBN were not used. No high-density training or test-set tuning was performed.
+Twelve runs (four arms, three seeds) completed their prescribed training/gates,
+followed by 6000 frozen evaluation episodes. Main study wall time: 9643 seconds
+(2 h 41 min), excluding preceding implementation and five-human development.
+
+### Frozen results
+
+Each entry is successes / collisions / timeouts over 150 executions:
+three training seeds on the SAME 50 layouts, not 150 independent layouts.
+The square tests also change geometry, so they are not a pure density intervention.
+
+| Scene | Humans | Bayesian FULL, IL+RL | Fixed prior, IL+RL | FULL, IL only |
+| --- | ---: | --- | --- | --- |
+| Circle | 5 | 136 / 14 / 0 | 144 / 6 / 0 | 127 / 23 / 0 |
+| Circle | 10 | 115 / 33 / 2 | 130 / 18 / 2 | 107 / 42 / 1 |
+| Circle | 12 | 119 / 27 / 4 | 121 / 24 / 5 | 109 / 36 / 5 |
+| Circle | 20 | 108 / 16 / 26 | 120 / 14 / 16 | 108 / 23 / 19 |
+| Square | 5 | 137 / 13 / 0 | 146 / 4 / 0 | 130 / 20 / 0 |
+| Square | 10 | 129 / 20 / 1 | 130 / 17 / 3 | 117 / 29 / 4 |
+| Square | 12 | 112 / 33 / 5 | 121 / 27 / 2 | 106 / 44 / 0 |
+| Square | 20 | 101 / 29 / 20 | 96 / 37 / 17 | 90 / 46 / 14 |
+
+Pooling the two specified geometries with equal weight gives:
+
+| Humans | FULL success | Prior success | FULL collision | Prior collision |
+| ---: | ---: | ---: | ---: | ---: |
+| 5 | 91.00% | 96.67% | 9.00% | 3.33% |
+| 10 | 81.33% | 86.67% | 17.67% | 11.67% |
+| 12 | 77.00% | 80.67% | 20.00% | 17.00% |
+| 20 | 69.67% | 72.00% | 15.00% | 17.00% |
+
+At 20 humans, FULL has fewer pooled collisions but more timeouts (46 versus
+33), and fewer successes (209 versus 216). That is not a general safety and
+efficiency improvement. FULL wins only the 20-human square aggregate among
+the eight scene/count comparisons. Its square gain is +3.33 percentage points;
+an exploratory paired two-way bootstrap over seeds and layouts gives
+[-8.67, +15.33] pp. The circle difference at 20 is -8.00 pp, with
+[-23.33, +6.00] pp. These 10000-resample intervals (NumPy RNG seed 918,
+resampling shared case indices across seeds) are exploratory, unadjusted for
+multiple comparisons, and have only three seeds. No equivalence claim follows.
+
+FULL's selected RL policies versus their own IL policies recover 11 successes
+in the 20-human square test, but zero in the 20-human circle test. RL is doing
+real work, yet its benefit is not consistently a high-density success gain.
+We did NOT run a pooled-network control, so this study cannot assign the
+generalization level specifically to local factorization. Nor can its results
+be directly compared with historical 3--5% scores under different protocols.
+
+### Training gates and actual budgets
+
+| Arm | Seed | Best IL SR /100 | Selected IL update | Candidate RL steps | Reference steps | Effective RL updates | Selected RL step |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| full | 2407 | 91 | 4000 | 20000 | 19442 | 95 | 7058 |
+| full | 4807 | 91 | 12000 | 20000 | 19554 | 105 | 19022 |
+| full | 7207 | 92 | 12000 | 20000 | 19921 | 99 | 11016 |
+| prior | 2407 | 97 | 4000 | 20000 | 20278 | 100 | 16020 |
+| prior | 4807 | 96 | 6000 | 20000 | 19038 | 86 | 18008 |
+| prior | 7207 | 96 | 12000 | 20000 | 18872 | 96 | 17121 |
+| map | 2407 | 88 | 4000 | 0 | 0 | 0 | 0 |
+| map | 4807 | 90 | 12000 | 20000 | 19672 | 107 | 20000 |
+| map | 7207 | 89 | 12000 | 0 | 0 | 0 | 0 |
+| history | 2407 | 86 | 6000 | 0 | 0 | 0 | 0 |
+| history | 4807 | 90 | 10000 | 1018 | 986 | 5 | 0 |
+| history | 7207 | 82 | 12000 | 0 | 0 | 0 | 0 |
+
+All runs received 500 teacher episodes and 12000 IL updates. Total candidate
+RL steps: 141018; additional frozen-reference steps: 137763; effective
+parameter-changing RL updates: 693. Four runs failed the 90% IL gate and did
+not train RL. History/4807 regressed at its first RL evaluation and restored IL.
+No gate was lowered. Thus FULL versus prior has matching RL caps and all seeds
+qualify, but comparisons to history/map are NOT equal completed-RL comparisons.
+Each arm learns IL separately from the same teacher cases and initial weights;
+the resulting IL weights and competence are not identical across arms.
+
+For completeness, diagnostic selected-policy counts for the weaker controls:
+
+| Scene | Humans | Posterior-mean point (`map`) | Four-increment history |
+| --- | ---: | --- | --- |
+| Circle | 5 | 127 / 23 / 0 | 115 / 35 / 0 |
+| Circle | 10 | 92 / 56 / 2 | 94 / 54 / 2 |
+| Circle | 12 | 97 / 47 / 6 | 98 / 44 / 8 |
+| Circle | 20 | 99 / 32 / 19 | 92 / 38 / 20 |
+| Square | 5 | 134 / 16 / 0 | 128 / 20 / 2 |
+| Square | 10 | 106 / 39 / 5 | 107 / 41 / 2 |
+| Square | 12 | 94 / 51 / 5 | 87 / 60 / 3 |
+| Square | 20 | 74 / 63 / 13 | 85 / 45 / 20 |
+
+These include gate-failed IL and a rolled-back policy. They cannot establish
+that Bayes is better than a successfully trained short-history RL baseline.
+
+### Reproduction and audit
+
+Executed source commit: `ec7b029` (five scoped implementation/report paths).
+The source snapshot additionally records the actual ORCA dependency, whose
+uncommitted local difference is a docstring change. Unrelated colleague changes
+were preserved, not swept into the commit. The final report is committed
+separately. GitHub SSH synchronization succeeded on `fix-junction-candidates`.
+
+Remote artifacts: `/root/local_predictive_overnight_20260918/runs/study_v3/`.
+Local complete copy, including every run, checkpoint, source snapshot and log:
+`/home/abc/temp/local_predictive_overnight_results_20260918/`.
+`runs/study_v3/study.json` contains all 6000 per-episode records, all checkpoint
+SHA256 hashes, configuration, seeds, selected stages and actual budgets.
+All twelve selected checkpoint hashes, 120 evaluation cell counts and paired
+case IDs were checked after download. No PDF was created.
+
+```bash
+python crowd_nav/train.py --mode study --device cuda \
+  --demo-episodes 500 --il-updates 12000 --il-eval-every 2000 --il-lr 0.0003 \
+  --rl-steps 20000 --eval-steps 1000 --lr 0.00003 \
+  --eval-episodes 100 --batch-size 64 \
+  --case-start 9400000 --study-eval-episodes 50 --out runs/new_study
+```
+
+System-disk maintenance removed package download cache and 376 MiB of archived
+system journals; no datasets, environments, checkpoints or unrelated jobs were
+deleted. The existing ECG job was left running. The navigation training job
+finished normally. Implementation, training, frozen evaluation and reporting
+are complete; new experiments must use new test layouts, not tune against this
+matrix. The unresolved research requirement is a reproducible advantage from
+online Bayesian updating, not merely a functioning IL/RL pipeline.
+
 ## Active v3 local-composition IL/RL (2026-09-18 overnight)
 
 Robot visibility is FALSE, human reciprocity types and occlusion are OFF.
@@ -74,7 +204,7 @@ The 90% IL gate is not a 5% collision-rate safety certificate.
 
 Remote directory: `/root/local_predictive_overnight_20260918`.
 Study output: `runs/study_v3/study.json`, with per-run results/checkpoints and
-a source snapshot. Startup PID: 1194807. Status at this edit: TRAINING.
+a source snapshot. Startup PID: 1194807. Final status: COMPLETED.
 
 - Arms: full/prior/map/history. Seeds: 2407/4807/7207.
 - Per run: 500 five-human teacher episodes, 12000 IL updates, batch 64,
