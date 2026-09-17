@@ -308,5 +308,70 @@ def main():
     summarize(args.out)
 
 
+def summarize_model_search(out):
+    """Read-only analysis of the separately registered ARS experiment."""
+    out=Path(out)
+    protocol=json.loads((out/'protocol.json').read_text())
+    gate=json.loads((out/'gate.json').read_text())
+    if not gate['passed']:
+        result=dict(status='FIVE_HUMAN_GATE_FAILED',gate=gate,ood_evaluated=False)
+        (out/'analysis.json').write_text(json.dumps(result,indent=2))
+        return result
+    scenes=('baseline_circle','dense_circle','large_circle','baseline_square','dense_square','large_square')
+    profiles=('nominal','heldout_nonstationary')
+    arms=protocol['arms'];seeds=protocol['seeds'];n=protocol['count_per_cell']
+    groups={}
+    for f in (out/'evaluation').glob('*.json'):
+        d=json.loads(f.read_text())
+        groups.setdefault((d['scene'],d['profile'],d['arm'],d['seed']),[]).extend(d['records'])
+    assert len(groups)==len(scenes)*len(profiles)*len(arms)*len(seeds)
+    for rs in groups.values():
+        rs.sort(key=lambda r:r['test_case'])
+        assert len(rs)==n and len({r['test_case'] for r in rs})==n
+        assert all(r['bound_violations']==0 for r in rs)
+    cells=[]
+    def values(scene,profile,arm):
+        return np.array([[[r['outcome']=='success',r['outcome']=='collision',r['reward']]
+            for r in groups[scene,profile,arm,seed]] for seed in seeds],float)
+    for scene in scenes:
+        reference=[r['layout_sha256'] for r in groups[scene,profiles[0],'il',seeds[0]]]
+        for profile in profiles:
+            for arm in arms:
+                for seed in seeds:
+                    assert [r['layout_sha256'] for r in groups[scene,profile,arm,seed]]==reference
+                v=values(scene,profile,arm)
+                cells.append(dict(scene=scene,profile=profile,arm=arm,episodes=n*len(seeds),
+                    success=int(v[:,:,0].sum()),collision=int(v[:,:,1].sum()),
+                    timeout=int(n*len(seeds)-v[:,:,:2].sum()),mean_return=float(v[:,:,2].mean()),
+                    per_seed_success=v[:,:,0].sum(1).astype(int).tolist()))
+    arrays={a:np.stack([np.stack([values(s,p,a) for p in profiles],axis=2)
+        for s in scenes[1:]],axis=1) for a in arms}
+    rng=np.random.default_rng(20260918)
+    comparisons=[]
+    for control in ('cv','gaussian','initial','il'):
+        difference=arrays['bayes']-arrays[control]
+        boot=[]
+        for _ in range(10000):
+            sampled_seeds=rng.integers(0,len(seeds),len(seeds))
+            sampled=np.stack([difference[sampled_seeds,j][:,rng.integers(0,n,n)] for j in range(5)],axis=1)
+            boot.append(sampled.mean(axis=(0,1,2,3)))
+        tail=.05/6 if control!='il' else .025
+        comparisons.append(dict(control=control,difference=difference.mean(axis=(0,1,2,3)).tolist(),
+            confidence=1-2*tail,interval=np.quantile(boot,[tail,1-tail],axis=0).T.tolist(),
+            confirmatory=control!='il'))
+    aggregate={a:dict(success=int(v[...,0].sum()),collision=int(v[...,1].sum()),
+        episodes=int(np.prod(v.shape[:-1])),mean_return=float(v[...,2].mean())) for a,v in arrays.items()}
+    increment=all(c['interval'][0][0]>0 for c in comparisons if c['confirmatory'])
+    usable=all(c['success']/c['episodes']>=.8 for c in cells
+        if c['arm']=='bayes' and c['profile']=='nominal' and c['scene'] in ('dense_square','large_square'))
+    result=dict(status='COMPLETE',gate=gate,cells=cells,ood=aggregate,comparisons=comparisons,
+        bayesian_and_rl_increment_passed=increment,twenty_human_target_passed=usable,
+        total_episodes=sum(len(r) for r in groups.values()),
+        positive=increment and usable,
+        scope='Parameter-space RL of an IL-anchored MPC policy, not a new end-to-end neural actor')
+    (out/'analysis.json').write_text(json.dumps(result,indent=2,allow_nan=False))
+    return result
+
+
 if __name__=='__main__':
     main()
