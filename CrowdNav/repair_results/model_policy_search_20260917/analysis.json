@@ -1,0 +1,1171 @@
+{
+  "status": "COMPLETE",
+  "gate": {
+    "passed": true,
+    "runs": [
+      {
+        "arm": "cv",
+        "seed": 2407,
+        "initial_success": 38,
+        "final_success": 38,
+        "theta": [
+          0.17677889108901582,
+          -0.18587821861252105,
+          0.04453309294911116,
+          0.3077205790527303
+        ],
+        "environment_steps": 3766,
+        "nonzero_update": true
+      },
+      {
+        "arm": "cv",
+        "seed": 4807,
+        "initial_success": 38,
+        "final_success": 36,
+        "theta": [
+          -0.4157057786235223,
+          0.022321406697568158,
+          -0.10826726813562562,
+          0.301642389918295
+        ],
+        "environment_steps": 3615,
+        "nonzero_update": true
+      },
+      {
+        "arm": "cv",
+        "seed": 7207,
+        "initial_success": 38,
+        "final_success": 37,
+        "theta": [
+          0.057251481784318936,
+          -0.4843181604730643,
+          -0.029001932824711765,
+          0.15343703086721572
+        ],
+        "environment_steps": 3587,
+        "nonzero_update": true
+      },
+      {
+        "arm": "gaussian",
+        "seed": 2407,
+        "initial_success": 38,
+        "final_success": 39,
+        "theta": [
+          -0.13991724214201604,
+          0.016501653828906143,
+          -0.05078485414077019,
+          0.024885498604240823
+        ],
+        "environment_steps": 3580,
+        "nonzero_update": true
+      },
+      {
+        "arm": "gaussian",
+        "seed": 4807,
+        "initial_success": 38,
+        "final_success": 36,
+        "theta": [
+          -0.5630609494336246,
+          -0.0713580053405916,
+          0.008203666153168927,
+          0.14418791282483928
+        ],
+        "environment_steps": 3565,
+        "nonzero_update": true
+      },
+      {
+        "arm": "gaussian",
+        "seed": 7207,
+        "initial_success": 38,
+        "final_success": 36,
+        "theta": [
+          -0.16460874310541973,
+          0.20833265651674138,
+          -0.04219943237062654,
+          -0.26135716719046387
+        ],
+        "environment_steps": 3549,
+        "nonzero_update": true
+      },
+      {
+        "arm": "bayes",
+        "seed": 2407,
+        "initial_success": 38,
+        "final_success": 37,
+        "theta": [
+          -0.1443360142217691,
+          0.1239593310689408,
+          -0.022028365186011888,
+          0.01186840029442118
+        ],
+        "environment_steps": 3715,
+        "nonzero_update": true
+      },
+      {
+        "arm": "bayes",
+        "seed": 4807,
+        "initial_success": 38,
+        "final_success": 37,
+        "theta": [
+          -0.5534950830165384,
+          -0.14463613885624824,
+          0.0896359791855174,
+          0.36153270177552943
+        ],
+        "environment_steps": 3636,
+        "nonzero_update": true
+      },
+      {
+        "arm": "bayes",
+        "seed": 7207,
+        "initial_success": 38,
+        "final_success": 37,
+        "theta": [
+          -0.04232672864262992,
+          0.22577074362860647,
+          -0.18746874983589212,
+          -0.10064129620082782
+        ],
+        "environment_steps": 3628,
+        "nonzero_update": true
+      }
+    ]
+  },
+  "cells": [
+    {
+      "scene": "baseline_circle",
+      "profile": "nominal",
+      "arm": "cv",
+      "episodes": 60,
+      "success": 60,
+      "collision": 0,
+      "timeout": 0,
+      "mean_return": 0.9515169277083727,
+      "per_seed_success": [
+        20,
+        20,
+        20
+      ]
+    },
+    {
+      "scene": "baseline_circle",
+      "profile": "nominal",
+      "arm": "gaussian",
+      "episodes": 60,
+      "success": 60,
+      "collision": 0,
+      "timeout": 0,
+      "mean_return": 0.950160711420114,
+      "per_seed_success": [
+        20,
+        20,
+        20
+      ]
+    },
+    {
+      "scene": "baseline_circle",
+      "profile": "nominal",
+      "arm": "bayes",
+      "episodes": 60,
+      "success": 60,
+      "collision": 0,
+      "timeout": 0,
+      "mean_return": 0.9508216177096316,
+      "per_seed_success": [
+        20,
+        20,
+        20
+      ]
+    },
+    {
+      "scene": "baseline_circle",
+      "profile": "nominal",
+      "arm": "initial",
+      "episodes": 60,
+      "success": 60,
+      "collision": 0,
+      "timeout": 0,
+      "mean_return": 0.9516650879646196,
+      "per_seed_success": [
+        20,
+        20,
+        20
+      ]
+    },
+    {
+      "scene": "baseline_circle",
+      "profile": "nominal",
+      "arm": "il",
+      "episodes": 60,
+      "success": 60,
+      "collision": 0,
+      "timeout": 0,
+      "mean_return": 0.9373993000463746,
+      "per_seed_success": [
+        20,
+        20,
+        20
+      ]
+    },
+    {
+      "scene": "baseline_circle",
+      "profile": "heldout_nonstationary",
+      "arm": "cv",
+      "episodes": 60,
+      "success": 59,
+      "collision": 1,
+      "timeout": 0,
+      "mean_return": 0.9234169164219737,
+      "per_seed_success": [
+        20,
+        19,
+        20
+      ]
+    },
+    {
+      "scene": "baseline_circle",
+      "profile": "heldout_nonstationary",
+      "arm": "gaussian",
+      "episodes": 60,
+      "success": 55,
+      "collision": 5,
+      "timeout": 0,
+      "mean_return": 0.8259247677800621,
+      "per_seed_success": [
+        19,
+        17,
+        19
+      ]
+    },
+    {
+      "scene": "baseline_circle",
+      "profile": "heldout_nonstationary",
+      "arm": "bayes",
+      "episodes": 60,
+      "success": 56,
+      "collision": 4,
+      "timeout": 0,
+      "mean_return": 0.8523469762604857,
+      "per_seed_success": [
+        19,
+        18,
+        19
+      ]
+    },
+    {
+      "scene": "baseline_circle",
+      "profile": "heldout_nonstationary",
+      "arm": "initial",
+      "episodes": 60,
+      "success": 54,
+      "collision": 6,
+      "timeout": 0,
+      "mean_return": 0.8085832143460211,
+      "per_seed_success": [
+        18,
+        18,
+        18
+      ]
+    },
+    {
+      "scene": "baseline_circle",
+      "profile": "heldout_nonstationary",
+      "arm": "il",
+      "episodes": 60,
+      "success": 51,
+      "collision": 9,
+      "timeout": 0,
+      "mean_return": 0.7239367525172151,
+      "per_seed_success": [
+        17,
+        17,
+        17
+      ]
+    },
+    {
+      "scene": "dense_circle",
+      "profile": "nominal",
+      "arm": "cv",
+      "episodes": 60,
+      "success": 57,
+      "collision": 3,
+      "timeout": 0,
+      "mean_return": 0.8388165689276849,
+      "per_seed_success": [
+        19,
+        19,
+        19
+      ]
+    },
+    {
+      "scene": "dense_circle",
+      "profile": "nominal",
+      "arm": "gaussian",
+      "episodes": 60,
+      "success": 57,
+      "collision": 3,
+      "timeout": 0,
+      "mean_return": 0.844205345082035,
+      "per_seed_success": [
+        19,
+        19,
+        19
+      ]
+    },
+    {
+      "scene": "dense_circle",
+      "profile": "nominal",
+      "arm": "bayes",
+      "episodes": 60,
+      "success": 57,
+      "collision": 3,
+      "timeout": 0,
+      "mean_return": 0.8462460301940239,
+      "per_seed_success": [
+        20,
+        18,
+        19
+      ]
+    },
+    {
+      "scene": "dense_circle",
+      "profile": "nominal",
+      "arm": "initial",
+      "episodes": 60,
+      "success": 57,
+      "collision": 3,
+      "timeout": 0,
+      "mean_return": 0.8518844674057532,
+      "per_seed_success": [
+        19,
+        19,
+        19
+      ]
+    },
+    {
+      "scene": "dense_circle",
+      "profile": "nominal",
+      "arm": "il",
+      "episodes": 60,
+      "success": 57,
+      "collision": 3,
+      "timeout": 0,
+      "mean_return": 0.8068818224360916,
+      "per_seed_success": [
+        19,
+        19,
+        19
+      ]
+    },
+    {
+      "scene": "dense_circle",
+      "profile": "heldout_nonstationary",
+      "arm": "cv",
+      "episodes": 60,
+      "success": 53,
+      "collision": 7,
+      "timeout": 0,
+      "mean_return": 0.7272052975715593,
+      "per_seed_success": [
+        18,
+        18,
+        17
+      ]
+    },
+    {
+      "scene": "dense_circle",
+      "profile": "heldout_nonstationary",
+      "arm": "gaussian",
+      "episodes": 60,
+      "success": 54,
+      "collision": 6,
+      "timeout": 0,
+      "mean_return": 0.7521243050178599,
+      "per_seed_success": [
+        18,
+        17,
+        19
+      ]
+    },
+    {
+      "scene": "dense_circle",
+      "profile": "heldout_nonstationary",
+      "arm": "bayes",
+      "episodes": 60,
+      "success": 52,
+      "collision": 8,
+      "timeout": 0,
+      "mean_return": 0.7093352592979875,
+      "per_seed_success": [
+        17,
+        17,
+        18
+      ]
+    },
+    {
+      "scene": "dense_circle",
+      "profile": "heldout_nonstationary",
+      "arm": "initial",
+      "episodes": 60,
+      "success": 51,
+      "collision": 9,
+      "timeout": 0,
+      "mean_return": 0.6850940048110022,
+      "per_seed_success": [
+        17,
+        17,
+        17
+      ]
+    },
+    {
+      "scene": "dense_circle",
+      "profile": "heldout_nonstationary",
+      "arm": "il",
+      "episodes": 60,
+      "success": 33,
+      "collision": 27,
+      "timeout": 0,
+      "mean_return": 0.22370057586392678,
+      "per_seed_success": [
+        11,
+        11,
+        11
+      ]
+    },
+    {
+      "scene": "large_circle",
+      "profile": "nominal",
+      "arm": "cv",
+      "episodes": 60,
+      "success": 60,
+      "collision": 0,
+      "timeout": 0,
+      "mean_return": 0.9105649147556275,
+      "per_seed_success": [
+        20,
+        20,
+        20
+      ]
+    },
+    {
+      "scene": "large_circle",
+      "profile": "nominal",
+      "arm": "gaussian",
+      "episodes": 60,
+      "success": 60,
+      "collision": 0,
+      "timeout": 0,
+      "mean_return": 0.912905473981267,
+      "per_seed_success": [
+        20,
+        20,
+        20
+      ]
+    },
+    {
+      "scene": "large_circle",
+      "profile": "nominal",
+      "arm": "bayes",
+      "episodes": 60,
+      "success": 60,
+      "collision": 0,
+      "timeout": 0,
+      "mean_return": 0.9150928492883089,
+      "per_seed_success": [
+        20,
+        20,
+        20
+      ]
+    },
+    {
+      "scene": "large_circle",
+      "profile": "nominal",
+      "arm": "initial",
+      "episodes": 60,
+      "success": 60,
+      "collision": 0,
+      "timeout": 0,
+      "mean_return": 0.8980167652739913,
+      "per_seed_success": [
+        20,
+        20,
+        20
+      ]
+    },
+    {
+      "scene": "large_circle",
+      "profile": "nominal",
+      "arm": "il",
+      "episodes": 60,
+      "success": 24,
+      "collision": 36,
+      "timeout": 0,
+      "mean_return": 0.0015950166340136852,
+      "per_seed_success": [
+        8,
+        8,
+        8
+      ]
+    },
+    {
+      "scene": "large_circle",
+      "profile": "heldout_nonstationary",
+      "arm": "cv",
+      "episodes": 60,
+      "success": 51,
+      "collision": 9,
+      "timeout": 0,
+      "mean_return": 0.6767743183170459,
+      "per_seed_success": [
+        18,
+        16,
+        17
+      ]
+    },
+    {
+      "scene": "large_circle",
+      "profile": "heldout_nonstationary",
+      "arm": "gaussian",
+      "episodes": 60,
+      "success": 52,
+      "collision": 8,
+      "timeout": 0,
+      "mean_return": 0.7048153079676155,
+      "per_seed_success": [
+        18,
+        17,
+        17
+      ]
+    },
+    {
+      "scene": "large_circle",
+      "profile": "heldout_nonstationary",
+      "arm": "bayes",
+      "episodes": 60,
+      "success": 48,
+      "collision": 12,
+      "timeout": 0,
+      "mean_return": 0.6098595347832777,
+      "per_seed_success": [
+        13,
+        17,
+        18
+      ]
+    },
+    {
+      "scene": "large_circle",
+      "profile": "heldout_nonstationary",
+      "arm": "initial",
+      "episodes": 60,
+      "success": 51,
+      "collision": 9,
+      "timeout": 0,
+      "mean_return": 0.6634825725000685,
+      "per_seed_success": [
+        17,
+        17,
+        17
+      ]
+    },
+    {
+      "scene": "large_circle",
+      "profile": "heldout_nonstationary",
+      "arm": "il",
+      "episodes": 60,
+      "success": 21,
+      "collision": 39,
+      "timeout": 0,
+      "mean_return": -0.04634886835136017,
+      "per_seed_success": [
+        7,
+        7,
+        7
+      ]
+    },
+    {
+      "scene": "baseline_square",
+      "profile": "nominal",
+      "arm": "cv",
+      "episodes": 60,
+      "success": 57,
+      "collision": 3,
+      "timeout": 0,
+      "mean_return": 0.8589208251216058,
+      "per_seed_success": [
+        20,
+        17,
+        20
+      ]
+    },
+    {
+      "scene": "baseline_square",
+      "profile": "nominal",
+      "arm": "gaussian",
+      "episodes": 60,
+      "success": 54,
+      "collision": 6,
+      "timeout": 0,
+      "mean_return": 0.7943581576561927,
+      "per_seed_success": [
+        19,
+        16,
+        19
+      ]
+    },
+    {
+      "scene": "baseline_square",
+      "profile": "nominal",
+      "arm": "bayes",
+      "episodes": 60,
+      "success": 54,
+      "collision": 6,
+      "timeout": 0,
+      "mean_return": 0.7921771221595327,
+      "per_seed_success": [
+        18,
+        17,
+        19
+      ]
+    },
+    {
+      "scene": "baseline_square",
+      "profile": "nominal",
+      "arm": "initial",
+      "episodes": 60,
+      "success": 57,
+      "collision": 0,
+      "timeout": 3,
+      "mean_return": 0.8385606498380992,
+      "per_seed_success": [
+        19,
+        19,
+        19
+      ]
+    },
+    {
+      "scene": "baseline_square",
+      "profile": "nominal",
+      "arm": "il",
+      "episodes": 60,
+      "success": 18,
+      "collision": 42,
+      "timeout": 0,
+      "mean_return": -0.13429612580023678,
+      "per_seed_success": [
+        6,
+        6,
+        6
+      ]
+    },
+    {
+      "scene": "baseline_square",
+      "profile": "heldout_nonstationary",
+      "arm": "cv",
+      "episodes": 60,
+      "success": 57,
+      "collision": 3,
+      "timeout": 0,
+      "mean_return": 0.8534148257357995,
+      "per_seed_success": [
+        20,
+        18,
+        19
+      ]
+    },
+    {
+      "scene": "baseline_square",
+      "profile": "heldout_nonstationary",
+      "arm": "gaussian",
+      "episodes": 60,
+      "success": 54,
+      "collision": 6,
+      "timeout": 0,
+      "mean_return": 0.7833682490239918,
+      "per_seed_success": [
+        19,
+        17,
+        18
+      ]
+    },
+    {
+      "scene": "baseline_square",
+      "profile": "heldout_nonstationary",
+      "arm": "bayes",
+      "episodes": 60,
+      "success": 56,
+      "collision": 4,
+      "timeout": 0,
+      "mean_return": 0.8292856409337739,
+      "per_seed_success": [
+        18,
+        19,
+        19
+      ]
+    },
+    {
+      "scene": "baseline_square",
+      "profile": "heldout_nonstationary",
+      "arm": "initial",
+      "episodes": 60,
+      "success": 60,
+      "collision": 0,
+      "timeout": 0,
+      "mean_return": 0.9244716930082031,
+      "per_seed_success": [
+        20,
+        20,
+        20
+      ]
+    },
+    {
+      "scene": "baseline_square",
+      "profile": "heldout_nonstationary",
+      "arm": "il",
+      "episodes": 60,
+      "success": 18,
+      "collision": 42,
+      "timeout": 0,
+      "mean_return": -0.10915537535133105,
+      "per_seed_success": [
+        6,
+        6,
+        6
+      ]
+    },
+    {
+      "scene": "dense_square",
+      "profile": "nominal",
+      "arm": "cv",
+      "episodes": 60,
+      "success": 56,
+      "collision": 3,
+      "timeout": 1,
+      "mean_return": 0.7848713086634849,
+      "per_seed_success": [
+        18,
+        18,
+        20
+      ]
+    },
+    {
+      "scene": "dense_square",
+      "profile": "nominal",
+      "arm": "gaussian",
+      "episodes": 60,
+      "success": 55,
+      "collision": 4,
+      "timeout": 1,
+      "mean_return": 0.7495950648827765,
+      "per_seed_success": [
+        19,
+        17,
+        19
+      ]
+    },
+    {
+      "scene": "dense_square",
+      "profile": "nominal",
+      "arm": "bayes",
+      "episodes": 60,
+      "success": 54,
+      "collision": 4,
+      "timeout": 2,
+      "mean_return": 0.7241372335708637,
+      "per_seed_success": [
+        18,
+        18,
+        18
+      ]
+    },
+    {
+      "scene": "dense_square",
+      "profile": "nominal",
+      "arm": "initial",
+      "episodes": 60,
+      "success": 57,
+      "collision": 3,
+      "timeout": 0,
+      "mean_return": 0.8137449139529326,
+      "per_seed_success": [
+        19,
+        19,
+        19
+      ]
+    },
+    {
+      "scene": "dense_square",
+      "profile": "nominal",
+      "arm": "il",
+      "episodes": 60,
+      "success": 6,
+      "collision": 54,
+      "timeout": 0,
+      "mean_return": -0.4165464266736257,
+      "per_seed_success": [
+        2,
+        2,
+        2
+      ]
+    },
+    {
+      "scene": "dense_square",
+      "profile": "heldout_nonstationary",
+      "arm": "cv",
+      "episodes": 60,
+      "success": 40,
+      "collision": 20,
+      "timeout": 0,
+      "mean_return": 0.36865198401675214,
+      "per_seed_success": [
+        12,
+        14,
+        14
+      ]
+    },
+    {
+      "scene": "dense_square",
+      "profile": "heldout_nonstationary",
+      "arm": "gaussian",
+      "episodes": 60,
+      "success": 39,
+      "collision": 20,
+      "timeout": 1,
+      "mean_return": 0.3394335086686035,
+      "per_seed_success": [
+        15,
+        14,
+        10
+      ]
+    },
+    {
+      "scene": "dense_square",
+      "profile": "heldout_nonstationary",
+      "arm": "bayes",
+      "episodes": 60,
+      "success": 41,
+      "collision": 18,
+      "timeout": 1,
+      "mean_return": 0.3753732692378659,
+      "per_seed_success": [
+        13,
+        14,
+        14
+      ]
+    },
+    {
+      "scene": "dense_square",
+      "profile": "heldout_nonstationary",
+      "arm": "initial",
+      "episodes": 60,
+      "success": 42,
+      "collision": 18,
+      "timeout": 0,
+      "mean_return": 0.41504641287059957,
+      "per_seed_success": [
+        14,
+        14,
+        14
+      ]
+    },
+    {
+      "scene": "dense_square",
+      "profile": "heldout_nonstationary",
+      "arm": "il",
+      "episodes": 60,
+      "success": 0,
+      "collision": 60,
+      "timeout": 0,
+      "mean_return": -0.558614628826036,
+      "per_seed_success": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "scene": "large_square",
+      "profile": "nominal",
+      "arm": "cv",
+      "episodes": 60,
+      "success": 51,
+      "collision": 9,
+      "timeout": 0,
+      "mean_return": 0.6979970594906454,
+      "per_seed_success": [
+        16,
+        17,
+        18
+      ]
+    },
+    {
+      "scene": "large_square",
+      "profile": "nominal",
+      "arm": "gaussian",
+      "episodes": 60,
+      "success": 52,
+      "collision": 8,
+      "timeout": 0,
+      "mean_return": 0.7239059604735119,
+      "per_seed_success": [
+        17,
+        18,
+        17
+      ]
+    },
+    {
+      "scene": "large_square",
+      "profile": "nominal",
+      "arm": "bayes",
+      "episodes": 60,
+      "success": 55,
+      "collision": 5,
+      "timeout": 0,
+      "mean_return": 0.7963859035250096,
+      "per_seed_success": [
+        17,
+        19,
+        19
+      ]
+    },
+    {
+      "scene": "large_square",
+      "profile": "nominal",
+      "arm": "initial",
+      "episodes": 60,
+      "success": 51,
+      "collision": 9,
+      "timeout": 0,
+      "mean_return": 0.7069008955728121,
+      "per_seed_success": [
+        17,
+        17,
+        17
+      ]
+    },
+    {
+      "scene": "large_square",
+      "profile": "nominal",
+      "arm": "il",
+      "episodes": 60,
+      "success": 3,
+      "collision": 57,
+      "timeout": 0,
+      "mean_return": -0.47668402220915973,
+      "per_seed_success": [
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "scene": "large_square",
+      "profile": "heldout_nonstationary",
+      "arm": "cv",
+      "episodes": 60,
+      "success": 49,
+      "collision": 11,
+      "timeout": 0,
+      "mean_return": 0.6201055705297475,
+      "per_seed_success": [
+        17,
+        15,
+        17
+      ]
+    },
+    {
+      "scene": "large_square",
+      "profile": "heldout_nonstationary",
+      "arm": "gaussian",
+      "episodes": 60,
+      "success": 51,
+      "collision": 9,
+      "timeout": 0,
+      "mean_return": 0.6696663008984198,
+      "per_seed_success": [
+        16,
+        18,
+        17
+      ]
+    },
+    {
+      "scene": "large_square",
+      "profile": "heldout_nonstationary",
+      "arm": "bayes",
+      "episodes": 60,
+      "success": 53,
+      "collision": 7,
+      "timeout": 0,
+      "mean_return": 0.710591287223034,
+      "per_seed_success": [
+        19,
+        16,
+        18
+      ]
+    },
+    {
+      "scene": "large_square",
+      "profile": "heldout_nonstationary",
+      "arm": "initial",
+      "episodes": 60,
+      "success": 57,
+      "collision": 3,
+      "timeout": 0,
+      "mean_return": 0.8104710693422377,
+      "per_seed_success": [
+        19,
+        19,
+        19
+      ]
+    },
+    {
+      "scene": "large_square",
+      "profile": "heldout_nonstationary",
+      "arm": "il",
+      "episodes": 60,
+      "success": 0,
+      "collision": 60,
+      "timeout": 0,
+      "mean_return": -0.5348543911820965,
+      "per_seed_success": [
+        0,
+        0,
+        0
+      ]
+    }
+  ],
+  "ood": {
+    "cv": {
+      "success": 531,
+      "collision": 68,
+      "episodes": 600,
+      "mean_return": 0.7337322673129953
+    },
+    "gaussian": {
+      "success": 528,
+      "collision": 70,
+      "episodes": 600,
+      "mean_return": 0.7274377673652274
+    },
+    "bayes": {
+      "success": 530,
+      "collision": 67,
+      "episodes": 600,
+      "mean_return": 0.7308484130213677
+    },
+    "initial": {
+      "success": 543,
+      "collision": 54,
+      "episodes": 600,
+      "mean_return": 0.76076734445757
+    },
+    "il": {
+      "success": 180,
+      "collision": 420,
+      "episodes": 600,
+      "mean_return": -0.12443224234598141
+    }
+  },
+  "comparisons": [
+    {
+      "control": "cv",
+      "difference": [
+        -0.0016666666666666668,
+        -0.0016666666666666668,
+        -0.0028838542916274535
+      ],
+      "confidence": 0.9833333333333333,
+      "interval": [
+        [
+          -0.056666666666666664,
+          0.04833333333333333
+        ],
+        [
+          -0.05333333333333334,
+          0.055
+        ],
+        [
+          -0.08388217747968682,
+          0.06846780271309505
+        ]
+      ],
+      "confirmatory": true
+    },
+    {
+      "control": "gaussian",
+      "difference": [
+        0.0033333333333333335,
+        -0.005,
+        0.0034106456561404587
+      ],
+      "confidence": 0.9833333333333333,
+      "interval": [
+        [
+          -0.06,
+          0.06666666666666667
+        ],
+        [
+          -0.06833333333333333,
+          0.055
+        ],
+        [
+          -0.09152074705509958,
+          0.09832052464579946
+        ]
+      ],
+      "confirmatory": true
+    },
+    {
+      "control": "initial",
+      "difference": [
+        -0.021666666666666667,
+        0.021666666666666667,
+        -0.029918931436202147
+      ],
+      "confidence": 0.9833333333333333,
+      "interval": [
+        [
+          -0.07666666666666666,
+          0.03
+        ],
+        [
+          -0.03333333333333333,
+          0.08
+        ],
+        [
+          -0.11044990909065493,
+          0.04733910771130299
+        ]
+      ],
+      "confirmatory": true
+    },
+    {
+      "control": "il",
+      "difference": [
+        0.5833333333333334,
+        -0.5883333333333334,
+        0.855280655367349
+      ],
+      "confidence": 0.95,
+      "interval": [
+        [
+          0.5132916666666667,
+          0.6516666666666666
+        ],
+        [
+          -0.655,
+          -0.52
+        ],
+        [
+          0.7502238513314452,
+          0.9565474423109571
+        ]
+      ],
+      "confirmatory": false
+    }
+  ],
+  "bayesian_and_rl_increment_passed": false,
+  "twenty_human_target_passed": true,
+  "total_episodes": 3600,
+  "positive": false,
+  "scope": "Parameter-space RL of an IL-anchored MPC policy, not a new end-to-end neural actor"
+}

@@ -1,0 +1,22 @@
+{
+  "repair_results/student_dagger_fifteen_20260914/results.json": {
+    "case_count": 1600,
+    "test_overlap": []
+  },
+  "repair_results/student_dagger_coverage_20260915/results.json": {
+    "case_count": 2600,
+    "test_overlap": []
+  },
+  "repair_results/student_dagger_ten_20260914/results.json": {
+    "case_count": 1100,
+    "test_overlap": []
+  },
+  "repair_results/student_dagger_extended_20260914/results.json": {
+    "case_count": 600,
+    "test_overlap": []
+  },
+  "repair_results/student_dagger_20260914/results.json": {
+    "case_count": 400,
+    "test_overlap": []
+  }
+}

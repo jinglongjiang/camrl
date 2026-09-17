@@ -1,0 +1,58 @@
+{
+  "unit_tests": {
+    "run": 41,
+    "failures": 0,
+    "errors": 0
+  },
+  "training_steps": 32641,
+  "training_unique_layouts": 48,
+  "validation_unique_layouts": 40,
+  "training_humans_exactly_five": true,
+  "training_layouts_paired": true,
+  "changed_validation_trajectories": {
+    "train_bayes_4807.json": 40,
+    "train_gaussian_2407.json": 40,
+    "train_gaussian_4807.json": 40,
+    "train_bayes_2407.json": 40,
+    "train_cv_2407.json": 40,
+    "train_gaussian_7207.json": 40,
+    "train_bayes_7207.json": 40,
+    "train_cv_4807.json": 40,
+    "train_cv_7207.json": 40
+  },
+  "source_unchanged": true,
+  "exact_replays": [
+    {
+      "scene": "baseline_circle",
+      "case": 770000,
+      "exact": true
+    },
+    {
+      "scene": "dense_circle",
+      "case": 771000,
+      "exact": true
+    },
+    {
+      "scene": "large_circle",
+      "case": 772000,
+      "exact": true
+    },
+    {
+      "scene": "baseline_square",
+      "case": 773000,
+      "exact": true
+    },
+    {
+      "scene": "dense_square",
+      "case": 774000,
+      "exact": true
+    },
+    {
+      "scene": "large_square",
+      "case": 775000,
+      "exact": true
+    }
+  ],
+  "il_source_unchanged": true,
+  "evaluation_complete": 3600
+}

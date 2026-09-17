@@ -1,0 +1,131 @@
+{
+  "passed": true,
+  "runs": [
+    {
+      "arm": "cv",
+      "seed": 2407,
+      "initial_success": 38,
+      "final_success": 38,
+      "theta": [
+        0.17677889108901582,
+        -0.18587821861252105,
+        0.04453309294911116,
+        0.3077205790527303
+      ],
+      "environment_steps": 3766,
+      "nonzero_update": true
+    },
+    {
+      "arm": "cv",
+      "seed": 4807,
+      "initial_success": 38,
+      "final_success": 36,
+      "theta": [
+        -0.4157057786235223,
+        0.022321406697568158,
+        -0.10826726813562562,
+        0.301642389918295
+      ],
+      "environment_steps": 3615,
+      "nonzero_update": true
+    },
+    {
+      "arm": "cv",
+      "seed": 7207,
+      "initial_success": 38,
+      "final_success": 37,
+      "theta": [
+        0.057251481784318936,
+        -0.4843181604730643,
+        -0.029001932824711765,
+        0.15343703086721572
+      ],
+      "environment_steps": 3587,
+      "nonzero_update": true
+    },
+    {
+      "arm": "gaussian",
+      "seed": 2407,
+      "initial_success": 38,
+      "final_success": 39,
+      "theta": [
+        -0.13991724214201604,
+        0.016501653828906143,
+        -0.05078485414077019,
+        0.024885498604240823
+      ],
+      "environment_steps": 3580,
+      "nonzero_update": true
+    },
+    {
+      "arm": "gaussian",
+      "seed": 4807,
+      "initial_success": 38,
+      "final_success": 36,
+      "theta": [
+        -0.5630609494336246,
+        -0.0713580053405916,
+        0.008203666153168927,
+        0.14418791282483928
+      ],
+      "environment_steps": 3565,
+      "nonzero_update": true
+    },
+    {
+      "arm": "gaussian",
+      "seed": 7207,
+      "initial_success": 38,
+      "final_success": 36,
+      "theta": [
+        -0.16460874310541973,
+        0.20833265651674138,
+        -0.04219943237062654,
+        -0.26135716719046387
+      ],
+      "environment_steps": 3549,
+      "nonzero_update": true
+    },
+    {
+      "arm": "bayes",
+      "seed": 2407,
+      "initial_success": 38,
+      "final_success": 37,
+      "theta": [
+        -0.1443360142217691,
+        0.1239593310689408,
+        -0.022028365186011888,
+        0.01186840029442118
+      ],
+      "environment_steps": 3715,
+      "nonzero_update": true
+    },
+    {
+      "arm": "bayes",
+      "seed": 4807,
+      "initial_success": 38,
+      "final_success": 37,
+      "theta": [
+        -0.5534950830165384,
+        -0.14463613885624824,
+        0.0896359791855174,
+        0.36153270177552943
+      ],
+      "environment_steps": 3636,
+      "nonzero_update": true
+    },
+    {
+      "arm": "bayes",
+      "seed": 7207,
+      "initial_success": 38,
+      "final_success": 37,
+      "theta": [
+        -0.04232672864262992,
+        0.22577074362860647,
+        -0.18746874983589212,
+        -0.10064129620082782
+      ],
+      "environment_steps": 3628,
+      "nonzero_update": true
+    }
+  ]
+}
