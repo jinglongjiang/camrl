@@ -639,6 +639,26 @@ class RiskGeneralizationContracts(unittest.TestCase):
 
 
 class LocalRiskContracts(unittest.TestCase):
+    def test_inverse_wishart_predictive_projection(self):
+        from scipy.stats import invwishart
+        from scipy.special import ndtr, stdtr
+        nu=9
+        psi=np.array([[.4,.12],[.12,.2]])
+        direction=np.array([.6,.8])
+        samples=invwishart.rvs(df=nu,scale=psi,size=40000,random_state=2407)
+        projected=np.einsum('i,nij,j->n',direction,samples,direction)
+        analytic=stdtr(nu-1,.15/np.sqrt(direction@psi@direction/(nu-1)))
+        estimate=ndtr(.15/np.sqrt(projected)).mean()
+        self.assertLess(abs(analytic-estimate),.005)
+
+    def test_accumulation_can_distinguish_matched_covariance(self):
+        from scipy.special import ndtr, stdtr
+        z=np.array([[-2.,-8.,-8.,-8.],[-2.8,-2.8,-2.8,-2.8]])
+        gaussian=ndtr(z)
+        student=stdtr(4,z*np.sqrt(2.))
+        self.assertEqual(gaussian.max(1).argmax(),student.max(1).argmax())
+        self.assertNotEqual(gaussian.sum(1).argmax(),student.sum(1).argmax())
+
     def test_calibration_uses_disjoint_five_person_episodes(self):
         from crowd_nav.bayes_continuous.risk_generalization import local_calibration
         result = local_calibration()
