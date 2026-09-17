@@ -1,0 +1,1215 @@
+{
+  "source": "/home/abc/workspace/bayes_occ_mpc_hermite/results/occlusion_closeout",
+  "cases": [
+    3001017,
+    3001116
+  ],
+  "episodes": 3600,
+  "cells": [
+    {
+      "method": "posterior_mean",
+      "scene": [
+        "baseline_circle",
+        5,
+        "circle_crossing",
+        4.0,
+        null
+      ],
+      "n": 100,
+      "success": 99,
+      "collision": 1
+    },
+    {
+      "method": "posterior_mean",
+      "scene": [
+        "baseline_square",
+        10,
+        "square_crossing",
+        null,
+        10.0
+      ],
+      "n": 100,
+      "success": 93,
+      "collision": 7
+    },
+    {
+      "method": "posterior_mean",
+      "scene": [
+        "dense_circle",
+        10,
+        "circle_crossing",
+        4.0,
+        null
+      ],
+      "n": 100,
+      "success": 95,
+      "collision": 5
+    },
+    {
+      "method": "posterior_mean",
+      "scene": [
+        "dense_square",
+        20,
+        "square_crossing",
+        null,
+        10.0
+      ],
+      "n": 100,
+      "success": 76,
+      "collision": 24
+    },
+    {
+      "method": "posterior_mean",
+      "scene": [
+        "large_circle",
+        12,
+        "circle_crossing",
+        6.0,
+        null
+      ],
+      "n": 100,
+      "success": 99,
+      "collision": 1
+    },
+    {
+      "method": "posterior_mean",
+      "scene": [
+        "large_square",
+        20,
+        "square_crossing",
+        null,
+        14.0
+      ],
+      "n": 100,
+      "success": 92,
+      "collision": 8
+    },
+    {
+      "method": "covariance",
+      "scene": [
+        "baseline_circle",
+        5,
+        "circle_crossing",
+        4.0,
+        null
+      ],
+      "n": 100,
+      "success": 100,
+      "collision": 0
+    },
+    {
+      "method": "covariance",
+      "scene": [
+        "baseline_square",
+        10,
+        "square_crossing",
+        null,
+        10.0
+      ],
+      "n": 100,
+      "success": 96,
+      "collision": 3
+    },
+    {
+      "method": "covariance",
+      "scene": [
+        "dense_circle",
+        10,
+        "circle_crossing",
+        4.0,
+        null
+      ],
+      "n": 100,
+      "success": 100,
+      "collision": 0
+    },
+    {
+      "method": "covariance",
+      "scene": [
+        "dense_square",
+        20,
+        "square_crossing",
+        null,
+        10.0
+      ],
+      "n": 100,
+      "success": 94,
+      "collision": 3
+    },
+    {
+      "method": "covariance",
+      "scene": [
+        "large_circle",
+        12,
+        "circle_crossing",
+        6.0,
+        null
+      ],
+      "n": 100,
+      "success": 100,
+      "collision": 0
+    },
+    {
+      "method": "covariance",
+      "scene": [
+        "large_square",
+        20,
+        "square_crossing",
+        null,
+        14.0
+      ],
+      "n": 100,
+      "success": 99,
+      "collision": 1
+    },
+    {
+      "method": "bayes",
+      "scene": [
+        "baseline_circle",
+        5,
+        "circle_crossing",
+        4.0,
+        null
+      ],
+      "n": 100,
+      "success": 100,
+      "collision": 0
+    },
+    {
+      "method": "bayes",
+      "scene": [
+        "baseline_square",
+        10,
+        "square_crossing",
+        null,
+        10.0
+      ],
+      "n": 100,
+      "success": 97,
+      "collision": 3
+    },
+    {
+      "method": "bayes",
+      "scene": [
+        "dense_circle",
+        10,
+        "circle_crossing",
+        4.0,
+        null
+      ],
+      "n": 100,
+      "success": 100,
+      "collision": 0
+    },
+    {
+      "method": "bayes",
+      "scene": [
+        "dense_square",
+        20,
+        "square_crossing",
+        null,
+        10.0
+      ],
+      "n": 100,
+      "success": 90,
+      "collision": 6
+    },
+    {
+      "method": "bayes",
+      "scene": [
+        "large_circle",
+        12,
+        "circle_crossing",
+        6.0,
+        null
+      ],
+      "n": 100,
+      "success": 100,
+      "collision": 0
+    },
+    {
+      "method": "bayes",
+      "scene": [
+        "large_square",
+        20,
+        "square_crossing",
+        null,
+        14.0
+      ],
+      "n": 100,
+      "success": 99,
+      "collision": 1
+    },
+    {
+      "method": "age_margin",
+      "scene": [
+        "baseline_circle",
+        5,
+        "circle_crossing",
+        4.0,
+        null
+      ],
+      "n": 100,
+      "success": 100,
+      "collision": 0
+    },
+    {
+      "method": "age_margin",
+      "scene": [
+        "baseline_square",
+        10,
+        "square_crossing",
+        null,
+        10.0
+      ],
+      "n": 100,
+      "success": 97,
+      "collision": 2
+    },
+    {
+      "method": "age_margin",
+      "scene": [
+        "dense_circle",
+        10,
+        "circle_crossing",
+        4.0,
+        null
+      ],
+      "n": 100,
+      "success": 100,
+      "collision": 0
+    },
+    {
+      "method": "age_margin",
+      "scene": [
+        "dense_square",
+        20,
+        "square_crossing",
+        null,
+        10.0
+      ],
+      "n": 100,
+      "success": 95,
+      "collision": 3
+    },
+    {
+      "method": "age_margin",
+      "scene": [
+        "large_circle",
+        12,
+        "circle_crossing",
+        6.0,
+        null
+      ],
+      "n": 100,
+      "success": 100,
+      "collision": 0
+    },
+    {
+      "method": "age_margin",
+      "scene": [
+        "large_square",
+        20,
+        "square_crossing",
+        null,
+        14.0
+      ],
+      "n": 100,
+      "success": 94,
+      "collision": 6
+    },
+    {
+      "method": "ewma",
+      "scene": [
+        "baseline_circle",
+        5,
+        "circle_crossing",
+        4.0,
+        null
+      ],
+      "n": 100,
+      "success": 100,
+      "collision": 0
+    },
+    {
+      "method": "ewma",
+      "scene": [
+        "baseline_square",
+        10,
+        "square_crossing",
+        null,
+        10.0
+      ],
+      "n": 100,
+      "success": 95,
+      "collision": 5
+    },
+    {
+      "method": "ewma",
+      "scene": [
+        "dense_circle",
+        10,
+        "circle_crossing",
+        4.0,
+        null
+      ],
+      "n": 100,
+      "success": 100,
+      "collision": 0
+    },
+    {
+      "method": "ewma",
+      "scene": [
+        "dense_square",
+        20,
+        "square_crossing",
+        null,
+        10.0
+      ],
+      "n": 100,
+      "success": 90,
+      "collision": 7
+    },
+    {
+      "method": "ewma",
+      "scene": [
+        "large_circle",
+        12,
+        "circle_crossing",
+        6.0,
+        null
+      ],
+      "n": 100,
+      "success": 100,
+      "collision": 0
+    },
+    {
+      "method": "ewma",
+      "scene": [
+        "large_square",
+        20,
+        "square_crossing",
+        null,
+        14.0
+      ],
+      "n": 100,
+      "success": 97,
+      "collision": 3
+    },
+    {
+      "method": "conformal",
+      "scene": [
+        "baseline_circle",
+        5,
+        "circle_crossing",
+        4.0,
+        null
+      ],
+      "n": 100,
+      "success": 100,
+      "collision": 0
+    },
+    {
+      "method": "conformal",
+      "scene": [
+        "baseline_square",
+        10,
+        "square_crossing",
+        null,
+        10.0
+      ],
+      "n": 100,
+      "success": 95,
+      "collision": 3
+    },
+    {
+      "method": "conformal",
+      "scene": [
+        "dense_circle",
+        10,
+        "circle_crossing",
+        4.0,
+        null
+      ],
+      "n": 100,
+      "success": 99,
+      "collision": 1
+    },
+    {
+      "method": "conformal",
+      "scene": [
+        "dense_square",
+        20,
+        "square_crossing",
+        null,
+        10.0
+      ],
+      "n": 100,
+      "success": 87,
+      "collision": 5
+    },
+    {
+      "method": "conformal",
+      "scene": [
+        "large_circle",
+        12,
+        "circle_crossing",
+        6.0,
+        null
+      ],
+      "n": 100,
+      "success": 100,
+      "collision": 0
+    },
+    {
+      "method": "conformal",
+      "scene": [
+        "large_square",
+        20,
+        "square_crossing",
+        null,
+        14.0
+      ],
+      "n": 100,
+      "success": 97,
+      "collision": 2
+    }
+  ],
+  "comparisons": [
+    {
+      "a": "covariance",
+      "b": "posterior_mean",
+      "by_count": {
+        "5": {
+          "sr_difference_pp": 1.0,
+          "cr_difference_pp": -1.0,
+          "wins": 1,
+          "losses": 0,
+          "episode_pair_mcnemar_p": 1.0
+        },
+        "10": {
+          "sr_difference_pp": 4.0,
+          "cr_difference_pp": -4.5,
+          "wins": 11,
+          "losses": 3,
+          "episode_pair_mcnemar_p": 0.057373046875
+        },
+        "12": {
+          "sr_difference_pp": 1.0,
+          "cr_difference_pp": -1.0,
+          "wins": 1,
+          "losses": 0,
+          "episode_pair_mcnemar_p": 1.0
+        },
+        "20": {
+          "sr_difference_pp": 12.5,
+          "cr_difference_pp": -14.000000000000002,
+          "wins": 29,
+          "losses": 4,
+          "episode_pair_mcnemar_p": 1.0928604751825333e-05
+        }
+      },
+      "gradient_20_minus_5_pp": [
+        11.5,
+        -13.0
+      ],
+      "gradient_pointwise_95_ci": [
+        [
+          6.0,
+          17.0
+        ],
+        [
+          -18.0,
+          -8.0
+        ]
+      ]
+    },
+    {
+      "a": "bayes",
+      "b": "covariance",
+      "by_count": {
+        "5": {
+          "sr_difference_pp": 0.0,
+          "cr_difference_pp": 0.0,
+          "wins": 0,
+          "losses": 0,
+          "episode_pair_mcnemar_p": 1.0
+        },
+        "10": {
+          "sr_difference_pp": 0.5,
+          "cr_difference_pp": 0.0,
+          "wins": 1,
+          "losses": 0,
+          "episode_pair_mcnemar_p": 1.0
+        },
+        "12": {
+          "sr_difference_pp": 0.0,
+          "cr_difference_pp": 0.0,
+          "wins": 0,
+          "losses": 0,
+          "episode_pair_mcnemar_p": 1.0
+        },
+        "20": {
+          "sr_difference_pp": -2.0,
+          "cr_difference_pp": 1.5,
+          "wins": 0,
+          "losses": 4,
+          "episode_pair_mcnemar_p": 0.125
+        }
+      },
+      "gradient_20_minus_5_pp": [
+        -2.0,
+        1.5
+      ],
+      "gradient_pointwise_95_ci": [
+        [
+          -4.0,
+          -0.5
+        ],
+        [
+          0.0,
+          3.5000000000000004
+        ]
+      ]
+    },
+    {
+      "a": "bayes",
+      "b": "posterior_mean",
+      "by_count": {
+        "5": {
+          "sr_difference_pp": 1.0,
+          "cr_difference_pp": -1.0,
+          "wins": 1,
+          "losses": 0,
+          "episode_pair_mcnemar_p": 1.0
+        },
+        "10": {
+          "sr_difference_pp": 4.5,
+          "cr_difference_pp": -4.5,
+          "wins": 11,
+          "losses": 2,
+          "episode_pair_mcnemar_p": 0.0224609375
+        },
+        "12": {
+          "sr_difference_pp": 1.0,
+          "cr_difference_pp": -1.0,
+          "wins": 1,
+          "losses": 0,
+          "episode_pair_mcnemar_p": 1.0
+        },
+        "20": {
+          "sr_difference_pp": 10.5,
+          "cr_difference_pp": -12.5,
+          "wins": 27,
+          "losses": 6,
+          "episode_pair_mcnemar_p": 0.0003240634687244892
+        }
+      },
+      "gradient_20_minus_5_pp": [
+        9.5,
+        -11.5
+      ],
+      "gradient_pointwise_95_ci": [
+        [
+          4.0,
+          15.0
+        ],
+        [
+          -17.0,
+          -6.0
+        ]
+      ]
+    },
+    {
+      "a": "age_margin",
+      "b": "posterior_mean",
+      "by_count": {
+        "5": {
+          "sr_difference_pp": 1.0,
+          "cr_difference_pp": -1.0,
+          "wins": 1,
+          "losses": 0,
+          "episode_pair_mcnemar_p": 1.0
+        },
+        "10": {
+          "sr_difference_pp": 4.5,
+          "cr_difference_pp": -5.0,
+          "wins": 11,
+          "losses": 2,
+          "episode_pair_mcnemar_p": 0.0224609375
+        },
+        "12": {
+          "sr_difference_pp": 1.0,
+          "cr_difference_pp": -1.0,
+          "wins": 1,
+          "losses": 0,
+          "episode_pair_mcnemar_p": 1.0
+        },
+        "20": {
+          "sr_difference_pp": 10.5,
+          "cr_difference_pp": -11.5,
+          "wins": 27,
+          "losses": 6,
+          "episode_pair_mcnemar_p": 0.0003240634687244892
+        }
+      },
+      "gradient_20_minus_5_pp": [
+        9.5,
+        -10.5
+      ],
+      "gradient_pointwise_95_ci": [
+        [
+          4.0,
+          15.0
+        ],
+        [
+          -16.0,
+          -5.0
+        ]
+      ]
+    },
+    {
+      "a": "ewma",
+      "b": "posterior_mean",
+      "by_count": {
+        "5": {
+          "sr_difference_pp": 1.0,
+          "cr_difference_pp": -1.0,
+          "wins": 1,
+          "losses": 0,
+          "episode_pair_mcnemar_p": 1.0
+        },
+        "10": {
+          "sr_difference_pp": 3.5000000000000004,
+          "cr_difference_pp": -3.5000000000000004,
+          "wins": 9,
+          "losses": 2,
+          "episode_pair_mcnemar_p": 0.0654296875
+        },
+        "12": {
+          "sr_difference_pp": 1.0,
+          "cr_difference_pp": -1.0,
+          "wins": 1,
+          "losses": 0,
+          "episode_pair_mcnemar_p": 1.0
+        },
+        "20": {
+          "sr_difference_pp": 9.5,
+          "cr_difference_pp": -11.0,
+          "wins": 25,
+          "losses": 6,
+          "episode_pair_mcnemar_p": 0.0008779102936387062
+        }
+      },
+      "gradient_20_minus_5_pp": [
+        8.5,
+        -10.0
+      ],
+      "gradient_pointwise_95_ci": [
+        [
+          2.5,
+          14.000000000000002
+        ],
+        [
+          -15.5,
+          -4.5
+        ]
+      ]
+    },
+    {
+      "a": "conformal",
+      "b": "posterior_mean",
+      "by_count": {
+        "5": {
+          "sr_difference_pp": 1.0,
+          "cr_difference_pp": -1.0,
+          "wins": 1,
+          "losses": 0,
+          "episode_pair_mcnemar_p": 1.0
+        },
+        "10": {
+          "sr_difference_pp": 3.0,
+          "cr_difference_pp": -4.0,
+          "wins": 11,
+          "losses": 5,
+          "episode_pair_mcnemar_p": 0.210113525390625
+        },
+        "12": {
+          "sr_difference_pp": 1.0,
+          "cr_difference_pp": -1.0,
+          "wins": 1,
+          "losses": 0,
+          "episode_pair_mcnemar_p": 1.0
+        },
+        "20": {
+          "sr_difference_pp": 8.0,
+          "cr_difference_pp": -12.5,
+          "wins": 27,
+          "losses": 11,
+          "episode_pair_mcnemar_p": 0.013852965261321515
+        }
+      },
+      "gradient_20_minus_5_pp": [
+        7.000000000000001,
+        -11.5
+      ],
+      "gradient_pointwise_95_ci": [
+        [
+          1.0,
+          13.0
+        ],
+        [
+          -16.5,
+          -6.5
+        ]
+      ]
+    },
+    {
+      "a": "bayes",
+      "b": "age_margin",
+      "by_count": {
+        "5": {
+          "sr_difference_pp": 0.0,
+          "cr_difference_pp": 0.0,
+          "wins": 0,
+          "losses": 0,
+          "episode_pair_mcnemar_p": 1.0
+        },
+        "10": {
+          "sr_difference_pp": 0.0,
+          "cr_difference_pp": 0.5,
+          "wins": 1,
+          "losses": 1,
+          "episode_pair_mcnemar_p": 1.0
+        },
+        "12": {
+          "sr_difference_pp": 0.0,
+          "cr_difference_pp": 0.0,
+          "wins": 0,
+          "losses": 0,
+          "episode_pair_mcnemar_p": 1.0
+        },
+        "20": {
+          "sr_difference_pp": 0.0,
+          "cr_difference_pp": -1.0,
+          "wins": 7,
+          "losses": 7,
+          "episode_pair_mcnemar_p": 1.0
+        }
+      },
+      "gradient_20_minus_5_pp": [
+        0.0,
+        -1.0
+      ],
+      "gradient_pointwise_95_ci": [
+        [
+          -3.5000000000000004,
+          3.5000000000000004
+        ],
+        [
+          -4.5,
+          2.5
+        ]
+      ]
+    },
+    {
+      "a": "bayes",
+      "b": "ewma",
+      "by_count": {
+        "5": {
+          "sr_difference_pp": 0.0,
+          "cr_difference_pp": 0.0,
+          "wins": 0,
+          "losses": 0,
+          "episode_pair_mcnemar_p": 1.0
+        },
+        "10": {
+          "sr_difference_pp": 1.0,
+          "cr_difference_pp": -1.0,
+          "wins": 3,
+          "losses": 1,
+          "episode_pair_mcnemar_p": 0.625
+        },
+        "12": {
+          "sr_difference_pp": 0.0,
+          "cr_difference_pp": 0.0,
+          "wins": 0,
+          "losses": 0,
+          "episode_pair_mcnemar_p": 1.0
+        },
+        "20": {
+          "sr_difference_pp": 1.0,
+          "cr_difference_pp": -1.5,
+          "wins": 5,
+          "losses": 3,
+          "episode_pair_mcnemar_p": 0.7265625
+        }
+      },
+      "gradient_20_minus_5_pp": [
+        1.0,
+        -1.5
+      ],
+      "gradient_pointwise_95_ci": [
+        [
+          -2.0,
+          4.0
+        ],
+        [
+          -4.5,
+          1.0
+        ]
+      ]
+    },
+    {
+      "a": "bayes",
+      "b": "conformal",
+      "by_count": {
+        "5": {
+          "sr_difference_pp": 0.0,
+          "cr_difference_pp": 0.0,
+          "wins": 0,
+          "losses": 0,
+          "episode_pair_mcnemar_p": 1.0
+        },
+        "10": {
+          "sr_difference_pp": 1.5,
+          "cr_difference_pp": -0.5,
+          "wins": 5,
+          "losses": 2,
+          "episode_pair_mcnemar_p": 0.453125
+        },
+        "12": {
+          "sr_difference_pp": 0.0,
+          "cr_difference_pp": 0.0,
+          "wins": 0,
+          "losses": 0,
+          "episode_pair_mcnemar_p": 1.0
+        },
+        "20": {
+          "sr_difference_pp": 2.5,
+          "cr_difference_pp": 0.0,
+          "wins": 10,
+          "losses": 5,
+          "episode_pair_mcnemar_p": 0.3017578125
+        }
+      },
+      "gradient_20_minus_5_pp": [
+        2.5,
+        0.0
+      ],
+      "gradient_pointwise_95_ci": [
+        [
+          -1.5,
+          6.5
+        ],
+        [
+          -2.5,
+          3.0
+        ]
+      ]
+    },
+    {
+      "a": "covariance",
+      "b": "age_margin",
+      "by_count": {
+        "5": {
+          "sr_difference_pp": 0.0,
+          "cr_difference_pp": 0.0,
+          "wins": 0,
+          "losses": 0,
+          "episode_pair_mcnemar_p": 1.0
+        },
+        "10": {
+          "sr_difference_pp": -0.5,
+          "cr_difference_pp": 0.5,
+          "wins": 1,
+          "losses": 2,
+          "episode_pair_mcnemar_p": 1.0
+        },
+        "12": {
+          "sr_difference_pp": 0.0,
+          "cr_difference_pp": 0.0,
+          "wins": 0,
+          "losses": 0,
+          "episode_pair_mcnemar_p": 1.0
+        },
+        "20": {
+          "sr_difference_pp": 2.0,
+          "cr_difference_pp": -2.5,
+          "wins": 7,
+          "losses": 3,
+          "episode_pair_mcnemar_p": 0.34375
+        }
+      },
+      "gradient_20_minus_5_pp": [
+        2.0,
+        -2.5
+      ],
+      "gradient_pointwise_95_ci": [
+        [
+          -1.0,
+          5.0
+        ],
+        [
+          -5.5,
+          0.5
+        ]
+      ]
+    },
+    {
+      "a": "covariance",
+      "b": "ewma",
+      "by_count": {
+        "5": {
+          "sr_difference_pp": 0.0,
+          "cr_difference_pp": 0.0,
+          "wins": 0,
+          "losses": 0,
+          "episode_pair_mcnemar_p": 1.0
+        },
+        "10": {
+          "sr_difference_pp": 0.5,
+          "cr_difference_pp": -1.0,
+          "wins": 3,
+          "losses": 2,
+          "episode_pair_mcnemar_p": 1.0
+        },
+        "12": {
+          "sr_difference_pp": 0.0,
+          "cr_difference_pp": 0.0,
+          "wins": 0,
+          "losses": 0,
+          "episode_pair_mcnemar_p": 1.0
+        },
+        "20": {
+          "sr_difference_pp": 3.0,
+          "cr_difference_pp": -3.0,
+          "wins": 8,
+          "losses": 2,
+          "episode_pair_mcnemar_p": 0.109375
+        }
+      },
+      "gradient_20_minus_5_pp": [
+        3.0,
+        -3.0
+      ],
+      "gradient_pointwise_95_ci": [
+        [
+          0.0,
+          6.5
+        ],
+        [
+          -6.0,
+          0.0
+        ]
+      ]
+    }
+  ],
+  "configs": {
+    "posterior_mean": {
+      "dt": 0.25,
+      "horizon": 16,
+      "population": 512,
+      "iterations": 4,
+      "elite_fraction": 0.08,
+      "v_max": 1.0,
+      "a_max": 2.0,
+      "human_margin": 0.1,
+      "unknown_margin": 0.05,
+      "goal_stage_weight": 0.28,
+      "goal_terminal_weight": 9.0,
+      "smooth_weight": 0.35,
+      "effort_weight": 0.02,
+      "collision_weight": 20000.0,
+      "discomfort_weight": 500.0,
+      "unknown_weight": 6500.0,
+      "probability_weight": 1.0,
+      "chance_limit": 0.75,
+      "risk_gamma": 2.0,
+      "near_chance_limit": 0.22499999999999998,
+      "occupancy_chance_limit": 0.15,
+      "fixed_uncertainty_radius": 0.35,
+      "stagnation_weight": 250.0,
+      "min_progress": 0.15,
+      "init_std": 0.65,
+      "min_std": 0.08,
+      "acceleration_std": 0.55,
+      "existence_override": null,
+      "conformal_visible_radii": [],
+      "conformal_hidden_radii": []
+    },
+    "covariance": {
+      "dt": 0.25,
+      "horizon": 16,
+      "population": 512,
+      "iterations": 4,
+      "elite_fraction": 0.08,
+      "v_max": 1.0,
+      "a_max": 2.0,
+      "human_margin": 0.1,
+      "unknown_margin": 0.05,
+      "goal_stage_weight": 0.28,
+      "goal_terminal_weight": 9.0,
+      "smooth_weight": 0.35,
+      "effort_weight": 0.02,
+      "collision_weight": 20000.0,
+      "discomfort_weight": 500.0,
+      "unknown_weight": 6500.0,
+      "probability_weight": 1.0,
+      "chance_limit": 0.75,
+      "risk_gamma": 2.0,
+      "near_chance_limit": 0.22499999999999998,
+      "occupancy_chance_limit": 0.15,
+      "fixed_uncertainty_radius": 0.35,
+      "stagnation_weight": 250.0,
+      "min_progress": 0.15,
+      "init_std": 0.65,
+      "min_std": 0.08,
+      "acceleration_std": 0.55,
+      "existence_override": 1.0,
+      "conformal_visible_radii": [],
+      "conformal_hidden_radii": []
+    },
+    "bayes": {
+      "dt": 0.25,
+      "horizon": 16,
+      "population": 512,
+      "iterations": 4,
+      "elite_fraction": 0.08,
+      "v_max": 1.0,
+      "a_max": 2.0,
+      "human_margin": 0.1,
+      "unknown_margin": 0.05,
+      "goal_stage_weight": 0.28,
+      "goal_terminal_weight": 9.0,
+      "smooth_weight": 0.35,
+      "effort_weight": 0.02,
+      "collision_weight": 20000.0,
+      "discomfort_weight": 500.0,
+      "unknown_weight": 6500.0,
+      "probability_weight": 1.0,
+      "chance_limit": 0.75,
+      "risk_gamma": 2.0,
+      "near_chance_limit": 0.22499999999999998,
+      "occupancy_chance_limit": 0.15,
+      "fixed_uncertainty_radius": 0.35,
+      "stagnation_weight": 250.0,
+      "min_progress": 0.15,
+      "init_std": 0.65,
+      "min_std": 0.08,
+      "acceleration_std": 0.55,
+      "existence_override": null,
+      "conformal_visible_radii": [],
+      "conformal_hidden_radii": []
+    },
+    "age_margin": {
+      "dt": 0.25,
+      "horizon": 16,
+      "population": 512,
+      "iterations": 4,
+      "elite_fraction": 0.08,
+      "v_max": 1.0,
+      "a_max": 2.0,
+      "human_margin": 0.1,
+      "unknown_margin": 0.05,
+      "goal_stage_weight": 0.28,
+      "goal_terminal_weight": 9.0,
+      "smooth_weight": 0.35,
+      "effort_weight": 0.02,
+      "collision_weight": 20000.0,
+      "discomfort_weight": 500.0,
+      "unknown_weight": 6500.0,
+      "probability_weight": 1.0,
+      "chance_limit": 0.25,
+      "risk_gamma": 2.0,
+      "near_chance_limit": 0.075,
+      "occupancy_chance_limit": 0.15,
+      "fixed_uncertainty_radius": 0.35,
+      "stagnation_weight": 250.0,
+      "min_progress": 0.15,
+      "init_std": 0.65,
+      "min_std": 0.08,
+      "acceleration_std": 0.55,
+      "existence_override": null,
+      "conformal_visible_radii": [],
+      "conformal_hidden_radii": []
+    },
+    "ewma": {
+      "dt": 0.25,
+      "horizon": 16,
+      "population": 512,
+      "iterations": 4,
+      "elite_fraction": 0.08,
+      "v_max": 1.0,
+      "a_max": 2.0,
+      "human_margin": 0.1,
+      "unknown_margin": 0.05,
+      "goal_stage_weight": 0.28,
+      "goal_terminal_weight": 9.0,
+      "smooth_weight": 0.35,
+      "effort_weight": 0.02,
+      "collision_weight": 20000.0,
+      "discomfort_weight": 500.0,
+      "unknown_weight": 6500.0,
+      "probability_weight": 1.0,
+      "chance_limit": 0.75,
+      "risk_gamma": 2.0,
+      "near_chance_limit": 0.22499999999999998,
+      "occupancy_chance_limit": 0.15,
+      "fixed_uncertainty_radius": 0.35,
+      "stagnation_weight": 250.0,
+      "min_progress": 0.15,
+      "init_std": 0.65,
+      "min_std": 0.08,
+      "acceleration_std": 0.55,
+      "existence_override": null,
+      "conformal_visible_radii": [],
+      "conformal_hidden_radii": []
+    },
+    "conformal": {
+      "dt": 0.25,
+      "horizon": 16,
+      "population": 512,
+      "iterations": 4,
+      "elite_fraction": 0.08,
+      "v_max": 1.0,
+      "a_max": 2.0,
+      "human_margin": 0.1,
+      "unknown_margin": 0.05,
+      "goal_stage_weight": 0.28,
+      "goal_terminal_weight": 9.0,
+      "smooth_weight": 0.35,
+      "effort_weight": 0.02,
+      "collision_weight": 20000.0,
+      "discomfort_weight": 500.0,
+      "unknown_weight": 6500.0,
+      "probability_weight": 1.0,
+      "chance_limit": 0.75,
+      "risk_gamma": 2.0,
+      "near_chance_limit": 0.22499999999999998,
+      "occupancy_chance_limit": 0.15,
+      "fixed_uncertainty_radius": 0.35,
+      "stagnation_weight": 250.0,
+      "min_progress": 0.15,
+      "init_std": 0.65,
+      "min_std": 0.08,
+      "acceleration_std": 0.55,
+      "existence_override": null,
+      "conformal_visible_radii": [],
+      "conformal_hidden_radii": []
+    }
+  },
+  "bootstrap_repeats": 10000,
+  "bootstrap_unit": "case seed block including all scenes",
+  "caveats": [
+    "Exploratory intervals, not multiplicity-adjusted",
+    "McNemar treats scene-case pairs as independent; repeated case seeds span scenes",
+    "Crowd size, geometry, scale and occlusion are not independently manipulated",
+    "No five-human policy training in this MPC experiment",
+    "static_cov absent from this independent confirmation cohort"
+  ],
+  "source_sha256": {
+    "episodes.jsonl": "7876b31b8fd4e0317bc9341046b48fa8e8900749025e0f91e4aa42af3f1f1a62",
+    "confirmation_protocol.json": "cb9da0e266f089843ddedd7815860c112610057623f1cd56599864951293419d"
+  }
+}

@@ -373,5 +373,72 @@ def summarize_model_search(out):
     return result
 
 
+def audit_occlusion_density(source, out):
+    """Read-only paired audit; preserve the registered six-scene case block."""
+    import hashlib
+    from math import comb
+    source, out = Path(source), Path(out)
+    protocol = json.loads((source/'confirmation_protocol.json').read_text())
+    methods = protocol['arms']
+    cases = protocol['cases']
+    rows = {}
+    with (source/'episodes.jsonl').open() as handle:
+        for line in handle:
+            row = json.loads(line)
+            if row['sensor'] != 'range_and_occlusion':
+                continue
+            key = (row['method'], row['scene'], row['case_id'])
+            assert key not in rows
+            rows[key] = row
+    assert len(rows) == len(methods)*6*len(cases)
+    values = {m: np.array([[[rows[m,s,c]['success_without_overlap'],
+                            rows[m,s,c]['collision_union']]
+                           for c in cases] for s in range(6)], dtype=float)
+              for m in methods}
+    cells = [dict(method=m, scene=protocol['scenes'][s], n=len(cases),
+                  success=int(v[s,:,0].sum()), collision=int(v[s,:,1].sum()))
+             for m,v in values.items() for s in range(6)]
+    strata = {'5':[0], '10':[1,2], '12':[4], '20':[3,5]}
+    rng = np.random.default_rng(20260917)
+    indices = rng.integers(0,len(cases),(10000,len(cases)))
+    comparisons = []
+    pairs = [('covariance','posterior_mean'),('bayes','covariance'),
+             ('bayes','posterior_mean'),('age_margin','posterior_mean'),
+             ('ewma','posterior_mean'),('conformal','posterior_mean'),
+             ('bayes','age_margin'),('bayes','ewma'),('bayes','conformal'),
+             ('covariance','age_margin'),('covariance','ewma')]
+    for a,b in pairs:
+        difference = values[a]-values[b]
+        by_count = {}
+        for count, scenes in strata.items():
+            d = difference[scenes]
+            wins, losses = int((d[...,0]>0).sum()), int((d[...,0]<0).sum())
+            n = wins+losses
+            exact = min(1.,2*sum(comb(n,k) for k in range(min(wins,losses)+1))/2**n) if n else 1.
+            by_count[count] = dict(sr_difference_pp=100*float(d[...,0].mean()),
+                cr_difference_pp=100*float(d[...,1].mean()), wins=wins, losses=losses,
+                episode_pair_mcnemar_p=exact)
+        # The same case seed appears in all six scenes: resample whole blocks.
+        block = difference[[3,5]].mean(axis=0)-difference[0]
+        boot = block[indices].mean(axis=1)*100
+        comparisons.append(dict(a=a,b=b,by_count=by_count,
+            gradient_20_minus_5_pp=(100*block.mean(axis=0)).tolist(),
+            gradient_pointwise_95_ci=np.quantile(boot,[.025,.975],axis=0).T.tolist()))
+    result = dict(source=str(source), cases=[min(cases),max(cases)],
+        episodes=len(rows), cells=cells, comparisons=comparisons,
+        configs=protocol['configs'], bootstrap_repeats=10000,
+        bootstrap_unit='case seed block including all scenes',
+        caveats=['Exploratory intervals, not multiplicity-adjusted',
+                 'McNemar treats scene-case pairs as independent; repeated case seeds span scenes',
+                 'Crowd size, geometry, scale and occlusion are not independently manipulated',
+                 'No five-human policy training in this MPC experiment',
+                 'static_cov absent from this independent confirmation cohort'],
+        source_sha256={n:hashlib.sha256((source/n).read_bytes()).hexdigest()
+                       for n in ('episodes.jsonl','confirmation_protocol.json')})
+    out.mkdir(parents=True,exist_ok=True)
+    (out/'analysis.json').write_text(json.dumps(result,indent=2,allow_nan=False))
+    return result
+
+
 if __name__=='__main__':
     main()
