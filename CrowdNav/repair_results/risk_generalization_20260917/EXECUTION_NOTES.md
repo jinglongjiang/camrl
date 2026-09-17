@@ -14,6 +14,8 @@ is `bayes-risk-generalization-20260917`. Implementation and audit revisions are
 ## Preflight
 
 - Three `RiskGeneralizationContracts` unit tests passed (0.741 seconds).
+- After the case-range correction, all four tests in that class passed again
+  (0.792 seconds), including a physical-layout aliasing regression test.
 - Nine existing regression tests also passed (0.597 seconds), covering the
   default set encoder, cached teacher, prior/seed, termination, executor, action
   history, Bayesian moment propagation and Gaussian PPO semantics.
@@ -74,6 +76,12 @@ change to losses, budgets, gate thresholds or a selection of better checkpoints.
 Both old and corrected attempts must be disclosed. `restart_receipt.json`
 records the reused checkpoint and dataset hashes. Final training results must
 come only from the corrected attempt.
+
+The corrected collection has 360 unique DAgger layouts, with zero overlap
+against the 240 teacher layouts and the 100 development layouts. It contains
+311 successes, 43 collisions and 6 timeouts, yielding 16,134 labeled visited
+states. All of these student states are retained; combined IL data size is
+26,456 transitions. This count supersedes the discarded attempt's count.
 
 ## Interpretation limits
 

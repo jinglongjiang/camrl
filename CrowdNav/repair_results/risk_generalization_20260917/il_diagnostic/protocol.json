@@ -1,0 +1,97 @@
+{
+  "arms": [
+    "base",
+    "cv",
+    "ewma",
+    "bayes"
+  ],
+  "seeds": [
+    2407,
+    4807,
+    7207
+  ],
+  "train_humans": 5,
+  "teacher_attempts": 240,
+  "bc_updates": 3000,
+  "dagger_fallback": "once, 30 episodes per arm/seed pooled, 3000 updates",
+  "ppo_steps": 20480,
+  "ppo_adam_steps": 240,
+  "dev_gate": "each run: nominal >=90/100, train_nonstationary >=80/100",
+  "test_scenes": [
+    "baseline_circle",
+    "dense_circle",
+    "large_circle",
+    "baseline_square",
+    "dense_square",
+    "large_square"
+  ],
+  "test_profiles": [
+    "nominal",
+    "heldout_nonstationary"
+  ],
+  "test_layouts_per_cell": 50,
+  "test_before_gate": false,
+  "source_sha256": "f1188379822d94dbd1e44ef096fa7aa84529ebc9343bb2c248c1c88f56a2a4cc",
+  "runtime": {
+    "python": "3.8.10",
+    "sb3": "2.3.2",
+    "torch": "2.1.0+cu121",
+    "numpy": "1.23.5",
+    "scipy": "1.3.3"
+  },
+  "params_sha256": {
+    "gdbn.npz": "d53d76f13595e79c420574801d44cb1b8e3e9fbf158e4414ab7ce918c13ca08b",
+    "action_model.npz": "72af13a25f4bec8e5065af26e3e751d9a1509cc2d5ec029f4f593567aea0c4dc",
+    "gng.npz": "ae60e3a315f0be40915e38858aa545c17272d751e184a0a7741fa7bb17128c31"
+  },
+  "code_sha256": {
+    "risk_generalization.py": "7f2c8e139a81dddaacd7d75582ba4c2573c91332105b9a1bce1fa864b5e2e8c0",
+    "network.py": "6d10dc3abbd5b33691c151c18c7dca527b953d62b3012c72b0792ed19bc88e23",
+    "environment.py": "43e10def83c12492a692f7b0efa51d371b32ca4012b217274af6e51a475ae98c",
+    "teacher.py": "4bf5400e1a0481415ed9b49dddde4cdd0592234100f1c9846a4f762cc7dc0add"
+  },
+  "mechanism": "learned zero-initialized log-risk attention bias; physical tokens identical",
+  "cv_variance": "(.1+.2*t)^2",
+  "ewma_variance": ".01+EWMA(dv^2)*t^3/(3*dt), alpha=.15",
+  "bayes": "existing GDBN predictive mean and trace/2 covariance, floor=.01; B_action=0",
+  "risk": "maximum Gaussian-disc overlap over 7 fixed robot arcs and 8 steps; no claim of union probability",
+  "collection_case_ranges": {
+    "teacher": [
+      620000,
+      620239
+    ],
+    "dagger": [
+      625000,
+      625359
+    ],
+    "development": [
+      630000,
+      630099
+    ]
+  },
+  "statistical_rule": "Primary: mean OOD SR, 5 non-baseline configurations x 2 profiles equally weighted; paired seed/layout bootstrap with shared profile pairs; 98.333% CI for each of 3 Bayes-control contrasts (Bonferroni).",
+  "benefit_gate": "Bayes >=3pp over each of base/CV/EWMA on primary OOD metric, all CI lower bounds >0; no >2pp nominal 5-human loss against base.",
+  "strong_generalization_gate": "Separately report whether 20-human nominal SR reaches 80%; a relative gain alone does not establish strong generalization.",
+  "stage": "frozen_IL_only",
+  "confirmatory_PPO_experiment": false,
+  "reason": "Supplemental terminal diagnostic after IL qualification failure; no PPO and no checkpoint selection",
+  "checkpoint_sha256": {
+    "2407_base": "2470a6299089a9aa99f150c9d212a20a6f689540af0c645f9d51a107ff98fbfa",
+    "2407_cv": "08df5d7d44905af82f64cfb9260d281b037f3bde18ef0b93dfb090877d06c0c8",
+    "2407_ewma": "b4cc60bf2e49c16d2715f0b884bbeee7724bacb955eb96195076162f7a5ae262",
+    "2407_bayes": "5ea6a2debc9c532b2aa26ddabbeacf82c019b769920791423278d0a48496683a",
+    "4807_base": "76de6651f29812ebf0bf242804c5f8ef44d07439c3aa22ff14b23b16f7dab304",
+    "4807_cv": "8c31a3f85cb43a4bab149fa57e2b28895db1d29e381a0ed54f9dd157dfba61fd",
+    "4807_ewma": "04e819bb7cc65478bacb818bf90974093d180f33abf21edd7d271697a1bf579f",
+    "4807_bayes": "ea398ee575c57d2d9ba244697aecec17f2d3f42cd1f57fbf4de222b5670cbf36",
+    "7207_base": "1a71f6b0a4f5e7e5f7be10771dbab36dc3365610bf9d4c225b0734056887c619",
+    "7207_cv": "7995c7d317064c7c9a255a81274f887b6117950929a705691955a8f6c4781f96",
+    "7207_ewma": "b60dfca31684a031c1d1b3d89f19a2b81b242e160702062c57ecd105489ced77",
+    "7207_bayes": "ed82edb4611802e666c5fd1fe4734adea35741ba4d10231d2cc46743c0d8f50e"
+  },
+  "original_verdict": {
+    "status": "IL_GATE_FAILED",
+    "conclusion": "Cannot judge Bayesian generalization; no high-density selection or test was performed."
+  },
+  "audit_code_sha256": "06378cbbf8c82b6ae8b635918aecf93bc34778c70787a891b4bf2e9f3cbaa8da"
+}

@@ -1317,11 +1317,54 @@ def ppo_qualification_analysis(root):
     return result
 
 
-def risk_generalization_audit(root):
+def risk_il_evaluation_worker(task):
+    from stable_baselines3 import PPO
+    from crowd_nav.bayes_continuous.risk_generalization import env_for, rollout
+    root,seed,arm,scene,profile,scene_index,first=task
+    root=Path(root);torch.set_num_threads(1)
+    model=PPO.load(root/f'{seed}_{arm}/dagger.zip',device='cpu')
+    env=env_for(arm,False,scene);records=[]
+    for i in range(first,first+10):
+        record,_=rollout(env,lambda o:model.predict(o,deterministic=True)[0],dict(
+            layout_seed=250000000+scene_index*10000+i,
+            test_case=640000+scene_index*1000+i,profile=profile))
+        records.append(record)
+    env.close()
+    path=root/'il_diagnostic/evaluation'/f'{seed}_{arm}_{scene}_{profile}_{first}.json'
+    path.write_text(json.dumps(dict(seed=seed,arm=arm,scene=scene,profile=profile,records=records),indent=2))
+    print('IL_OOD',seed,arm,scene,profile,first,flush=True)
+
+
+def risk_il_evaluation(root,workers):
+    import multiprocessing as mp
+    verdict=json.loads((root/'verdict.json').read_text())
+    assert verdict['status']=='IL_GATE_FAILED'
+    original=json.loads((root/'protocol.json').read_text())
+    destination=root/'il_diagnostic';destination.mkdir(exist_ok=False)
+    (destination/'evaluation').mkdir()
+    checkpoints={f'{s}_{a}':hashlib.sha256((root/f'{s}_{a}/dagger.zip').read_bytes()).hexdigest()
+                 for s in original['seeds'] for a in original['arms']}
+    protocol=dict(original,stage='frozen_IL_only',confirmatory_PPO_experiment=False,
+        reason='Supplemental terminal diagnostic after IL qualification failure; no PPO and no checkpoint selection',
+        checkpoint_sha256=checkpoints,original_verdict=verdict,
+        audit_code_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest())
+    (destination/'protocol.json').write_text(json.dumps(protocol,indent=2))
+    tasks=[(str(root),s,a,scene,p,j,i) for s in original['seeds'] for a in original['arms']
+        for j,scene in enumerate(original['test_scenes']) for p in original['test_profiles']
+        for i in range(0,50,10)]
+    with mp.get_context('spawn').Pool(workers) as pool:
+        list(pool.imap_unordered(risk_il_evaluation_worker,tasks))
+    for name,digest in checkpoints.items():
+        assert hashlib.sha256((root/name/'dagger.zip').read_bytes()).hexdigest()==digest
+    (destination/'verdict.json').write_text(json.dumps(dict(status='EVALUATION_COMPLETE',episodes=7200),indent=2))
+
+
+def risk_generalization_audit(root,il_diagnostic=False):
     """Analyze the frozen risk-attention experiment without model selection."""
     from collections import Counter
     protocol=json.loads((root/'protocol.json').read_text())
-    verdict=json.loads((root/'verdict.json').read_text())
+    evaluation_root=root/'il_diagnostic' if il_diagnostic else root
+    verdict=json.loads((evaluation_root/'verdict.json').read_text())
     arms=protocol['arms']; seeds=protocol['seeds']; scenes=protocol['test_scenes']
     result=dict(status=verdict['status'],protocol=protocol,stages={},data={},checks={})
     for stage in ('bc','dagger','ppo'):
@@ -1371,7 +1414,7 @@ def risk_generalization_audit(root):
         outcomes=np.full((len(arms),len(seeds),len(scenes),len(profiles),n),-1,int)
         returns=np.full(outcomes.shape,np.nan)
         pairing={}; test_hashes=set()
-        for path in sorted((root/'evaluation').glob('*.json')):
+        for path in sorted((evaluation_root/'evaluation').glob('*.json')):
             shard=json.loads(path.read_text())
             a=arms.index(shard['arm']);s=seeds.index(shard['seed'])
             j=scenes.index(shard['scene']);p=profiles.index(shard['profile'])
@@ -1385,9 +1428,10 @@ def risk_generalization_audit(root):
                 returns[a,s,j,p,i]=r['reward']
         assert (outcomes>=0).all() and np.isfinite(returns).all()
         assert not test_hashes.intersection(dev_hashes|set().union(*hashes.values()))
-        assert all(r['adam_steps']==[240] for r in result['stages']['ppo'])
+        if not il_diagnostic:
+            assert all(r['adam_steps']==[240] for r in result['stages']['ppo'])
         result['checks']['test_layout_disjoint_and_paired']=True
-        result['checks']['ppo_adam_updates_per_run']=240
+        result['checks']['ppo_adam_updates_per_run']=0 if il_diagnostic else 240
         result['evaluation_episodes']=int(outcomes.size)
         result['cells']=[]
         for a,arm in enumerate(arms):
@@ -1427,7 +1471,11 @@ def risk_generalization_audit(root):
         result['benefit_gate_passed']=None
         result['strong_generalization_passed']=None
         result['interpretation']='Inconclusive about Bayesian generalization: five-human training qualification failed.'
-    (root/'analysis.json').write_text(json.dumps(result,indent=2))
+    if il_diagnostic:
+        result['stage']='frozen_IL_only'
+        result['confirmatory_PPO_experiment']=False
+        result['interpretation']='Supplemental frozen IL diagnostic; does not override the original failed qualification gate or establish an IL+PPO result.'
+    (evaluation_root/'analysis.json').write_text(json.dumps(result,indent=2))
     print(json.dumps({k:v for k,v in result.items() if k not in ('protocol','stages','cells')},indent=2))
     return result
 
@@ -1447,7 +1495,16 @@ def main():
     parser.add_argument('--type-oracle', action='store_true')
     parser.add_argument('--failure-evidence', action='store_true')
     parser.add_argument('--risk-generalization', action='store_true')
+    parser.add_argument('--risk-il-evaluate', action='store_true')
+    parser.add_argument('--risk-il-analyze', action='store_true')
+    parser.add_argument('--workers', type=int, default=4)
     args = parser.parse_args()
+    if args.risk_il_evaluate:
+        risk_il_evaluation(args.results,args.workers)
+        return
+    if args.risk_il_analyze:
+        risk_generalization_audit(args.results,il_diagnostic=True)
+        return
     if args.risk_generalization:
         risk_generalization_audit(args.results)
         return

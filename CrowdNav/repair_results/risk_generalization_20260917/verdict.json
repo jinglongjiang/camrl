@@ -1,0 +1,4 @@
+{
+  "status": "IL_GATE_FAILED",
+  "conclusion": "Cannot judge Bayesian generalization; no high-density selection or test was performed."
+}
