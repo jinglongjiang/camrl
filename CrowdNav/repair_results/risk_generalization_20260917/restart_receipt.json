@@ -1,0 +1,19 @@
+{
+  "source": "repair_results/risk_generalization_20260917_case_overlap",
+  "reason": "Correct physical-case aliasing in DAgger; identical BC checkpoints and dataset retained",
+  "dataset_sha256": "7cb0ec6ec7632a21c1b2d6b78f89f1dbf5a75888f10785a6d79f4bc96af5f553",
+  "copied_checkpoint_sha256": {
+    "2407_base": "02965e82538a81c02855b95dc3b153de3873657d02ea800ab6cf66bf817e6f12",
+    "2407_cv": "4bf436979a16da6c5ae87b9edacf6682f4ff49d8ad839ef267f68a17ea2adaae",
+    "2407_ewma": "eb8c1f4c8bb779889153e6e21e53d36d7874c3b4aedef563a66b06e5a000e5fd",
+    "2407_bayes": "3e186c483c131c1c625e49256518aa3dbf3861ee808b58d8cd9d038cfaaabc55",
+    "4807_base": "5ec711b2b24e08d65280849f35c3da2e628f13da86e188bd274f8e814089840b",
+    "4807_cv": "7adac355205e0fc7b4e26a791b8c623f6e580b89790f1a7cb4468e72ca52f61d",
+    "4807_ewma": "e1f73fe682e5d7a7eb713c983e1caf82b7d043ef76ab05880870b96978cfa200",
+    "4807_bayes": "cc0ab8cbb060119598ed02a9e98e9f0beb1f95c1f90042d79256ff5bb475b065",
+    "7207_base": "8d2405097a3339b2ff52dddd51d1ad65194d228f46c3fdd08d2cf97252a9aa66",
+    "7207_cv": "546dfa423ef6bbf5cd6cb83f64160ef64dddd1b98350212d80721f59567d9517",
+    "7207_ewma": "8d9e135ac7d1d712949a536bf004ddd85afd89992c88b58bed3459ea39185c2b",
+    "7207_bayes": "8e1da63e7d46fb0b5b708f1fe7d86095a21790f18bbb5bb970943bd1d7a3b031"
+  }
+}

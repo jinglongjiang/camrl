@@ -565,6 +565,17 @@ class GaussianTransferTests(unittest.TestCase):
 
 
 class RiskGeneralizationContracts(unittest.TestCase):
+    def test_physical_layout_split_uses_distinct_case_ranges(self):
+        from crowd_nav.bayes_continuous.risk_generalization import env_for, options
+        env=env_for('base')
+        env.reset(options=options(0,210000000,620000))
+        teacher=env.unwrapped.layout_hash
+        env.reset(options=options(0,230000000,620000))
+        self.assertEqual(teacher,env.unwrapped.layout_hash)
+        env.reset(options=options(0,230000000,625000))
+        self.assertNotEqual(teacher,env.unwrapped.layout_hash)
+        env.close()
+
     def test_teacher_queried_once_and_executed_label_matches(self):
         from types import SimpleNamespace
         from crowd_nav.bayes_continuous.risk_generalization import rollout

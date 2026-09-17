@@ -45,7 +45,7 @@
     "gng.npz": "ae60e3a315f0be40915e38858aa545c17272d751e184a0a7741fa7bb17128c31"
   },
   "code_sha256": {
-    "risk_generalization.py": "401352832750a7ddf9b34b204584b56ba8d26386b3d92b0704b6afe5703c7d49",
+    "risk_generalization.py": "7f2c8e139a81dddaacd7d75582ba4c2573c91332105b9a1bce1fa864b5e2e8c0",
     "network.py": "6d10dc3abbd5b33691c151c18c7dca527b953d62b3012c72b0792ed19bc88e23",
     "environment.py": "43e10def83c12492a692f7b0efa51d371b32ca4012b217274af6e51a475ae98c",
     "teacher.py": "4bf5400e1a0481415ed9b49dddde4cdd0592234100f1c9846a4f762cc7dc0add"
@@ -55,6 +55,20 @@
   "ewma_variance": ".01+EWMA(dv^2)*t^3/(3*dt), alpha=.15",
   "bayes": "existing GDBN predictive mean and trace/2 covariance, floor=.01; B_action=0",
   "risk": "maximum Gaussian-disc overlap over 7 fixed robot arcs and 8 steps; no claim of union probability",
+  "collection_case_ranges": {
+    "teacher": [
+      620000,
+      620239
+    ],
+    "dagger": [
+      625000,
+      625359
+    ],
+    "development": [
+      630000,
+      630099
+    ]
+  },
   "statistical_rule": "Primary: mean OOD SR, 5 non-baseline configurations x 2 profiles equally weighted; paired seed/layout bootstrap with shared profile pairs; 98.333% CI for each of 3 Bayes-control contrasts (Bonferroni).",
   "benefit_gate": "Bayes >=3pp over each of base/CV/EWMA on primary OOD metric, all CI lower bounds >0; no >2pp nominal 5-human loss against base.",
   "strong_generalization_gate": "Separately report whether 20-human nominal SR reaches 80%; a relative gain alone does not establish strong generalization."

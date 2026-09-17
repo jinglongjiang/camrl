@@ -187,7 +187,8 @@ def collection_worker(task):
     records=[]; rows=[]
     for i in range(first,first+count):
         start=210000000 if checkpoint is None else 230000000
-        r,rr=rollout(env,actor,options(i,start,620000),collect=True)
+        case_start=620000 if checkpoint is None else 625000
+        r,rr=rollout(env,actor,options(i,start,case_start),collect=True)
         records.append(r)
         if checkpoint is not None or r['outcome']=='success':
             rows.extend(rr)
@@ -307,7 +308,7 @@ def gate(receipts):
         r['development']['train_nonstationary']['success']>=80 for r in receipts)
 
 
-def run(out,workers):
+def run(out,workers,resume_bc=None):
     out.mkdir(parents=True,exist_ok=False)
     code_files=[Path(__file__),Path(__file__).with_name('network.py'),
         Path(__file__).with_name('environment.py'),Path(__file__).with_name('teacher.py')]
@@ -324,13 +325,33 @@ def run(out,workers):
         cv_variance='(.1+.2*t)^2',ewma_variance='.01+EWMA(dv^2)*t^3/(3*dt), alpha=.15',
         bayes='existing GDBN predictive mean and trace/2 covariance, floor=.01; B_action=0',
         risk='maximum Gaussian-disc overlap over 7 fixed robot arcs and 8 steps; no claim of union probability',
+        collection_case_ranges=dict(teacher=[620000,620239],dagger=[625000,625359],development=[630000,630099]),
         statistical_rule='Primary: mean OOD SR, 5 non-baseline configurations x 2 profiles equally weighted; paired seed/layout bootstrap with shared profile pairs; 98.333% CI for each of 3 Bayes-control contrasts (Bonferroni).',
         benefit_gate='Bayes >=3pp over each of base/CV/EWMA on primary OOD metric, all CI lower bounds >0; no >2pp nominal 5-human loss against base.',
         strong_generalization_gate='Separately report whether 20-human nominal SR reaches 80%; a relative gain alone does not establish strong generalization.')
     (out/'protocol.json').write_text(json.dumps(protocol,indent=2))
-    files=map_tasks(collection_worker,[(str(out/f'demo_{i}.pt'),i,10,None) for i in range(0,240,10)],workers)
-    merge_data(files,out/'demos.pt')
-    receipts=map_tasks(fit_worker,[(str(out),s,a,'bc',3000) for s in SEEDS for a in ARMS],workers)
+    if resume_bc is None:
+        files=map_tasks(collection_worker,[(str(out/f'demo_{i}.pt'),i,10,None) for i in range(0,240,10)],workers)
+        merge_data(files,out/'demos.pt')
+        receipts=map_tasks(fit_worker,[(str(out),s,a,'bc',3000) for s in SEEDS for a in ARMS],workers)
+    else:
+        import shutil
+        previous=json.loads((resume_bc/'protocol.json').read_text())
+        for key in ('arms','seeds','source_sha256','params_sha256','bc_updates','dev_gate'):
+            assert previous[key]==json.loads(json.dumps(protocol[key])),key
+        shutil.copy2(resume_bc/'demos.pt',out/'demos.pt')
+        receipts=[]
+        for seed in SEEDS:
+            for arm in ARMS:
+                folder=out/f'{seed}_{arm}';folder.mkdir()
+                for name in ('bc.zip','bc.json'):
+                    shutil.copy2(resume_bc/f'{seed}_{arm}'/name,folder/name)
+                receipts.append(json.loads((folder/'bc.json').read_text()))
+        (out/'restart_receipt.json').write_text(json.dumps(dict(
+            source=str(resume_bc),reason='Correct physical-case aliasing in DAgger; identical BC checkpoints and dataset retained',
+            dataset_sha256=hashlib.sha256((out/'demos.pt').read_bytes()).hexdigest(),
+            copied_checkpoint_sha256={f'{s}_{a}':hashlib.sha256((out/f'{s}_{a}/bc.zip').read_bytes()).hexdigest()
+                                     for s in SEEDS for a in ARMS}),indent=2))
     start='bc'
     if not gate(receipts):
         tasks=[]
@@ -362,5 +383,6 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser()
     parser.add_argument('--out',type=Path,required=True)
     parser.add_argument('--workers',type=int,default=4)
+    parser.add_argument('--resume-bc',type=Path)
     args=parser.parse_args()
-    run(args.out,args.workers)
+    run(args.out,args.workers,args.resume_bc)
