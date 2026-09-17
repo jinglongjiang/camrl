@@ -164,6 +164,11 @@ class CrowdSim(gym.Env):
 
     def configure(self, config):
         self.config = config
+        self.interaction_types = config.getboolean('interaction', 'enabled', fallback=False)
+        self.executed_motion_audit = config.getboolean('env', 'executed_motion_audit', fallback=False)
+        self.reciprocal_probability = config.getfloat('interaction', 'reciprocal_probability', fallback=.7)
+        if not 0 <= self.reciprocal_probability <= 1:
+            raise ValueError('reciprocal_probability must be in [0,1]')
 
         # env
         self.time_limit = config.getint('env', 'time_limit')
@@ -381,6 +386,16 @@ class CrowdSim(gym.Env):
         else:
             raise NotImplementedError
 
+        if self.interaction_types:
+            if not self.robot.visible:
+                raise ValueError('Persistent interaction types require a visible robot')
+            # A separate RNG leaves physical layouts invariant across type priors.
+            type_seed = int(test_case if test_case is not None else self.case_counter[phase]-1)
+            type_rng = np.random.RandomState((type_seed + 170000003) % (2**32))
+            for human in self.humans:
+                human._reciprocal = bool(type_rng.random_sample() < self.reciprocal_probability)
+                human.policy.configure(self.config)
+
         for agent in [self.robot] + self.humans:
             agent.time_step = self.time_step
             agent.policy.time_step = self.time_step
@@ -458,7 +473,7 @@ class CrowdSim(gym.Env):
         human_actions = []
         for human in self.humans:
             ob = [other.get_observable_state() for other in self.humans if other != human]
-            if self.robot.visible:
+            if self.robot.visible and (not self.interaction_types or human._reciprocal):
                 ob += [self.robot.get_observable_state()]
             human_actions.append(human.act(ob))
 
@@ -477,8 +492,11 @@ class CrowdSim(gym.Env):
         for i, human in enumerate(self.humans):
             px = human.px - self.robot.px
             py = human.py - self.robot.py
-            vx = human.vx + rvx
-            vy = human.vy + rvy
+            if self.interaction_types or self.executed_motion_audit:
+                ha = human_actions[i]
+                vx, vy = ha.vx + rvx, ha.vy + rvy
+            else:
+                vx, vy = human.vx + rvx, human.vy + rvy
             ex = px + vx * self.time_step
             ey = py + vy * self.time_step
             closest = point_to_segment_dist(px, py, ex, ey, 0, 0) - human.radius - self.robot.radius
@@ -520,7 +538,7 @@ class CrowdSim(gym.Env):
         terminated = False
         truncated = False
 
-        if self.global_time >= self.time_limit - 1e-6:
+        if not (self.interaction_types or self.executed_motion_audit) and self.global_time >= self.time_limit - 1e-6:
             # timeout
             reward = self.timeout_penalty
             truncated = True
@@ -535,12 +553,21 @@ class CrowdSim(gym.Env):
             reward = self.success_reward
             terminated = True
             info = {"event": "reach_goal", "dmin": max(dmin, 0.0)}
+        elif (self.interaction_types or self.executed_motion_audit) and self.global_time + self.time_step >= self.time_limit - 1e-6:
+            reward = self.timeout_penalty
+            truncated = True
+            info = {"event": "timeout", "dmin": max(dmin, 0.0)}
         else:
             # dense shaping
             reward += self.progress_reward * progress
             reward += self.time_penalty
             # stand penalty
-            robot_speed = norm(np.array([action.vx, action.vy], dtype=float))
+            # A unicycle action carries its speed directly; reading .vx here
+            # assumed every robot is holonomic.  Identical result for a
+            # holonomic action.
+            robot_speed = (norm(np.array([action.vx, action.vy], dtype=float))
+                           if self.robot.kinematics == 'holonomic'
+                           else abs(float(action.v)))
             if robot_speed < 0.05:
                 reward += self.stand_penalty
             # discomfort
