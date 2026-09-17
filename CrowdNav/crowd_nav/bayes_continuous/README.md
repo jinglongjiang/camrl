@@ -1,5 +1,26 @@
 # Bayesian Belief-State PPO: Current Mainline
 
+## Frozen Stage Audit (2026-09-17)
+
+`stage_audit.py` evaluates the actual CV unicycle teacher, pre-PPO DAgger
+source, and nine final PPO checkpoints on the same corrected-spawn layouts.
+The completed 4,400-episode audit finds that S20 nominal success is 90% for
+the teacher but already 4% for IL before PPO (held-out: 80% versus 6%).
+PPO does not repair the deficit; FULL has no consistent advantage.
+This is a localized generalization problem, not a validated new Bayesian method.
+See `repair_results/stage_audit_20260917/REPORT_ZH.md` and the FCS2 source
+in the repository's `mamba_log/`. No teacher/network/reward changes or new
+training were made in this audit. The archived 183/200 GDBN teacher below is
+not the teacher of the active round16/PPO pipeline.
+
+Run from CrowdNav with the hash-matched archived checkpoints present:
+```
+python3 -m crowd_nav.bayes_continuous.stage_audit \
+  --out repair_results/stage_audit_reproduction --workers 6
+```
+
+## Training Mainline
+
 Required structure: GDBN recursive belief -> SetEncoder192 -> continuous Gaussian
 actor, with an independent state-value V network for standard PPO training.
 IL initialization is the existing CEM/BC/DAgger policy, converted exactly to the

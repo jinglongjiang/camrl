@@ -1,0 +1,519 @@
+% !TeX program = pdflatex
+% FCS2 branch manuscript, 2026-09-17; bibliography: refs_FCS2.bib.
+% Diagnostic-stage draft: a new generalization method is NOT yet validated.
+% Independent of latex_FCS.txt. Do not generate a PDF without author permission.
+% Author information is provisional and must be confirmed before submission.
+\documentclass[research]{fcs}
+\fcssetup{received={not assigned},accepted={not assigned},doi={}}
+\ExplSyntaxOn
+\tl_clear:N \l__fcs_doi_url_tl
+\ExplSyntaxOff
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs,tabularx,array}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta}
+\usepackage{hyperref}
+\ifdefined\XeTeXversion
+\microtypesetup{expansion=false}
+\fi
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\SR}{\mathrm{SR}}
+
+\title{Where Does Generalization Fail in Imitation-Initialized Bayesian Crowd Navigation?}
+\author[1]{Jinglong~Jiang}
+\author[2]{Husna~Mutahira}
+\author[3]{Kanwal~Naveed}
+\author[4]{Vladimir~Shin}
+\author[5,+]{Mannan~Saeed~Muhammad}
+\author[1]{Juneho~Yi}
+\address[1]{Dept. of ECE, SKKU, Suwon, SK}
+\address[2]{Dept. of CSE, SU, Seoul, SK}
+\address[3]{CEME, NUST, Islamabad, PK}
+\address[4]{Dept. of AI, FinU, Moscow, RF}
+\address[5]{EECS, QMUL, London, UK}
+\corremail{mannan.muhammad@qmul.ac.uk}
+
+\begin{abstract}
+Strong navigation after imitation learning does not establish generalization to
+larger crowds, nor does adding a recursive belief identify the source of failure.
+We examine an imitation-initialized continuous policy with a masked set encoder
+and Bayesian motion-mode features, subsequently optimized by proximal policy
+optimization (PPO). A frozen stage comparison evaluates the actual unicycle
+planning teacher, the pre-PPO DAgger student, and nine PPO checkpoints spanning
+three belief inputs and three training seeds. The experiment comprises 4,400
+episodes over 200 physical layouts, four crowd configurations, and two behavior
+profiles. In the 20-person square configuration, the teacher achieves 90\%
+nominal and 80\% held-out success, whereas the pre-PPO student achieves 4\%
+and 6\%. Teacher--student differences are 86 percentage points
+(paired 95\% interval: 76--94) and 74 points (62--86).
+PPO retains the five-person nominal performance but does not recover the
+large-crowd deficit; complete mode posteriors do not consistently improve on
+point estimates or omitted belief features. Thus, in this implementation, the
+large deployment deficit is already present before reinforcement learning.
+The findings establish an achievable planning reference and localize a training
+and generalization problem. They do not establish the sufficiency of a new risk
+representation or an independent Bayesian contribution.
+\end{abstract}
+\keywords{Crowd navigation; Imitation learning; Bayesian belief; Proximal policy optimization; Generalization; Stage-wise evaluation}
+
+\begin{document}
+
+\section{INTRODUCTION}
+\label{sec:intro}
+Learning continuous crowd navigation from a planning teacher is attractive:
+imitation supplies basic control competence, and reinforcement learning can
+subsequently optimize closed-loop behavior. Recursive Bayesian features can
+summarize observations of pedestrian motion without a temporal neural policy.
+However, several distinct claims are easily conflated: that the interface accepts
+variable-size crowds, that the learned policy generalizes to them, and that a
+particular belief representation contributes useful decision information.
+
+These claims require different evidence. A permutation-invariant encoder removes
+dependence on input order, not dependence on crowd cardinality or geometry.
+Similarly, a successful teacher demonstrates an achievable policy, not an
+optimal upper bound. Poor student performance could precede reinforcement
+learning, be induced by it, or reflect limitations of the teacher itself.
+Comparing only final policies cannot distinguish these explanations.
+
+We therefore retain an existing imitation--belief--PPO architecture and evaluate
+its successive stages under identical deployment conditions. The study asks:
+\begin{enumerate}
+\item Can the actual unicycle teacher navigate the configurations in which the
+learned policies fail?
+\item Is that deficit already present in the DAgger student before PPO?
+\item Does the trained full-posterior policy reduce the deficit relative to
+MAP or No-Belief policies with the same initialization and training budget?
+\end{enumerate}
+The first two questions prevent a misleading search for a Bayesian repair to a
+failure that has not been localized. The third tests the current belief input,
+not the universal necessity of Bayesian inference.
+
+Our contribution at this stage is a controlled diagnosis of one learning
+pipeline, rather than a new algorithm. We verify checkpoint provenance and
+action conversion, compare teacher and student using the same nonholonomic
+executor, and separate changes in population, layout family, and behavior.
+The results identify a substantial, achievable teacher--student gap in square
+crowds that exists before PPO. A method for closing that gap remains to be
+developed and tested; we do not rename the diagnosis as a validated method.
+
+\section{RELATED WORK}
+\label{sec:related}
+DAgger addresses the discrepancy between expert-visited and learner-visited
+states by collecting expert labels along learner trajectories
+\cite{ross2011dagger}. This motivates the original student's training, but does
+not guarantee transfer to crowd configurations excluded from data collection.
+PPO updates a stochastic policy using on-policy samples and a clipped surrogate
+objective \cite{schulman2017ppo}. We use its standard state-value formulation
+through Stable-Baselines3 \cite{raffin2021sb3}, not an action-value or safety-cost
+critic.
+
+Deep Sets and attention-based set models provide architectures for unordered
+inputs \cite{zaheer2017deepsets,lee2019settransformer}. Attention has also been
+used directly in crowd-navigation policies \cite{chen2019crowd}.
+Our masked attention-plus-max encoder is an implementation choice, not a new
+set-learning principle. Its support for different numbers of tokens must be
+distinguished from statistical generalization beyond its training distribution.
+Work on reinforcement-learning generalization makes the importance of distinct
+training and deployment environments explicit \cite{cobbe2019generalization}.
+
+Belief states provide a principled representation of history in partially
+observable decision problems when the model and posterior are appropriate
+\cite{kaelbling1998pomdp}. An approximate motion-mode posterior is not
+automatically a sufficient statistic for a different simulator. In particular,
+the mode labels used here are fitted dynamical hypotheses, not known human
+intentions. Our pedestrian simulator derives nominal motion from ORCA
+\cite{vandenberg2011orca}; robots and pedestrians do not share its reciprocity
+assumption because the robot is invisible to the pedestrian policies.
+
+Finally, finite-seed evaluation can produce unstable performance comparisons
+\cite{agarwal2021precipice}. We report the individual PPO seeds and paired
+layout intervals. Three PPO seeds do not constitute three independent
+imitation-learning pipelines: all inherit the same DAgger source.
+
+\section{THE FROZEN LEARNING PIPELINE}
+\label{sec:method}
+\subsection{Observations, beliefs, and actions}
+The robot receives the current position, velocity, and radius of every
+pedestrian. There is no sensor occlusion in this branch. Uncertainty concerns
+the fitted motion model and unobserved behavior evolution, not hidden pedestrian
+existence. For pedestrian $i$, the recursive model maintains
+\begin{equation}
+ b_t^i(k)=\Prob_M(z_t^i=k\mid o_{0:t}),\qquad k=1,2,3,
+\end{equation}
+where $M$ denotes the fitted model. Its Gaussian dynamic hypotheses use
+linear transitions $x_{t+1}=A_kx_t+\epsilon_k$ and a mode-transition matrix.
+The implementation uses 50 particles per active tracker and an episode-seeded
+random stream. The robot-action coefficients are zero: the simulator's
+pedestrians do not respond to the invisible robot. This physical constraint is
+preserved across all arms.
+
+Each human token has nine fields: ego-relative position (two), relative velocity
+(two), radius, and four belief fields. Fixed physical scales are 10 m for
+position, 2 m/s for velocity, and 0.3 m for radius. The four belief fields are
+\begin{equation}
+ \beta_t^i =
+ \begin{cases}
+  (0,0,0,0), & \text{No-Belief},\\
+  (e_{\arg\max_k b_t^i(k)},0), & \text{MAP},\\
+  (b_t^i(1),b_t^i(2),b_t^i(3),H(b_t^i)/\log 3), & \text{FULL}.
+ \end{cases}
+\end{equation}
+Here FULL means the complete \emph{three-mode marginal}, not a complete joint
+posterior over all human trajectories. Invalid padded slots have an explicit
+mask. The storage maximum is 20; no test entity is silently truncated.
+
+The robot token contains seven normalized physical fields: relative goal,
+current velocity, radius, preferred speed, and remaining time. Two previous
+executed-action fields and a route-history scalar give ten inputs:
+\begin{equation}
+ r_{t+1}=0.7r_t+0.3\,\omega_t/1.2,\qquad r_0=0.
+\end{equation}
+Thus No-Belief is not strictly memoryless: all arms receive this same limited
+execution history.
+
+Actions are continuous, $v\in[0,1]$ m/s and
+$\omega\in[-1.2,1.2]$ rad/s. With $\Delta t=0.25$ s, the simulator executes
+\begin{equation}
+\begin{split}
+ \theta_{t+1}&=\theta_t+\omega_t\Delta t,\\
+ p_{t+1}&=p_t+v_t\Delta t
+       [\cos\theta_{t+1},\sin\theta_{t+1}]^\top .
+\end{split}
+\end{equation}
+The episode ends by 140 steps, or 35 s. Collision auditing includes overlap
+along the actual executed robot--pedestrian segments, not only the simulator's
+native collision flag.
+
+\subsection{Set encoding and imitation initialization}
+Shared human layers map each token through widths 64 and 64. A 32-dimensional
+robot embedding conditions masked attention; its weighted human embedding and
+a masked maximum are concatenated with the robot embedding. A 160-to-192
+fusion layer supplies the actor. There is no explicit count feature. The policy
+MLP has widths $[256,256]$.
+
+The source policy was trained by behavioral cloning followed by student-executed
+DAgger in five-person nominal circle scenarios. During DAgger, the student
+executes its action and the teacher supplies a separate label; failed student
+episodes remain labelable, and original demonstrations remain in the data pool.
+The final round-16 checkpoint is fixed for this study. Historical extensions
+were adaptive engineering development, not a pre-registered optimal-budget
+comparison.
+
+The teacher is the actual continuous unicycle CEM controller, using a 16-step
+horizon, population 512, four iterations, and a 0.50 m human margin.
+It predicts humans with constant velocity and retains its previous plan as a
+warm start. It does \emph{not} use the GDBN posterior in this pipeline.
+An archived experiment used a different GDBN teacher adapter; its qualification
+receipt is not evidence about the present source policy.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+  block/.style={draw,align=center,text width=6.8cm,inner sep=5pt},
+  >=Latex,node distance=5mm,font=\small]
+\node[block] (teacher) {CV unicycle CEM teacher};
+\node[block,below=of teacher] (il) {BC + student-executed DAgger\\Fixed pre-PPO actor};
+\node[block,below=of il] (ppo) {Common policy initialization\\No-Belief / MAP / FULL inputs};
+\node[block,below=of ppo] (learn) {SetEncoder192 + continuous actor\\PPO with independent state-value network};
+\node[block,below=of learn] (test) {Paired frozen deployment\\5/10/20 humans; nominal / held-out behavior};
+\draw[->] (teacher)--(il);
+\draw[->] (il)--(ppo);
+\draw[->] (ppo)--(learn);
+\draw[->] (learn)--(test);
+\end{tikzpicture}
+\caption{The evaluated learning pipeline. Teacher and pre-PPO policies are
+also deployed on the same test layouts. The Bayesian module changes policy
+inputs, not the teacher, reward, or action executor. No new algorithm is
+inserted during the audit.}
+\label{fig:pipeline}
+\end{figure}
+
+\subsection{PPO optimization}
+The DAgger actor is converted exactly into the mean of a physical-space Gaussian
+policy. Its bounded mean is $c+d\odot\tanh(f_\theta)$, with
+$c=(0.5,0)$ and $d=(0.5,1.2)$. Training samples an ordinary Gaussian and clips
+actions to physical limits; this is not a tanh-squashed distribution.
+Evaluation uses the deterministic bounded mean.
+
+Initial belief-input weights are zero in both policy and value encoders, but
+remain trainable. All three arms therefore start with the same physical policy,
+rather than one arm receiving a stronger navigation initialization.
+The value network has an independent encoder and widths $[96,96]$.
+Its encoder is initialized from the same source; its value head is newly
+initialized. No old optimizer or action-value critic is transferred.
+
+The policy objective is the usual PPO surrogate,
+\begin{equation}
+ L^{\mathrm{clip}}(\theta)=\E_t\!\left[
+ \min\{\rho_t(\theta)\hat A_t,
+ \operatorname{clip}(\rho_t(\theta),0.9,1.1)\hat A_t\}\right].
+\end{equation}
+There is no concurrent BC loss, cost critic, safety replay, residual action
+network, or action grid. The frozen qualification configuration uses learning
+rate $10^{-5}$, 2,048-step rollouts, batch size 256, three epochs, discount 0.99,
+GAE parameter 0.95, and zero entropy coefficient. The KL early-stop threshold
+is disabled for all arms; the ten rollouts generate exactly 240 Adam steps per
+checkpoint. Each seed receives 20,480 environment steps on
+\texttt{train\_nonstationary}, with five humans only.
+This is a finite completed budget, not evidence of asymptotic convergence.
+
+\section{EVALUATION PROTOCOL}
+\label{sec:protocol}
+\subsection{Frozen configurations and pairing}
+We evaluate one teacher, one pre-PPO source, and nine final PPO checkpoints
+(three arms at seeds 2407, 4807, and 7207).
+There are 50 layouts for each configuration in Table~\ref{tab:scenes}.
+Each layout is evaluated under nominal and held-out behavior, resulting in
+$4\times 50\times 2\times(2+3\times3)=4,400$ episodes.
+The 150 episodes reported for a PPO arm within a cell reuse 50 layouts across
+three policies; they are not 150 independent layouts.
+
+\begin{table}[t]
+\centering
+\caption{Deployment configurations. Circle radius and square width are layout
+generator parameters, not obstacle-wall dimensions.}
+\label{tab:scenes}
+\begin{tabular}{lrr}
+\toprule
+Configuration & Humans & Generator scale (m)\\
+\midrule
+Baseline circle (C5) & 5 & radius 4\\
+Dense circle (C10) & 10 & radius 4\\
+Baseline square (S10) & 10 & width 10\\
+Dense square (S20) & 20 & width 10\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Nominal behavior has no scheduled intervention. PPO training used event
+probability 0.025 per eligible pedestrian-step, duration 2--6 steps, turn angles
+20--50 degrees, and slow scales 0.35--0.70. Held-out behavior uses probability
+0.035, duration 4--9 steps, turn angles 55--85 degrees, and slow scales
+0.15--0.45. The interventions are stop, slow, left turn, and right turn.
+Their labels and future random draws are unavailable to both teacher and policy.
+The three GDBN modes are not identified with these four intervention categories.
+
+Layouts use seeds $170000000+10000j+i$, where $j$ indexes the four configurations
+and $i=0,\ldots,49$. Case IDs are $510000+1000j+i$.
+Nominal and held-out profiles share initial geometry, and all policies within
+each cell share both geometry and behavior seeds.
+Human goals, starts, radii, and preferred speeds, together with the initial robot
+state, are hashed to verify layout matching.
+
+The historical batch spawn routine could permit human--human initial overlap
+because previously sampled humans were not inserted until after batch
+generation. For deployment auditing only, an instance-local wrapper inserts
+each sampled human immediately. All policies receive this identical corrected
+generator. The minimum initial pairwise surface clearance over the audit is
+0.201742 m; no action-bound violation occurs.
+Historical checkpoints were not retrained after this generator correction,
+which limits causal attribution to crowd size alone.
+
+\subsection{Provenance and statistical scope}
+Before evaluation, three archived IL episodes and three archived PPO episodes
+were replayed through the original generator: outcome, length, and return
+matched exactly. On the IL traces, the action difference between the stored
+source and its PPO-mean conversion was zero. Abstract-syntax comparisons
+confirmed that the CV teacher's core classes match the qualified historical
+version. Production encoder and history-wrapper definitions are used directly
+for inference without instantiating obsolete training classes.
+
+Success, collision, and timeout are mutually exclusive.
+Reported return is the undiscounted sum of actual environment rewards.
+The task reward is unchanged, including success $+1$, collision $-0.5$,
+timeout $-0.5$, progress coefficient 0.01, and per-step penalty $-0.003$.
+We do not compare parallel wall-clock evaluation times as planner latency.
+
+For each pair of methods, 5,000 bootstrap draws resample layout indices
+jointly. PPO comparisons also resample the three policy-seed indices.
+The single teacher and single IL source are not replicated as independent
+training seeds. Intervals are pointwise exploratory 95\% intervals, not
+family-wise corrected tests or equivalence bounds. The configurations, final
+checkpoints, sample counts, and contrasts were recorded before these outcomes.
+Earlier deployment failures motivated the audit, so this is a new paired
+diagnosis, not an independently discovered research hypothesis.
+
+\section{RESULTS}
+\label{sec:results}
+\subsection{The deployment deficit precedes PPO}
+Table~\ref{tab:success} reports all eight cells.
+The nominal five-person circle remains navigable by both the teacher and
+the learned policies. At 20 humans in the square configuration, the teacher
+succeeds on 45/50 layouts whereas the pre-PPO actor succeeds on 2/50.
+The paired success difference is 86 percentage points, with interval [76,94].
+Under held-out behavior, the corresponding counts are 40/50 and 3/50,
+a difference of 74 points [62,86].
+
+\begin{table*}[t]
+\centering
+\caption{Success rates (\%). Teacher and IL have 50 episodes per row; each
+PPO entry averages three seeds over those same 50 layouts. N: nominal;
+H: held-out nonstationary. There is no checkpoint selection using these cells.}
+\label{tab:success}
+\begin{tabular}{llrrrrr}
+\toprule
+Configuration & Profile & CV teacher & Pre-PPO IL & PPO No-Belief & PPO MAP & PPO FULL\\
+\midrule
+C5 & N & 100.00 & 94.00 & 95.33 & 94.00 & 94.67\\
+C5 & H & 96.00 & 80.00 & 78.67 & 77.33 & 78.67\\
+C10 & N & 94.00 & 84.00 & 86.67 & 87.33 & 88.00\\
+C10 & H & 90.00 & 44.00 & 44.00 & 45.33 & 44.67\\
+S10 & N & 88.00 & 42.00 & 47.33 & 46.67 & 43.33\\
+S10 & H & 90.00 & 36.00 & 36.00 & 34.67 & 34.00\\
+S20 & N & 90.00 & 4.00 & 6.67 & 2.67 & 5.33\\
+S20 & H & 80.00 & 6.00 & 6.00 & 4.67 & 7.33\\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+The layout pairing is informative: on S20 nominal, 43 layouts succeed only
+with the teacher and none succeed only with IL. On S20 held-out, the counts
+are 37 and zero. These are achievable trajectory differences under the same
+executor, not a comparison against a holonomic controller.
+They rule out PPO as a necessary cause of this deployment failure because
+the source actor already fails before any PPO update.
+
+The deficit is not confined to population increase. With the same count of ten,
+the pre-PPO actor achieves 84\% nominal success in circles and 42\% in squares.
+Those distributions differ in geometry and scale, so this is evidence of a
+broader configuration shift, not a density-only causal experiment.
+Behavior shift further reduces C10 IL success from 84\% to 44\%.
+
+\subsection{Failure type and incremental PPO effects}
+S20 IL failures are collisions, not merely slow goal approach:
+48/50 nominal and 47/50 held-out episodes collide. Median collision time
+among these failures is 3.25 s in both profiles.
+Only two collisions in each cell occur within the first second, and initial
+clearance checks pass. This does not establish a representation bottleneck,
+but it excludes treating all failures as invalid overlapping spawns or timeout.
+
+Table~\ref{tab:densecounts} supplies seed-level outcomes for the hardest cell.
+The modest changes after PPO do not recover the teacher's performance.
+For example, S20 nominal FULL improves over IL by 1.33 points
+[-3.33,7.33]; held-out FULL improves by 1.33 points [-5.33,9.33].
+Five-person nominal performance is retained, while held-out C5 changes are
+small and uncertain. Hence neither \emph{PPO destroyed a good dense-crowd
+policy} nor \emph{PPO repaired its generalization} describes these checkpoints.
+
+\begin{table}[t]
+\centering
+\caption{S20 outcomes as success/collision/timeout counts. PPO seed order is
+2407, 4807, 7207. Each triple covers 50 layouts.}
+\label{tab:densecounts}
+\begin{tabular}{lll}
+\toprule
+Policy & Nominal & Held-out\\
+\midrule
+Teacher & 45/4/1 & 40/8/2\\
+IL & 2/48/0 & 3/47/0\\
+No-Belief, seed 1 & 4/46/0 & 4/46/0\\
+No-Belief, seed 2 & 4/46/0 & 2/48/0\\
+No-Belief, seed 3 & 2/47/1 & 3/47/0\\
+MAP, seed 1 & 2/47/1 & 4/46/0\\
+MAP, seed 2 & 1/49/0 & 2/48/0\\
+MAP, seed 3 & 1/49/0 & 1/49/0\\
+FULL, seed 1 & 2/48/0 & 2/48/0\\
+FULL, seed 2 & 4/46/0 & 3/47/0\\
+FULL, seed 3 & 2/47/1 & 6/44/0\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{No consistent advantage of the current belief}
+FULL minus No-Belief nominal success differences range from $-4.00$ points
+in S10 to $+1.33$ in C10. On S20 they are $-1.33$ [-5.33,0.00]
+nominal and $+1.33$ [-4.00,8.68] held-out.
+FULL minus MAP in S20 is $+2.67$ points in each profile, but intervals are
+[-1.33,8.00] and [-6.00,12.00], respectively.
+These results do not establish equivalence, and do not support a robust
+Bayesian improvement.
+
+Return is consistent with the large stage gap: S20 nominal mean return is
+0.7023 for the teacher and $-0.5006$ for IL; held-out means are
+0.5497 and $-0.4645$. The paired differences are 1.2028 [1.0470,1.3364]
+and 1.0143 [0.8310,1.1840]. FULL reaches $-0.4857$ and $-0.4460$.
+Thus the teacher--student difference is not solely an artifact of reporting
+success rather than reward.
+
+\section{INTERPRETATION AND NEXT METHOD GATE}
+\label{sec:discussion}
+The actionable finding is an out-of-distribution teacher--student gap, already
+present in the imitation policy and not repaired by the tested PPO budget.
+The study does not isolate its cause among training coverage, learned
+aggregation, policy capacity, route-memory mismatch, or optimization.
+It therefore supports investigating generalization of the learned controller,
+not immediately replacing the Bayesian estimator.
+
+Three interpretations must be rejected. First, the actual teacher uses CV,
+so these results do not establish that Bayesian information was already
+distilled away into every student. Even a belief-aware teacher would not make
+unavailable inference-time information automatically recoverable by its student.
+Second, a successful teacher is an achievable reference, not a task upper
+bound; its failure would not prove impossibility.
+Third, a fixed-size risk map is not automatically a sufficient statistic,
+and permutation invariance is not invariance to adding pedestrians.
+
+For a subsequent method study, the cheapest strong control is equal-budget
+training-coverage expansion using the unchanged SetEncoder, before attributing
+the deficit to its representation. That experiment has \emph{not} been run here.
+It requires a separately declared mixed-population training protocol and
+fresh held-out layouts. It must distinguish zero-shot five-person-only training
+from training that already includes ten- and twenty-person crowds; the latter
+is a coverage reference, not an identically informed zero-shot competitor.
+Matched teacher queries, simulator transitions, policy capacity, and optimization
+steps should be reported separately, rather than declaring equal compute from
+episode count alone.
+
+A new belief-derived representation would then require a mechanism and
+comparisons against the unchanged encoder, matched simple uncertainty
+representations, and appropriate short-history controls. Matching a stronger
+training baseline could still be useful if demonstrated with less data or
+compute; conversely, a larger success number alone does not identify a
+Bayesian contribution. These are prospective requirements, not conclusions
+of this audit. We retain IL initialization, recursive belief, and PPO as the
+target architecture without claiming that their current combination is novel.
+
+\subsection{Limitations}
+There is one IL training lineage and only three PPO seeds, with 50 paired
+layouts per configuration. The corrected deployment generator differs from
+the historical training generator. Circle--square comparisons also change
+layout scale and goal distributions. The held-out profile was defined in
+earlier work; only the present layout instances are newly assigned.
+There is no occlusion, no sensor-noise deployment test, and no robot hardware
+experiment. We do not benchmark sample efficiency, claim that PPO converged,
+or infer impossibility from a negative finite-budget comparison.
+Counterfactual representation and mixed-training experiments remain necessary
+before presenting a new generalization method.
+
+\section{CONCLUSION}
+The teacher--IL--PPO comparison localizes the major large-crowd deficit before
+reinforcement learning. In a shared unicycle environment, the CV teacher
+reaches 90\% nominal and 80\% held-out success with twenty pedestrians, whereas
+the fixed DAgger student reaches 4\% and 6\%. The tested PPO policies do not
+close this gap, regardless of whether they receive no mode belief, a MAP
+estimate, or the full mode marginal. This is a concrete target for a method
+study, not evidence that Bayesian inference is necessary or that a proposed
+replacement representation already works.
+
+\appendix
+\section{REPRODUCIBILITY AND ARTIFACTS}
+The implementation and audit artifacts are maintained in the
+\texttt{paper2-stage-audit-20260917} branch of the project repository.
+The evaluation entry is
+\texttt{crowd\_nav.bayes\_continuous.stage\_audit}.
+The frozen protocol records source, fitted-parameter, and checkpoint SHA-256
+digests. It requires the archived policy checkpoints; the manuscript alone
+does not reconstruct the original adaptive DAgger training history.
+
+The artifact bundle contains all 4,400 episode records, action sequences,
+initial-layout hashes, executed trace hashes, paired summaries, conversion
+checks, and training-budget receipts. The audit runtime uses Python 3.8.10,
+NumPy 1.23.5, SciPy 1.3.3, and PyTorch 2.1.0, with six single-thread workers.
+The recorded planning times are not isolated timing benchmarks.
+No environment, reward, teacher, Bayesian model, or network was optimized
+against the audit outcomes.
+
+\bibliographystyle{unsrt}
+\bibliography{refs_FCS2}
+\end{document}

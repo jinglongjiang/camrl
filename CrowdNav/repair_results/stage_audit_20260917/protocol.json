@@ -1,0 +1,63 @@
+{
+  "count_per_cell": 50,
+  "scenes": [
+    "baseline_circle",
+    "dense_circle",
+    "baseline_square",
+    "dense_square"
+  ],
+  "profiles": [
+    "nominal",
+    "heldout_nonstationary"
+  ],
+  "seeds": [
+    2407,
+    4807,
+    7207
+  ],
+  "arms": [
+    "no_belief",
+    "map",
+    "full"
+  ],
+  "total_episodes": 4400,
+  "unique_physical_layouts": 200,
+  "layout_seeds": "170000000 + scene_index*10000 + case_index",
+  "case_ids": "510000 + scene_index*1000 + case_index",
+  "spawn": "sequential insertion, no initial overlaps; all methods identical",
+  "teacher": "CV unicycle CEM, unchanged qualified kernel; not archived GDBN teacher",
+  "profile_pairing": "same layout and case seeds; profiles change behavior distribution",
+  "design": "frozen diagnostic, no training, no model selection; pointwise paired CIs, not a new method claim",
+  "controls": "same observation, unicycle action, reward, timeout, physical collision audit",
+  "code_sha256": {
+    "crowd_nav/bayes_continuous/tests.py": "055d8f2dce80367a4a9f4b3c83f3da374c4359c4774f22afd6c22e2d1d53f47d",
+    "crowd_nav/bayes_continuous/teacher.py": "4bf5400e1a0481415ed9b49dddde4cdd0592234100f1c9846a4f762cc7dc0add",
+    "crowd_nav/bayes_continuous/algorithm.py": "36dc2ba6db9a736528ff5a8bf1928ea0765581da820cc543af074a5d0add1d8c",
+    "crowd_nav/bayes_continuous/train_smoke.py": "f458339d77928ce8d10b1ff4a5c607cfaea26703af189b1fa223604a1efcc676",
+    "crowd_nav/bayes_continuous/environment.py": "43e10def83c12492a692f7b0efa51d371b32ca4012b217274af6e51a475ae98c",
+    "crowd_nav/bayes_continuous/__init__.py": "7817cf379e8cbcf4ebe77ba38930c6cb934b41cd825374997934c8578996ce52",
+    "crowd_nav/bayes_continuous/stage_audit.py": "0b93f5fb894dd6e7e9c2cee38cc2812c8912d3ed141c6597729e81314de78cc7",
+    "crowd_nav/bayes_continuous/audit_saved.py": "3362ee2f91801b79a4de2729c87a4101e750b4c0899d6b972238a456cedc3448",
+    "crowd_nav/bayes_continuous/network.py": "6ab192213997afc9c93af997574ba30d3565298414d8f49e955e8158d4a66e5b",
+    "crowd_nav/belief_mdp/runtime.py": "6c3ba027e8673d8bb2abc164c8e17fcbc76405fb09394c265dcd4bc9ca69e1d2",
+    "crowd_nav/bayesian_pilot/protocol.py": "5858cecb1754da43daab07f3dde0e5fe248748f1eb77cd5d3eb6c27026d7383d",
+    "crowd_sim/envs/crowd_sim.py": "0b92fc89ac5900a605a9af9f48de8a0976bb2a0f765b5d58adb33182cc216327",
+    "crowd_nav/configs/env_belief_mdp.config": "5c9be91dd31209d51e889aafc8ad1c6e0cd282f2f66ea7548daa6aa68b56f10d",
+    "repair_results/params/action_model.npz": "72af13a25f4bec8e5065af26e3e751d9a1509cc2d5ec029f4f593567aea0c4dc",
+    "repair_results/params/gdbn.npz": "d53d76f13595e79c420574801d44cb1b8e3e9fbf158e4414ab7ce918c13ca08b",
+    "repair_results/params/gng.npz": "ae60e3a315f0be40915e38858aa545c17272d751e184a0a7741fa7bb17128c31"
+  },
+  "checkpoint_sha256": {
+    "repair_results/dagger_ppo_nominal_20260915/initial.zip": "f1188379822d94dbd1e44ef096fa7aa84529ebc9343bb2c248c1c88f56a2a4cc",
+    "repair_results/final_belief_ppo_qualification_20260915/2407_no_belief/attempt0_20480.zip": "a6abb04ff1d7e9c9e8edc35616f2d7ed331bb1a101c40bc4dca6044c455f0796",
+    "repair_results/final_belief_ppo_qualification_20260915/2407_map/attempt0_20480.zip": "98f9bba29fefd5050e13a98307a8ed39883502ae8a85fc30d8c71f1ea9d494ca",
+    "repair_results/final_belief_ppo_qualification_20260915/2407_full/attempt0_20480.zip": "d185c773ff1e1100084b46eb84d7df200c7f5a00bc7cc92a775dc722acaf0120",
+    "repair_results/final_belief_ppo_qualification_20260915/4807_no_belief/attempt0_20480.zip": "9a17061a8da839f78f0a66a631d9509f1517f7755563f6ec0f880b88eb9637e8",
+    "repair_results/final_belief_ppo_qualification_20260915/4807_map/attempt0_20480.zip": "d8624b7d1f7eab4e435f971c9a264cf63fe30ec70582d09490d84e175da23893",
+    "repair_results/final_belief_ppo_qualification_20260915/4807_full/attempt0_20480.zip": "1d073b817091b0b46027bb3bd00cdd098505665e5453d9a92e19e2702f45b240",
+    "repair_results/final_belief_ppo_qualification_20260915/7207_no_belief/attempt0_20480.zip": "61283977fabc494a9b4bdb26ef718de774b8a2f24d7843d505ffee2701e435bc",
+    "repair_results/final_belief_ppo_qualification_20260915/7207_map/attempt0_20480.zip": "f2e5bb72221d8f984f23220362c272527b0b829375a2f2f021735decc921bd61",
+    "repair_results/final_belief_ppo_qualification_20260915/7207_full/attempt0_20480.zip": "1789d55c28821cfb2273521e91404971b5067aa2d0335f0f5abc2e0771e3bd57"
+  },
+  "base_commit": "16577ff050ff2d742aaa6cae5406d82208321b48"
+}

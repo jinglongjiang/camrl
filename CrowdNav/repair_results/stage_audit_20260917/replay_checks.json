@@ -1,0 +1,42 @@
+[
+  {
+    "scene": "baseline_circle",
+    "profile": "nominal",
+    "method": "il",
+    "seed": 0,
+    "exact_trace_match": true,
+    "outcome": "success"
+  },
+  {
+    "scene": "dense_circle",
+    "profile": "heldout_nonstationary",
+    "method": "full",
+    "seed": 4807,
+    "exact_trace_match": true,
+    "outcome": "collision"
+  },
+  {
+    "scene": "baseline_square",
+    "profile": "nominal",
+    "method": "map",
+    "seed": 7207,
+    "exact_trace_match": true,
+    "outcome": "success"
+  },
+  {
+    "scene": "dense_square",
+    "profile": "heldout_nonstationary",
+    "method": "no_belief",
+    "seed": 2407,
+    "exact_trace_match": true,
+    "outcome": "collision"
+  },
+  {
+    "scene": "dense_square",
+    "profile": "nominal",
+    "method": "teacher",
+    "seed": 0,
+    "exact_trace_match": true,
+    "outcome": "success"
+  }
+]

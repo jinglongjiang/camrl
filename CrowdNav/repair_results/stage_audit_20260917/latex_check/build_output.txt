@@ -1,0 +1,929 @@
+note: Running TeX ...
+(latex_FCS2.txt
+LaTeX2e <2021-11-15> patch level 1
+L3 programming layer <2022-02-24> (fcs.cls
+Document Class: fcs 2026/06/11 vv1.5 Front. Comput. Sci journal template
+(xparse.sty (expl3.sty (l3backend-xetex.def))) (xtemplate.sty) (l3keys2e.sty)
+(extarticle.cls
+Document Class: extarticle 1996/10/08 v1.0 Non Standard LaTeX document class
+(size9.clo) (exscale.sty)) (amsmath.sty
+For additional information on amsmath, use the `?' option.
+(amstext.sty (amsgen.sty)) (amsbsy.sty) (amsopn.sty)) (amssymb.sty
+(amsfonts.sty)) (amsthm.sty) (caption.sty (caption3.sty (keyval.sty)))
+(fancyhdr.sty) (geometry.sty (ifvtex.sty (iftex.sty))) (graphicx.sty
+(graphics.sty (trig.sty) (graphics.cfg) (xetex.def))) (marvosym.sty)
+(titlesec.sty) (array.sty) (booktabs.sty) (cite.sty) (etoolbox.sty)
+(enumitem.sty) (flushend.sty) (xurl.sty (url.sty)) (eso-pic.sty (xcolor.sty
+(color.cfg))) (tcolorbox.sty (pgf.sty (pgfrcs.sty (pgfutil-common.tex
+(pgfutil-common-lists.tex)) (pgfutil-latex.def) (pgfrcs.code.tex
+(pgf.revision.tex))) (pgfcore.sty (pgfsys.sty (pgfsys.code.tex
+(pgfkeys.code.tex (pgfkeysfiltered.code.tex)) (pgf.cfg) (pgfsys-xetex.def
+(pgfsys-dvipdfmx.def (pgfsys-common-pdf.def)))) (pgfsyssoftpath.code.tex)
+(pgfsysprotocol.code.tex)) (pgfcore.code.tex (pgfmath.code.tex
+(pgfmathcalc.code.tex (pgfmathutil.code.tex) (pgfmathparser.code.tex)
+(pgfmathfunctions.code.tex (pgfmathfunctions.basic.code.tex)
+(pgfmathfunctions.trigonometric.code.tex) (pgfmathfunctions.random.code.tex)
+(pgfmathfunctions.comparison.code.tex) (pgfmathfunctions.base.code.tex)
+(pgfmathfunctions.round.code.tex) (pgfmathfunctions.misc.code.tex)
+(pgfmathfunctions.integerarithmetics.code.tex))) (pgfmathfloat.code.tex))
+(pgfint.code.tex) (pgfcorepoints.code.tex) (pgfcorepathconstruct.code.tex)
+(pgfcorepathusage.code.tex) (pgfcorescopes.code.tex)
+(pgfcoregraphicstate.code.tex) (pgfcoretransformations.code.tex)
+(pgfcorequick.code.tex) (pgfcoreobjects.code.tex)
+(pgfcorepathprocessing.code.tex) (pgfcorearrows.code.tex)
+(pgfcoreshade.code.tex) (pgfcoreimage.code.tex (pgfcoreexternal.code.tex))
+(pgfcorelayers.code.tex) (pgfcoretransparency.code.tex)
+(pgfcorepatterns.code.tex) (pgfcorerdf.code.tex))) (pgfmoduleshapes.code.tex)
+(pgfmoduleplot.code.tex) (pgfcomp-version-0-65.sty) (pgfcomp-version-1-18.sty))
+ (verbatim.sty) (environ.sty (trimspaces.sty))) (tikz.sty (pgffor.sty
+(pgfkeys.sty (pgfkeys.code.tex)) (pgfmath.sty (pgfmath.code.tex))
+(pgffor.code.tex (pgfmath.code.tex))) (tikz.code.tex
+(pgflibraryplothandlers.code.tex) (pgfmodulematrix.code.tex)
+(tikzlibrarytopaths.code.tex))) (newtxtext.sty
+`newtxtext' v1.71, 2022/02/28 Text macros taking advantage of TeXGyre Termes an
+d its extensions (msharpe) (xkeyval.sty (xkeyval (xkvutils))) (textcomp.sty)
+(xstring.sty (xstring.tex)) (ifthen.sty) (scalefnt.sty) (binhex)
+ntx@otftexttrue
+(fontspec.sty (fontspec-xetex.sty (fontenc.sty) (fontspec.cfg)))
+(realscripts.sty)) (newtxmath.sty
+`newtxmath' v1.71, 2022/01/16 Math macros based originally on txfonts (msharpe)
+(ifxetex.sty) (ifluatex.sty) (centernot.sty) (binhex)
+amsthm NOT loaded
+) (microtype.sty (microtype-xetex.def) (microtype.cfg)) (hyperref.sty
+(ltxcmds.sty) (pdftexcmds.sty (infwarerr.sty)) (kvsetkeys.sty)
+(kvdefinekeys.sty) (pdfescape.sty) (hycolor.sty) (letltxmacro.sty) (auxhook.sty
+) (kvoptions.sty) (pd1enc.def) (intcalc.sty) (etexcmds.sty) (puenc.def)warning: hyperref.sty:4873: Requested font "pzdr" at 0.00002pt
+warning: hyperref.sty:4873:  -> pzdr
+
+(bitset.sty (bigintcalc.sty)) (atbegshi-ltx.sty)) (hxetex.def (stringenc.sty)
+(rerunfilecheck.sty (atveryend-ltx.sty) (uniquecounter.sty))) (cleveref.sty))
+(tabularx.sty) (tikzlibrarypositioning.code.tex)
+(pgflibraryarrows.meta.code.tex) (TeXGyreTermesX.fontspec)warning: latex_FCS2.txt:60:
+Requested font "[TeXGyreTermesX-Regular.otf]/OT" at 8.99997pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Regular.otf]/OT" at 9.00003pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;" at 9.00003pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Bold.otf]/OT:script=latn;language=dflt;" at 9.00003pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Italic.otf]/OT:script=latn;language=dflt;" at 9.00003pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Slanted.otf]/OT:script=latn;language=dflt;" at 9.00003pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-BoldItalic.otf]/OT:script=latn;language=dflt;" at 9.00003pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-BoldSlanted.otf]/OT:script=latn;language=dflt;" at 9.00003pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 9.0pt
+
+No file latex_FCS2.aux.
+(omlntxmi.fd) (ts1cmr.fd) (untxexa.fd) (lmsntxsy.fd) (lmxntxexx.fd)
+(ragged2e.sty)
+*geometry* driver: auto-detecting
+*geometry* detected driver: xetex
+(nameref.sty (refcount.sty) (gettitlestring.sty))
+
+Package hyperref Warning: Rerun to get /PageLabels entry.
+
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 11.0pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 18.0pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Bold.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 18.0pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 10.0pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;+sups;mapping=tex-text;" at 9.0pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Bold.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 9.0pt
+
+LaTeX Warning: Reference `1' on page 1 undefined on input line 60.
+
+
+LaTeX Warning: Reference `2' on page 1 undefined on input line 60.
+
+
+LaTeX Warning: Reference `3' on page 1 undefined on input line 60.
+
+
+LaTeX Warning: Reference `4' on page 1 undefined on input line 60.
+
+
+LaTeX Warning: Reference `5' on page 1 undefined on input line 60.
+
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 14.4pt
+(umvs.fd)warning: latex_FCS2.txt:60:
+Requested font "umvs" at 14.4pt
+warning: latex_FCS2.txt:60:  -> umvs
+ (mt-mvs.cfg)
+
+LaTeX Warning: Reference `1' on page 1 undefined on input line 60.
+
+warning: latex_FCS2.txt:62: Requested font "[TeXGyreTermesX-Bold.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 11.0pt
+(ot1minntx.fd)warning: latex_FCS2.txt:62:
+Requested font "ntx-Regular-tlf-ot1" at 10.95pt
+warning: latex_FCS2.txt:62:  -> ntx-Regular-tlf-ot1
+warning: latex_FCS2.txt:62: Requested font "ntx-Regular-tlf-ot1" at 8.0pt
+warning: latex_FCS2.txt:62:  -> ntx-Regular-tlf-ot1
+warning: latex_FCS2.txt:62: Requested font "ntx-Regular-tlf-ot1" at 6.1pt
+warning: latex_FCS2.txt:62:  -> ntx-Regular-tlf-ot1
+warning: latex_FCS2.txt:62: Requested font "ntxmi" at 10.95pt
+warning: latex_FCS2.txt:62:  -> ntxmi
+warning: latex_FCS2.txt:62: Requested font "ntxmi7" at 8.0pt
+warning: latex_FCS2.txt:62:  -> ntxmi7
+warning: latex_FCS2.txt:62: Requested font "ntxmi5" at 6.1pt
+warning: latex_FCS2.txt:62:  -> ntxmi5
+warning: latex_FCS2.txt:62: Requested font "ntxsy" at 10.95pt
+warning: latex_FCS2.txt:62:  -> ntxsy
+warning: latex_FCS2.txt:62: Requested font "ntxsy7" at 8.0pt
+warning: latex_FCS2.txt:62:  -> ntxsy7
+warning: latex_FCS2.txt:62: Requested font "ntxsy5" at 6.1pt
+warning: latex_FCS2.txt:62:  -> ntxsy5
+warning: latex_FCS2.txt:62: Requested font "ntxexx" at 10.95pt
+warning: latex_FCS2.txt:62:  -> ntxexx
+warning: latex_FCS2.txt:62: Requested font "ntxexx" at 8.0pt
+warning: latex_FCS2.txt:62:  -> ntxexx
+warning: latex_FCS2.txt:62: Requested font "ntxexx" at 6.1pt
+warning: latex_FCS2.txt:62:  -> ntxexx
+ (umsa.fd)warning: latex_FCS2.txt:62:
+Requested font "msam10" at 10.95pt
+warning: latex_FCS2.txt:62:  -> msam10
+ (mt-msa.cfg)warning: latex_FCS2.txt:62:
+Requested font "msam10" at 8.0pt
+warning: latex_FCS2.txt:62:  -> msam10
+warning: latex_FCS2.txt:62: Requested font "msam7" at 6.1pt
+warning: latex_FCS2.txt:62:  -> msam7
+ (umsb.fd)warning: latex_FCS2.txt:62:
+Requested font "msbm10" at 10.95pt
+warning: latex_FCS2.txt:62:  -> msbm10
+ (mt-msb.cfg)warning: latex_FCS2.txt:62:
+Requested font "msbm10" at 8.0pt
+warning: latex_FCS2.txt:62:  -> msbm10
+warning: latex_FCS2.txt:62: Requested font "msbm7" at 6.1pt
+warning: latex_FCS2.txt:62:  -> msbm7
+ (untxmia.fd)warning: latex_FCS2.txt:62:
+Requested font "ntxmia" at 10.95pt
+warning: latex_FCS2.txt:62:  -> ntxmia
+warning: latex_FCS2.txt:62: Requested font "ntxmia" at 8.0pt
+warning: latex_FCS2.txt:62:  -> ntxmia
+warning: latex_FCS2.txt:62: Requested font "ntxmia" at 6.1pt
+warning: latex_FCS2.txt:62:  -> ntxmia
+
+(untxsym.fd)warning: latex_FCS2.txt:62:
+Requested font "ntxsym" at 10.95pt
+warning: latex_FCS2.txt:62:  -> ntxsym
+warning: latex_FCS2.txt:62: Requested font "ntxsym" at 8.0pt
+warning: latex_FCS2.txt:62:  -> ntxsym
+warning: latex_FCS2.txt:62: Requested font "ntxsym" at 6.1pt
+warning: latex_FCS2.txt:62:  -> ntxsym
+ (untxsyc.fd)warning: latex_FCS2.txt:62:
+Requested font "ntxsyc" at 10.95pt
+warning: latex_FCS2.txt:62:  -> ntxsyc
+warning: latex_FCS2.txt:62: Requested font "ntxsyc" at 8.0pt
+warning: latex_FCS2.txt:62:  -> ntxsyc
+warning: latex_FCS2.txt:62: Requested font "ntxsyc" at 6.1pt
+warning: latex_FCS2.txt:62:  -> ntxsyc
+warning: latex_FCS2.txt:62: Requested font "ntxexa" at 10.95pt
+warning: latex_FCS2.txt:62:  -> ntxexa
+warning: latex_FCS2.txt:62: Requested font "ntxexa" at 8.0pt
+warning: latex_FCS2.txt:62:  -> ntxexa
+warning: latex_FCS2.txt:62: Requested font "ntxexa" at 6.1pt
+warning: latex_FCS2.txt:62:  -> ntxexa
+
+
+LaTeX Warning: Citation `ross2011dagger' on page 1 undefined on input line 104.
+
+
+
+LaTeX Warning: Citation `schulman2017ppo' on page 1 undefined on input line 107
+.
+
+
+LaTeX Warning: Citation `raffin2021sb3' on page 1 undefined on input line 108.
+
+
+warning: latex_FCS2.txt:110: Underfull \vbox (badness 1460) has occurred while \output is active
+warning: latex_FCS2.txt:110: Requested font "[lmsans10-bold]:mapping=tex-text;" at 9.0pt
+warning: latex_FCS2.txt:110: Requested font "[TeXGyreTermesX-Italic.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 9.0pt
+warning: latex_FCS2.txt:110: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 7.0pt
+warning: latex_FCS2.txt:110: Requested font "ntx-Regular-tlf-ot1" at 7.3pt
+warning: latex_FCS2.txt:110:  -> ntx-Regular-tlf-ot1
+warning: latex_FCS2.txt:110: Requested font "ntx-Regular-tlf-ot1" at 5.5pt
+warning: latex_FCS2.txt:110:  -> ntx-Regular-tlf-ot1
+warning: latex_FCS2.txt:110: Requested font "ntxmi7" at 7.3pt
+warning: latex_FCS2.txt:110:  -> ntxmi7
+warning: latex_FCS2.txt:110: Requested font "ntxmi5" at 5.5pt
+warning: latex_FCS2.txt:110:  -> ntxmi5
+warning: latex_FCS2.txt:110: Requested font "ntxsy7" at 7.3pt
+warning: latex_FCS2.txt:110:  -> ntxsy7
+warning: latex_FCS2.txt:110: Requested font "ntxsy5" at 5.5pt
+warning: latex_FCS2.txt:110:  -> ntxsy5
+warning: latex_FCS2.txt:110: Requested font "ntxexx" at 7.3pt
+warning: latex_FCS2.txt:110:  -> ntxexx
+warning: latex_FCS2.txt:110: Requested font "ntxexx" at 5.5pt
+warning: latex_FCS2.txt:110:  -> ntxexx
+warning: latex_FCS2.txt:110: Requested font "msam7" at 7.3pt
+warning: latex_FCS2.txt:110:  -> msam7
+warning: latex_FCS2.txt:110: Requested font "msam5" at 5.5pt
+warning: latex_FCS2.txt:110:  -> msam5
+warning: latex_FCS2.txt:110: Requested font "msbm7" at 7.3pt
+warning: latex_FCS2.txt:110:  -> msbm7
+warning: latex_FCS2.txt:110: Requested font "msbm5" at 5.5pt
+warning: latex_FCS2.txt:110:  -> msbm5
+warning: latex_FCS2.txt:110: Requested font "ntxmia" at 7.3pt
+warning: latex_FCS2.txt:110:  -> ntxmia
+warning: latex_FCS2.txt:110: Requested font "ntxmia" at 5.5pt
+warning: latex_FCS2.txt:110:  -> ntxmia
+warning: latex_FCS2.txt:110: Requested font "ntxsym" at 7.3pt
+warning: latex_FCS2.txt:110:  -> ntxsym
+warning: latex_FCS2.txt:110: Requested font "ntxsym" at 5.5pt
+warning: latex_FCS2.txt:110:  -> ntxsym
+warning: latex_FCS2.txt:110: Requested font "ntxsyc" at 7.3pt
+warning: latex_FCS2.txt:110:  -> ntxsyc
+warning: latex_FCS2.txt:110: Requested font "ntxsyc" at 5.5pt
+warning: latex_FCS2.txt:110:  -> ntxsyc
+warning: latex_FCS2.txt:110: Requested font "ntxexa" at 7.3pt
+warning: latex_FCS2.txt:110:  -> ntxexa
+warning: latex_FCS2.txt:110: Requested font "ntxexa" at 5.5pt
+warning: latex_FCS2.txt:110:  -> ntxexa
+Underfull \vbox (badness 1460) has occurred while \output is active [1]
+
+LaTeX Warning: Citation `zaheer2017deepsets' on page 2 undefined on input line
+112.
+
+
+LaTeX Warning: Citation `lee2019settransformer' on page 2 undefined on input li
+ne 112.
+
+
+LaTeX Warning: Citation `chen2019crowd' on page 2 undefined on input line 113.
+
+
+LaTeX Warning: Citation `cobbe2019generalization' on page 2 undefined on input
+line 118.
+
+
+LaTeX Warning: Citation `kaelbling1998pomdp' on page 2 undefined on input line
+122.
+
+
+LaTeX Warning: Citation `vandenberg2011orca' on page 2 undefined on input line
+126.
+
+
+LaTeX Warning: Citation `agarwal2021precipice' on page 2 undefined on input lin
+e 130.
+
+warning: latex_FCS2.txt:136: Requested font "[TeXGyreTermesX-Bold.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 10.0pt
+warning: latex_FCS2.txt:136: Requested font "[TeXGyreTermesX-Bold.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 7.0pt
+warning: latex_FCS2.txt:140: Requested font "ntx-Regular-tlf-ot1" at 9.0pt
+warning: latex_FCS2.txt:140:  -> ntx-Regular-tlf-ot1
+warning: latex_FCS2.txt:140: Requested font "ntxmi" at 9.0pt
+warning: latex_FCS2.txt:140:  -> ntxmi
+warning: latex_FCS2.txt:140: Requested font "ntxsy" at 9.0pt
+warning: latex_FCS2.txt:140:  -> ntxsy
+warning: latex_FCS2.txt:140: Requested font "ntxexx" at 9.0pt
+warning: latex_FCS2.txt:140:  -> ntxexx
+warning: latex_FCS2.txt:140: Requested font "msam10" at 9.0pt
+warning: latex_FCS2.txt:140:  -> msam10
+warning: latex_FCS2.txt:140: Requested font "msbm10" at 9.0pt
+warning: latex_FCS2.txt:140:  -> msbm10
+warning: latex_FCS2.txt:140: Requested font "ntxmia" at 9.0pt
+warning: latex_FCS2.txt:140:  -> ntxmia
+warning: latex_FCS2.txt:140: Requested font "ntxsym" at 9.0pt
+warning: latex_FCS2.txt:140:  -> ntxsym
+warning: latex_FCS2.txt:140: Requested font "ntxsyc" at 9.0pt
+warning: latex_FCS2.txt:140:  -> ntxsyc
+warning: latex_FCS2.txt:140: Requested font "ntxexa" at 9.0pt
+warning: latex_FCS2.txt:140:  -> ntxexa
+warning: latex_FCS2.txt:157: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 7.3pt
+warning: latex_FCS2.txt:157: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 5.5pt
+warning: latex_FCS2.txt:215: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 8.0pt
+[2]
+
+LaTeX Font Warning: Font shape `TU/cmtt/m/n' undefined
+(Font)              using `TU/lmr/m/n' instead on input line 258.
+
+(mt-LatinModernRoman.cfg)
+
+LaTeX Warning: Reference `tab:scenes' on page 3 undefined on input line 266.
+
+
+LaTeX Warning: Reference `tab:success' on page 3 undefined on input line 340.
+
+[3]
+
+LaTeX Warning: Reference `tab:densecounts' on page 4 undefined on input line 39
+1.
+
+
+warning: latex_FCS2.txt:438: Underfull \hbox (badness 2020) in paragraph at lines 432--438
+Underfull \hbox (badness 2020) in paragraph at lines 432--438
+[]\TU/TeXGyreTermesX(0)/m/n/9 Return is consistent with the large stage gap: S2
+0 nominal
+
+warning: latex_FCS2.txt:439: Underfull \hbox (badness 10000) in paragraph at lines 439--439
+Underfull \hbox (badness 10000) in paragraph at lines 439--439
+|[]\TU/TeXGyreTermesX(0)/b/n/11 INTERPRETATION AND NEXT METHOD
+
+warning: latex_FCS2.txt:498: Underfull \hbox (badness 1112) in paragraph at lines 490--498
+Underfull \hbox (badness 1112) in paragraph at lines 490--498
+\TU/TeXGyreTermesX(0)/m/n/9 The teacher–IL–PPO comparison localizes the major l
+arge-crowd
+[4]
+No file latex_FCS2.bbl.
+[5] (latex_FCS2.aux)
+
+LaTeX Font Warning: Some font shapes were not available, defaults substituted.
+
+
+LaTeX Warning: There were undefined references.
+
+
+LaTeX Warning: Label(s) may have changed. Rerun to get cross-references right.
+
+
+Package rerunfilecheck Warning: File `latex_FCS2.out' has changed.
+(rerunfilecheck)                Rerun to get outlines right
+(rerunfilecheck)                or use package `bookmark'.
+
+ )
+(see the transcript file for additional information)
+Output written on latex_FCS2.xdv (5 pages, 254440 bytes).
+Transcript written on latex_FCS2.log.
+note: Running BibTeX on latex_FCS2.aux ...
+note: Rerunning TeX because I was told to ...
+(latex_FCS2.txt
+LaTeX2e <2021-11-15> patch level 1
+L3 programming layer <2022-02-24> (fcs.cls
+Document Class: fcs 2026/06/11 vv1.5 Front. Comput. Sci journal template
+(xparse.sty (expl3.sty (l3backend-xetex.def))) (xtemplate.sty) (l3keys2e.sty)
+(extarticle.cls
+Document Class: extarticle 1996/10/08 v1.0 Non Standard LaTeX document class
+(size9.clo) (exscale.sty)) (amsmath.sty
+For additional information on amsmath, use the `?' option.
+(amstext.sty (amsgen.sty)) (amsbsy.sty) (amsopn.sty)) (amssymb.sty
+(amsfonts.sty)) (amsthm.sty) (caption.sty (caption3.sty (keyval.sty)))
+(fancyhdr.sty) (geometry.sty (ifvtex.sty (iftex.sty))) (graphicx.sty
+(graphics.sty (trig.sty) (graphics.cfg) (xetex.def))) (marvosym.sty)
+(titlesec.sty) (array.sty) (booktabs.sty) (cite.sty) (etoolbox.sty)
+(enumitem.sty) (flushend.sty) (xurl.sty (url.sty)) (eso-pic.sty (xcolor.sty
+(color.cfg))) (tcolorbox.sty (pgf.sty (pgfrcs.sty (pgfutil-common.tex
+(pgfutil-common-lists.tex)) (pgfutil-latex.def) (pgfrcs.code.tex
+(pgf.revision.tex))) (pgfcore.sty (pgfsys.sty (pgfsys.code.tex
+(pgfkeys.code.tex (pgfkeysfiltered.code.tex)) (pgf.cfg) (pgfsys-xetex.def
+(pgfsys-dvipdfmx.def (pgfsys-common-pdf.def)))) (pgfsyssoftpath.code.tex)
+(pgfsysprotocol.code.tex)) (pgfcore.code.tex (pgfmath.code.tex
+(pgfmathcalc.code.tex (pgfmathutil.code.tex) (pgfmathparser.code.tex)
+(pgfmathfunctions.code.tex (pgfmathfunctions.basic.code.tex)
+(pgfmathfunctions.trigonometric.code.tex) (pgfmathfunctions.random.code.tex)
+(pgfmathfunctions.comparison.code.tex) (pgfmathfunctions.base.code.tex)
+(pgfmathfunctions.round.code.tex) (pgfmathfunctions.misc.code.tex)
+(pgfmathfunctions.integerarithmetics.code.tex))) (pgfmathfloat.code.tex))
+(pgfint.code.tex) (pgfcorepoints.code.tex) (pgfcorepathconstruct.code.tex)
+(pgfcorepathusage.code.tex) (pgfcorescopes.code.tex)
+(pgfcoregraphicstate.code.tex) (pgfcoretransformations.code.tex)
+(pgfcorequick.code.tex) (pgfcoreobjects.code.tex)
+(pgfcorepathprocessing.code.tex) (pgfcorearrows.code.tex)
+(pgfcoreshade.code.tex) (pgfcoreimage.code.tex (pgfcoreexternal.code.tex))
+(pgfcorelayers.code.tex) (pgfcoretransparency.code.tex)
+(pgfcorepatterns.code.tex) (pgfcorerdf.code.tex))) (pgfmoduleshapes.code.tex)
+(pgfmoduleplot.code.tex) (pgfcomp-version-0-65.sty) (pgfcomp-version-1-18.sty))
+ (verbatim.sty) (environ.sty (trimspaces.sty))) (tikz.sty (pgffor.sty
+(pgfkeys.sty (pgfkeys.code.tex)) (pgfmath.sty (pgfmath.code.tex))
+(pgffor.code.tex (pgfmath.code.tex))) (tikz.code.tex
+(pgflibraryplothandlers.code.tex) (pgfmodulematrix.code.tex)
+(tikzlibrarytopaths.code.tex))) (newtxtext.sty
+`newtxtext' v1.71, 2022/02/28 Text macros taking advantage of TeXGyre Termes an
+d its extensions (msharpe) (xkeyval.sty (xkeyval (xkvutils))) (textcomp.sty)
+(xstring.sty (xstring.tex)) (ifthen.sty) (scalefnt.sty) (binhex)
+ntx@otftexttrue
+(fontspec.sty (fontspec-xetex.sty (fontenc.sty) (fontspec.cfg)))
+(realscripts.sty)) (newtxmath.sty
+`newtxmath' v1.71, 2022/01/16 Math macros based originally on txfonts (msharpe)
+(ifxetex.sty) (ifluatex.sty) (centernot.sty) (binhex)
+amsthm NOT loaded
+) (microtype.sty (microtype-xetex.def) (microtype.cfg)) (hyperref.sty
+(ltxcmds.sty) (pdftexcmds.sty (infwarerr.sty)) (kvsetkeys.sty)
+(kvdefinekeys.sty) (pdfescape.sty) (hycolor.sty) (letltxmacro.sty) (auxhook.sty
+) (kvoptions.sty) (pd1enc.def) (intcalc.sty) (etexcmds.sty) (puenc.def)warning: hyperref.sty:4873: Requested font "pzdr" at 0.00002pt
+warning: hyperref.sty:4873:  -> pzdr
+
+(bitset.sty (bigintcalc.sty)) (atbegshi-ltx.sty)) (hxetex.def (stringenc.sty)
+(rerunfilecheck.sty (atveryend-ltx.sty) (uniquecounter.sty))) (cleveref.sty))
+(tabularx.sty) (tikzlibrarypositioning.code.tex)
+(pgflibraryarrows.meta.code.tex) (TeXGyreTermesX.fontspec)warning: latex_FCS2.txt:60:
+Requested font "[TeXGyreTermesX-Regular.otf]/OT" at 8.99997pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Regular.otf]/OT" at 9.00003pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;" at 9.00003pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Bold.otf]/OT:script=latn;language=dflt;" at 9.00003pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Italic.otf]/OT:script=latn;language=dflt;" at 9.00003pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Slanted.otf]/OT:script=latn;language=dflt;" at 9.00003pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-BoldItalic.otf]/OT:script=latn;language=dflt;" at 9.00003pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-BoldSlanted.otf]/OT:script=latn;language=dflt;" at 9.00003pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 9.0pt
+ (latex_FCS2.aux)
+(omlntxmi.fd) (ts1cmr.fd) (untxexa.fd) (lmsntxsy.fd) (lmxntxexx.fd)
+(ragged2e.sty)
+*geometry* driver: auto-detecting
+*geometry* detected driver: xetex
+(nameref.sty (refcount.sty) (gettitlestring.sty)) (latex_FCS2.out)
+(latex_FCS2.out)warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 11.0pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 18.0pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Bold.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 18.0pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 10.0pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;+sups;mapping=tex-text;" at 9.0pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 14.4pt
+ (umvs.fd)warning: latex_FCS2.txt:60:
+Requested font "umvs" at 14.4pt
+warning: latex_FCS2.txt:60:  -> umvs
+ (mt-mvs.cfg)warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Bold.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 9.0pt
+warning: latex_FCS2.txt:62: Requested font "[TeXGyreTermesX-Bold.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 11.0pt
+ (ot1minntx.fd)warning: latex_FCS2.txt:62:
+Requested font "ntx-Regular-tlf-ot1" at 10.95pt
+warning: latex_FCS2.txt:62:  -> ntx-Regular-tlf-ot1
+warning: latex_FCS2.txt:62: Requested font "ntx-Regular-tlf-ot1" at 8.0pt
+warning: latex_FCS2.txt:62:  -> ntx-Regular-tlf-ot1
+warning: latex_FCS2.txt:62: Requested font "ntx-Regular-tlf-ot1" at 6.1pt
+warning: latex_FCS2.txt:62:  -> ntx-Regular-tlf-ot1
+warning: latex_FCS2.txt:62: Requested font "ntxmi" at 10.95pt
+warning: latex_FCS2.txt:62:  -> ntxmi
+warning: latex_FCS2.txt:62: Requested font "ntxmi7" at 8.0pt
+warning: latex_FCS2.txt:62:  -> ntxmi7
+warning: latex_FCS2.txt:62: Requested font "ntxmi5" at 6.1pt
+warning: latex_FCS2.txt:62:  -> ntxmi5
+warning: latex_FCS2.txt:62: Requested font "ntxsy" at 10.95pt
+warning: latex_FCS2.txt:62:  -> ntxsy
+warning: latex_FCS2.txt:62: Requested font "ntxsy7" at 8.0pt
+warning: latex_FCS2.txt:62:  -> ntxsy7
+warning: latex_FCS2.txt:62: Requested font "ntxsy5" at 6.1pt
+warning: latex_FCS2.txt:62:  -> ntxsy5
+warning: latex_FCS2.txt:62: Requested font "ntxexx" at 10.95pt
+warning: latex_FCS2.txt:62:  -> ntxexx
+warning: latex_FCS2.txt:62: Requested font "ntxexx" at 8.0pt
+warning: latex_FCS2.txt:62:  -> ntxexx
+warning: latex_FCS2.txt:62: Requested font "ntxexx" at 6.1pt
+warning: latex_FCS2.txt:62:  -> ntxexx
+ (umsa.fd)warning: latex_FCS2.txt:62:
+Requested font "msam10" at 10.95pt
+warning: latex_FCS2.txt:62:  -> msam10
+ (mt-msa.cfg)warning: latex_FCS2.txt:62:
+Requested font "msam10" at 8.0pt
+warning: latex_FCS2.txt:62:  -> msam10
+warning: latex_FCS2.txt:62: Requested font "msam7" at 6.1pt
+warning: latex_FCS2.txt:62:  -> msam7
+
+(umsb.fd)warning: latex_FCS2.txt:62:
+Requested font "msbm10" at 10.95pt
+warning: latex_FCS2.txt:62:  -> msbm10
+ (mt-msb.cfg)warning: latex_FCS2.txt:62:
+Requested font "msbm10" at 8.0pt
+warning: latex_FCS2.txt:62:  -> msbm10
+warning: latex_FCS2.txt:62: Requested font "msbm7" at 6.1pt
+warning: latex_FCS2.txt:62:  -> msbm7
+ (untxmia.fd)warning: latex_FCS2.txt:62:
+Requested font "ntxmia" at 10.95pt
+warning: latex_FCS2.txt:62:  -> ntxmia
+warning: latex_FCS2.txt:62: Requested font "ntxmia" at 8.0pt
+warning: latex_FCS2.txt:62:  -> ntxmia
+warning: latex_FCS2.txt:62: Requested font "ntxmia" at 6.1pt
+warning: latex_FCS2.txt:62:  -> ntxmia
+ (untxsym.fd)warning: latex_FCS2.txt:62:
+Requested font "ntxsym" at 10.95pt
+warning: latex_FCS2.txt:62:  -> ntxsym
+warning: latex_FCS2.txt:62: Requested font "ntxsym" at 8.0pt
+warning: latex_FCS2.txt:62:  -> ntxsym
+warning: latex_FCS2.txt:62: Requested font "ntxsym" at 6.1pt
+warning: latex_FCS2.txt:62:  -> ntxsym
+ (untxsyc.fd)warning: latex_FCS2.txt:62:
+Requested font "ntxsyc" at 10.95pt
+warning: latex_FCS2.txt:62:  -> ntxsyc
+warning: latex_FCS2.txt:62: Requested font "ntxsyc" at 8.0pt
+warning: latex_FCS2.txt:62:  -> ntxsyc
+warning: latex_FCS2.txt:62: Requested font "ntxsyc" at 6.1pt
+warning: latex_FCS2.txt:62:  -> ntxsyc
+warning: latex_FCS2.txt:62: Requested font "ntxexa" at 10.95pt
+warning: latex_FCS2.txt:62:  -> ntxexa
+warning: latex_FCS2.txt:62: Requested font "ntxexa" at 8.0pt
+warning: latex_FCS2.txt:62:  -> ntxexa
+warning: latex_FCS2.txt:62: Requested font "ntxexa" at 6.1pt
+warning: latex_FCS2.txt:62:  -> ntxexa
+
+
+LaTeX Warning: Citation `ross2011dagger' on page 1 undefined on input line 104.
+
+
+
+LaTeX Warning: Citation `schulman2017ppo' on page 1 undefined on input line 107
+.
+
+
+LaTeX Warning: Citation `raffin2021sb3' on page 1 undefined on input line 108.
+
+
+warning: latex_FCS2.txt:110: Underfull \vbox (badness 1460) has occurred while \output is active
+warning: latex_FCS2.txt:110: Requested font "[lmsans10-bold]:mapping=tex-text;" at 9.0pt
+warning: latex_FCS2.txt:110: Requested font "[TeXGyreTermesX-Italic.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 9.0pt
+warning: latex_FCS2.txt:110: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 7.0pt
+warning: latex_FCS2.txt:110: Requested font "ntx-Regular-tlf-ot1" at 7.3pt
+warning: latex_FCS2.txt:110:  -> ntx-Regular-tlf-ot1
+warning: latex_FCS2.txt:110: Requested font "ntx-Regular-tlf-ot1" at 5.5pt
+warning: latex_FCS2.txt:110:  -> ntx-Regular-tlf-ot1
+warning: latex_FCS2.txt:110: Requested font "ntxmi7" at 7.3pt
+warning: latex_FCS2.txt:110:  -> ntxmi7
+warning: latex_FCS2.txt:110: Requested font "ntxmi5" at 5.5pt
+warning: latex_FCS2.txt:110:  -> ntxmi5
+warning: latex_FCS2.txt:110: Requested font "ntxsy7" at 7.3pt
+warning: latex_FCS2.txt:110:  -> ntxsy7
+warning: latex_FCS2.txt:110: Requested font "ntxsy5" at 5.5pt
+warning: latex_FCS2.txt:110:  -> ntxsy5
+warning: latex_FCS2.txt:110: Requested font "ntxexx" at 7.3pt
+warning: latex_FCS2.txt:110:  -> ntxexx
+warning: latex_FCS2.txt:110: Requested font "ntxexx" at 5.5pt
+warning: latex_FCS2.txt:110:  -> ntxexx
+warning: latex_FCS2.txt:110: Requested font "msam7" at 7.3pt
+warning: latex_FCS2.txt:110:  -> msam7
+warning: latex_FCS2.txt:110: Requested font "msam5" at 5.5pt
+warning: latex_FCS2.txt:110:  -> msam5
+warning: latex_FCS2.txt:110: Requested font "msbm7" at 7.3pt
+warning: latex_FCS2.txt:110:  -> msbm7
+warning: latex_FCS2.txt:110: Requested font "msbm5" at 5.5pt
+warning: latex_FCS2.txt:110:  -> msbm5
+warning: latex_FCS2.txt:110: Requested font "ntxmia" at 7.3pt
+warning: latex_FCS2.txt:110:  -> ntxmia
+warning: latex_FCS2.txt:110: Requested font "ntxmia" at 5.5pt
+warning: latex_FCS2.txt:110:  -> ntxmia
+warning: latex_FCS2.txt:110: Requested font "ntxsym" at 7.3pt
+warning: latex_FCS2.txt:110:  -> ntxsym
+warning: latex_FCS2.txt:110: Requested font "ntxsym" at 5.5pt
+warning: latex_FCS2.txt:110:  -> ntxsym
+warning: latex_FCS2.txt:110: Requested font "ntxsyc" at 7.3pt
+warning: latex_FCS2.txt:110:  -> ntxsyc
+warning: latex_FCS2.txt:110: Requested font "ntxsyc" at 5.5pt
+warning: latex_FCS2.txt:110:  -> ntxsyc
+warning: latex_FCS2.txt:110: Requested font "ntxexa" at 7.3pt
+warning: latex_FCS2.txt:110:  -> ntxexa
+warning: latex_FCS2.txt:110: Requested font "ntxexa" at 5.5pt
+warning: latex_FCS2.txt:110:  -> ntxexa
+Underfull \vbox (badness 1460) has occurred while \output is active [1]
+
+LaTeX Warning: Citation `zaheer2017deepsets' on page 2 undefined on input line
+112.
+
+
+LaTeX Warning: Citation `lee2019settransformer' on page 2 undefined on input li
+ne 112.
+
+
+LaTeX Warning: Citation `chen2019crowd' on page 2 undefined on input line 113.
+
+
+LaTeX Warning: Citation `cobbe2019generalization' on page 2 undefined on input
+line 118.
+
+
+LaTeX Warning: Citation `kaelbling1998pomdp' on page 2 undefined on input line
+122.
+
+
+LaTeX Warning: Citation `vandenberg2011orca' on page 2 undefined on input line
+126.
+
+
+LaTeX Warning: Citation `agarwal2021precipice' on page 2 undefined on input lin
+e 130.
+
+warning: latex_FCS2.txt:136: Requested font "[TeXGyreTermesX-Bold.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 10.0pt
+warning: latex_FCS2.txt:136: Requested font "[TeXGyreTermesX-Bold.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 7.0pt
+warning: latex_FCS2.txt:140: Requested font "ntx-Regular-tlf-ot1" at 9.0pt
+warning: latex_FCS2.txt:140:  -> ntx-Regular-tlf-ot1
+warning: latex_FCS2.txt:140: Requested font "ntxmi" at 9.0pt
+warning: latex_FCS2.txt:140:  -> ntxmi
+warning: latex_FCS2.txt:140: Requested font "ntxsy" at 9.0pt
+warning: latex_FCS2.txt:140:  -> ntxsy
+warning: latex_FCS2.txt:140: Requested font "ntxexx" at 9.0pt
+warning: latex_FCS2.txt:140:  -> ntxexx
+warning: latex_FCS2.txt:140: Requested font "msam10" at 9.0pt
+warning: latex_FCS2.txt:140:  -> msam10
+warning: latex_FCS2.txt:140: Requested font "msbm10" at 9.0pt
+warning: latex_FCS2.txt:140:  -> msbm10
+warning: latex_FCS2.txt:140: Requested font "ntxmia" at 9.0pt
+warning: latex_FCS2.txt:140:  -> ntxmia
+warning: latex_FCS2.txt:140: Requested font "ntxsym" at 9.0pt
+warning: latex_FCS2.txt:140:  -> ntxsym
+warning: latex_FCS2.txt:140: Requested font "ntxsyc" at 9.0pt
+warning: latex_FCS2.txt:140:  -> ntxsyc
+warning: latex_FCS2.txt:140: Requested font "ntxexa" at 9.0pt
+warning: latex_FCS2.txt:140:  -> ntxexa
+warning: latex_FCS2.txt:157: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 7.3pt
+warning: latex_FCS2.txt:157: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 5.5pt
+warning: latex_FCS2.txt:215: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 8.0pt
+[2]
+
+LaTeX Font Warning: Font shape `TU/cmtt/m/n' undefined
+(Font)              using `TU/lmr/m/n' instead on input line 258.
+
+(mt-LatinModernRoman.cfg) [3]
+warning: latex_FCS2.txt:438: Underfull \hbox (badness 2020) in paragraph at lines 432--438
+Underfull \hbox (badness 2020) in paragraph at lines 432--438
+[]\TU/TeXGyreTermesX(0)/m/n/9 Return is consistent with the large stage gap: S2
+0 nominal
+
+warning: latex_FCS2.txt:439: Underfull \hbox (badness 10000) in paragraph at lines 439--439
+Underfull \hbox (badness 10000) in paragraph at lines 439--439
+|[]\TU/TeXGyreTermesX(0)/b/n/11 INTERPRETATION AND NEXT METHOD
+
+warning: latex_FCS2.txt:498: Underfull \hbox (badness 1112) in paragraph at lines 490--498
+Underfull \hbox (badness 1112) in paragraph at lines 490--498
+\TU/TeXGyreTermesX(0)/m/n/9 The teacher–IL–PPO comparison localizes the major l
+arge-crowd
+[4] (latex_FCS2.bblwarning: latex_FCS2.bbl:1: Requested font "[TeXGyreTermesX-Bold.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 5.5pt
+
+warning: latex_FCS2.bbl:44: Underfull \hbox (badness 1609) in paragraph at lines 39--44
+Underfull \hbox (badness 1609) in paragraph at lines 39--44
+[]\TU/TeXGyreTermesX(0)/m/n/9 Changan Chen, Yuejiang Liu, Sven Kreiss, and Alex
+andre
+
+warning: latex_FCS2.bbl:62: Underfull \hbox (badness 1178) in paragraph at lines 58--62
+Underfull \hbox (badness 1178) in paragraph at lines 58--62
+[]\TU/TeXGyreTermesX(0)/m/n/9 Jur van den Berg, Stephen J. Guy, Ming Lin, and D
+inesh
+
+warning: latex_FCS2.bbl:69: Underfull \hbox (badness 5161) in paragraph at lines 64--69
+Underfull \hbox (badness 5161) in paragraph at lines 64--69
+[]\TU/TeXGyreTermesX(0)/m/n/9 Rishabh Agarwal, Max Schwarzer, Pablo Samuel Cast
+ro,
+) [5] (latex_FCS2.aux)
+
+LaTeX Font Warning: Some font shapes were not available, defaults substituted.
+
+
+LaTeX Warning: There were undefined references.
+
+
+LaTeX Warning: Label(s) may have changed. Rerun to get cross-references right.
+
+ )
+(see the transcript file for additional information)
+Output written on latex_FCS2.xdv (5 pages, 284748 bytes).
+Transcript written on latex_FCS2.log.
+note: Rerunning TeX because I was told to ...
+(latex_FCS2.txt
+LaTeX2e <2021-11-15> patch level 1
+L3 programming layer <2022-02-24> (fcs.cls
+Document Class: fcs 2026/06/11 vv1.5 Front. Comput. Sci journal template
+(xparse.sty (expl3.sty (l3backend-xetex.def))) (xtemplate.sty) (l3keys2e.sty)
+(extarticle.cls
+Document Class: extarticle 1996/10/08 v1.0 Non Standard LaTeX document class
+(size9.clo) (exscale.sty)) (amsmath.sty
+For additional information on amsmath, use the `?' option.
+(amstext.sty (amsgen.sty)) (amsbsy.sty) (amsopn.sty)) (amssymb.sty
+(amsfonts.sty)) (amsthm.sty) (caption.sty (caption3.sty (keyval.sty)))
+(fancyhdr.sty) (geometry.sty (ifvtex.sty (iftex.sty))) (graphicx.sty
+(graphics.sty (trig.sty) (graphics.cfg) (xetex.def))) (marvosym.sty)
+(titlesec.sty) (array.sty) (booktabs.sty) (cite.sty) (etoolbox.sty)
+(enumitem.sty) (flushend.sty) (xurl.sty (url.sty)) (eso-pic.sty (xcolor.sty
+(color.cfg))) (tcolorbox.sty (pgf.sty (pgfrcs.sty (pgfutil-common.tex
+(pgfutil-common-lists.tex)) (pgfutil-latex.def) (pgfrcs.code.tex
+(pgf.revision.tex))) (pgfcore.sty (pgfsys.sty (pgfsys.code.tex
+(pgfkeys.code.tex (pgfkeysfiltered.code.tex)) (pgf.cfg) (pgfsys-xetex.def
+(pgfsys-dvipdfmx.def (pgfsys-common-pdf.def)))) (pgfsyssoftpath.code.tex)
+(pgfsysprotocol.code.tex)) (pgfcore.code.tex (pgfmath.code.tex
+(pgfmathcalc.code.tex (pgfmathutil.code.tex) (pgfmathparser.code.tex)
+(pgfmathfunctions.code.tex (pgfmathfunctions.basic.code.tex)
+(pgfmathfunctions.trigonometric.code.tex) (pgfmathfunctions.random.code.tex)
+(pgfmathfunctions.comparison.code.tex) (pgfmathfunctions.base.code.tex)
+(pgfmathfunctions.round.code.tex) (pgfmathfunctions.misc.code.tex)
+(pgfmathfunctions.integerarithmetics.code.tex))) (pgfmathfloat.code.tex))
+(pgfint.code.tex) (pgfcorepoints.code.tex) (pgfcorepathconstruct.code.tex)
+(pgfcorepathusage.code.tex) (pgfcorescopes.code.tex)
+(pgfcoregraphicstate.code.tex) (pgfcoretransformations.code.tex)
+(pgfcorequick.code.tex) (pgfcoreobjects.code.tex)
+(pgfcorepathprocessing.code.tex) (pgfcorearrows.code.tex)
+(pgfcoreshade.code.tex) (pgfcoreimage.code.tex (pgfcoreexternal.code.tex))
+(pgfcorelayers.code.tex) (pgfcoretransparency.code.tex)
+(pgfcorepatterns.code.tex) (pgfcorerdf.code.tex))) (pgfmoduleshapes.code.tex)
+(pgfmoduleplot.code.tex) (pgfcomp-version-0-65.sty) (pgfcomp-version-1-18.sty))
+ (verbatim.sty) (environ.sty (trimspaces.sty))) (tikz.sty (pgffor.sty
+(pgfkeys.sty (pgfkeys.code.tex)) (pgfmath.sty (pgfmath.code.tex))
+(pgffor.code.tex (pgfmath.code.tex))) (tikz.code.tex
+(pgflibraryplothandlers.code.tex) (pgfmodulematrix.code.tex)
+(tikzlibrarytopaths.code.tex))) (newtxtext.sty
+`newtxtext' v1.71, 2022/02/28 Text macros taking advantage of TeXGyre Termes an
+d its extensions (msharpe) (xkeyval.sty (xkeyval (xkvutils))) (textcomp.sty)
+(xstring.sty (xstring.tex)) (ifthen.sty) (scalefnt.sty) (binhex)
+ntx@otftexttrue
+(fontspec.sty (fontspec-xetex.sty (fontenc.sty) (fontspec.cfg)))
+(realscripts.sty)) (newtxmath.sty
+`newtxmath' v1.71, 2022/01/16 Math macros based originally on txfonts (msharpe)
+(ifxetex.sty) (ifluatex.sty) (centernot.sty) (binhex)
+amsthm NOT loaded
+) (microtype.sty (microtype-xetex.def) (microtype.cfg)) (hyperref.sty
+(ltxcmds.sty) (pdftexcmds.sty (infwarerr.sty)) (kvsetkeys.sty)
+(kvdefinekeys.sty) (pdfescape.sty) (hycolor.sty) (letltxmacro.sty) (auxhook.sty
+) (kvoptions.sty) (pd1enc.def) (intcalc.sty) (etexcmds.sty) (puenc.def)warning: hyperref.sty:4873: Requested font "pzdr" at 0.00002pt
+warning: hyperref.sty:4873:  -> pzdr
+
+(bitset.sty (bigintcalc.sty)) (atbegshi-ltx.sty)) (hxetex.def (stringenc.sty)
+(rerunfilecheck.sty (atveryend-ltx.sty) (uniquecounter.sty))) (cleveref.sty))
+(tabularx.sty) (tikzlibrarypositioning.code.tex)
+(pgflibraryarrows.meta.code.tex) (TeXGyreTermesX.fontspec)warning: latex_FCS2.txt:60:
+Requested font "[TeXGyreTermesX-Regular.otf]/OT" at 8.99997pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Regular.otf]/OT" at 9.00003pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;" at 9.00003pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Bold.otf]/OT:script=latn;language=dflt;" at 9.00003pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Italic.otf]/OT:script=latn;language=dflt;" at 9.00003pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Slanted.otf]/OT:script=latn;language=dflt;" at 9.00003pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-BoldItalic.otf]/OT:script=latn;language=dflt;" at 9.00003pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-BoldSlanted.otf]/OT:script=latn;language=dflt;" at 9.00003pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 9.0pt
+ (latex_FCS2.aux)
+(omlntxmi.fd) (ts1cmr.fd) (untxexa.fd) (lmsntxsy.fd) (lmxntxexx.fd)
+(ragged2e.sty)
+*geometry* driver: auto-detecting
+*geometry* detected driver: xetex
+(nameref.sty (refcount.sty) (gettitlestring.sty)) (latex_FCS2.out)
+(latex_FCS2.out)warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 11.0pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 18.0pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Bold.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 18.0pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 10.0pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;+sups;mapping=tex-text;" at 9.0pt
+warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 14.4pt
+ (umvs.fd)warning: latex_FCS2.txt:60:
+Requested font "umvs" at 14.4pt
+warning: latex_FCS2.txt:60:  -> umvs
+ (mt-mvs.cfg)warning: latex_FCS2.txt:60: Requested font "[TeXGyreTermesX-Bold.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 9.0pt
+warning: latex_FCS2.txt:62: Requested font "[TeXGyreTermesX-Bold.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 11.0pt
+ (ot1minntx.fd)warning: latex_FCS2.txt:62:
+Requested font "ntx-Regular-tlf-ot1" at 10.95pt
+warning: latex_FCS2.txt:62:  -> ntx-Regular-tlf-ot1
+warning: latex_FCS2.txt:62: Requested font "ntx-Regular-tlf-ot1" at 8.0pt
+warning: latex_FCS2.txt:62:  -> ntx-Regular-tlf-ot1
+warning: latex_FCS2.txt:62: Requested font "ntx-Regular-tlf-ot1" at 6.1pt
+warning: latex_FCS2.txt:62:  -> ntx-Regular-tlf-ot1
+warning: latex_FCS2.txt:62: Requested font "ntxmi" at 10.95pt
+warning: latex_FCS2.txt:62:  -> ntxmi
+warning: latex_FCS2.txt:62: Requested font "ntxmi7" at 8.0pt
+warning: latex_FCS2.txt:62:  -> ntxmi7
+warning: latex_FCS2.txt:62: Requested font "ntxmi5" at 6.1pt
+warning: latex_FCS2.txt:62:  -> ntxmi5
+warning: latex_FCS2.txt:62: Requested font "ntxsy" at 10.95pt
+warning: latex_FCS2.txt:62:  -> ntxsy
+warning: latex_FCS2.txt:62: Requested font "ntxsy7" at 8.0pt
+warning: latex_FCS2.txt:62:  -> ntxsy7
+warning: latex_FCS2.txt:62: Requested font "ntxsy5" at 6.1pt
+warning: latex_FCS2.txt:62:  -> ntxsy5
+warning: latex_FCS2.txt:62: Requested font "ntxexx" at 10.95pt
+warning: latex_FCS2.txt:62:  -> ntxexx
+warning: latex_FCS2.txt:62: Requested font "ntxexx" at 8.0pt
+warning: latex_FCS2.txt:62:  -> ntxexx
+warning: latex_FCS2.txt:62: Requested font "ntxexx" at 6.1pt
+warning: latex_FCS2.txt:62:  -> ntxexx
+ (umsa.fd)warning: latex_FCS2.txt:62:
+Requested font "msam10" at 10.95pt
+warning: latex_FCS2.txt:62:  -> msam10
+ (mt-msa.cfg)warning: latex_FCS2.txt:62:
+Requested font "msam10" at 8.0pt
+warning: latex_FCS2.txt:62:  -> msam10
+warning: latex_FCS2.txt:62: Requested font "msam7" at 6.1pt
+warning: latex_FCS2.txt:62:  -> msam7
+
+(umsb.fd)warning: latex_FCS2.txt:62:
+Requested font "msbm10" at 10.95pt
+warning: latex_FCS2.txt:62:  -> msbm10
+ (mt-msb.cfg)warning: latex_FCS2.txt:62:
+Requested font "msbm10" at 8.0pt
+warning: latex_FCS2.txt:62:  -> msbm10
+warning: latex_FCS2.txt:62: Requested font "msbm7" at 6.1pt
+warning: latex_FCS2.txt:62:  -> msbm7
+ (untxmia.fd)warning: latex_FCS2.txt:62:
+Requested font "ntxmia" at 10.95pt
+warning: latex_FCS2.txt:62:  -> ntxmia
+warning: latex_FCS2.txt:62: Requested font "ntxmia" at 8.0pt
+warning: latex_FCS2.txt:62:  -> ntxmia
+warning: latex_FCS2.txt:62: Requested font "ntxmia" at 6.1pt
+warning: latex_FCS2.txt:62:  -> ntxmia
+ (untxsym.fd)warning: latex_FCS2.txt:62:
+Requested font "ntxsym" at 10.95pt
+warning: latex_FCS2.txt:62:  -> ntxsym
+warning: latex_FCS2.txt:62: Requested font "ntxsym" at 8.0pt
+warning: latex_FCS2.txt:62:  -> ntxsym
+warning: latex_FCS2.txt:62: Requested font "ntxsym" at 6.1pt
+warning: latex_FCS2.txt:62:  -> ntxsym
+ (untxsyc.fd)warning: latex_FCS2.txt:62:
+Requested font "ntxsyc" at 10.95pt
+warning: latex_FCS2.txt:62:  -> ntxsyc
+warning: latex_FCS2.txt:62: Requested font "ntxsyc" at 8.0pt
+warning: latex_FCS2.txt:62:  -> ntxsyc
+warning: latex_FCS2.txt:62: Requested font "ntxsyc" at 6.1pt
+warning: latex_FCS2.txt:62:  -> ntxsyc
+warning: latex_FCS2.txt:62: Requested font "ntxexa" at 10.95pt
+warning: latex_FCS2.txt:62:  -> ntxexa
+warning: latex_FCS2.txt:62: Requested font "ntxexa" at 8.0pt
+warning: latex_FCS2.txt:62:  -> ntxexa
+warning: latex_FCS2.txt:62: Requested font "ntxexa" at 6.1pt
+warning: latex_FCS2.txt:62:  -> ntxexa
+
+warning: latex_FCS2.txt:110: Underfull \vbox (badness 1460) has occurred while \output is active
+warning: latex_FCS2.txt:110: Requested font "[lmsans10-bold]:mapping=tex-text;" at 9.0pt
+warning: latex_FCS2.txt:110: Requested font "[TeXGyreTermesX-Italic.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 9.0pt
+warning: latex_FCS2.txt:110: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 7.0pt
+warning: latex_FCS2.txt:110: Requested font "ntx-Regular-tlf-ot1" at 7.3pt
+warning: latex_FCS2.txt:110:  -> ntx-Regular-tlf-ot1
+warning: latex_FCS2.txt:110: Requested font "ntx-Regular-tlf-ot1" at 5.5pt
+warning: latex_FCS2.txt:110:  -> ntx-Regular-tlf-ot1
+warning: latex_FCS2.txt:110: Requested font "ntxmi7" at 7.3pt
+warning: latex_FCS2.txt:110:  -> ntxmi7
+warning: latex_FCS2.txt:110: Requested font "ntxmi5" at 5.5pt
+warning: latex_FCS2.txt:110:  -> ntxmi5
+warning: latex_FCS2.txt:110: Requested font "ntxsy7" at 7.3pt
+warning: latex_FCS2.txt:110:  -> ntxsy7
+warning: latex_FCS2.txt:110: Requested font "ntxsy5" at 5.5pt
+warning: latex_FCS2.txt:110:  -> ntxsy5
+warning: latex_FCS2.txt:110: Requested font "ntxexx" at 7.3pt
+warning: latex_FCS2.txt:110:  -> ntxexx
+warning: latex_FCS2.txt:110: Requested font "ntxexx" at 5.5pt
+warning: latex_FCS2.txt:110:  -> ntxexx
+warning: latex_FCS2.txt:110: Requested font "msam7" at 7.3pt
+warning: latex_FCS2.txt:110:  -> msam7
+warning: latex_FCS2.txt:110: Requested font "msam5" at 5.5pt
+warning: latex_FCS2.txt:110:  -> msam5
+warning: latex_FCS2.txt:110: Requested font "msbm7" at 7.3pt
+warning: latex_FCS2.txt:110:  -> msbm7
+warning: latex_FCS2.txt:110: Requested font "msbm5" at 5.5pt
+warning: latex_FCS2.txt:110:  -> msbm5
+warning: latex_FCS2.txt:110: Requested font "ntxmia" at 7.3pt
+warning: latex_FCS2.txt:110:  -> ntxmia
+warning: latex_FCS2.txt:110: Requested font "ntxmia" at 5.5pt
+warning: latex_FCS2.txt:110:  -> ntxmia
+warning: latex_FCS2.txt:110: Requested font "ntxsym" at 7.3pt
+warning: latex_FCS2.txt:110:  -> ntxsym
+warning: latex_FCS2.txt:110: Requested font "ntxsym" at 5.5pt
+warning: latex_FCS2.txt:110:  -> ntxsym
+warning: latex_FCS2.txt:110: Requested font "ntxsyc" at 7.3pt
+warning: latex_FCS2.txt:110:  -> ntxsyc
+warning: latex_FCS2.txt:110: Requested font "ntxsyc" at 5.5pt
+warning: latex_FCS2.txt:110:  -> ntxsyc
+warning: latex_FCS2.txt:110: Requested font "ntxexa" at 7.3pt
+warning: latex_FCS2.txt:110:  -> ntxexa
+warning: latex_FCS2.txt:110: Requested font "ntxexa" at 5.5pt
+warning: latex_FCS2.txt:110:  -> ntxexa
+Underfull \vbox (badness 1460) has occurred while \output is active [1]warning: latex_FCS2.txt:136: Requested font "[TeXGyreTermesX-Bold.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 10.0pt
+warning: latex_FCS2.txt:136: Requested font "[TeXGyreTermesX-Bold.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 7.0pt
+warning: latex_FCS2.txt:140: Requested font "ntx-Regular-tlf-ot1" at 9.0pt
+warning: latex_FCS2.txt:140:  -> ntx-Regular-tlf-ot1
+warning: latex_FCS2.txt:140: Requested font "ntxmi" at 9.0pt
+warning: latex_FCS2.txt:140:  -> ntxmi
+warning: latex_FCS2.txt:140: Requested font "ntxsy" at 9.0pt
+warning: latex_FCS2.txt:140:  -> ntxsy
+warning: latex_FCS2.txt:140: Requested font "ntxexx" at 9.0pt
+warning: latex_FCS2.txt:140:  -> ntxexx
+warning: latex_FCS2.txt:140: Requested font "msam10" at 9.0pt
+warning: latex_FCS2.txt:140:  -> msam10
+warning: latex_FCS2.txt:140: Requested font "msbm10" at 9.0pt
+warning: latex_FCS2.txt:140:  -> msbm10
+warning: latex_FCS2.txt:140: Requested font "ntxmia" at 9.0pt
+warning: latex_FCS2.txt:140:  -> ntxmia
+warning: latex_FCS2.txt:140: Requested font "ntxsym" at 9.0pt
+warning: latex_FCS2.txt:140:  -> ntxsym
+warning: latex_FCS2.txt:140: Requested font "ntxsyc" at 9.0pt
+warning: latex_FCS2.txt:140:  -> ntxsyc
+warning: latex_FCS2.txt:140: Requested font "ntxexa" at 9.0pt
+warning: latex_FCS2.txt:140:  -> ntxexa
+warning: latex_FCS2.txt:157: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 7.3pt
+warning: latex_FCS2.txt:157: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 5.5pt
+warning: latex_FCS2.txt:215: Requested font "[TeXGyreTermesX-Regular.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 8.0pt
+
+[2]
+
+LaTeX Font Warning: Font shape `TU/cmtt/m/n' undefined
+(Font)              using `TU/lmr/m/n' instead on input line 258.
+
+(mt-LatinModernRoman.cfg) [3]
+warning: latex_FCS2.txt:438: Underfull \hbox (badness 2020) in paragraph at lines 432--438
+Underfull \hbox (badness 2020) in paragraph at lines 432--438
+[]\TU/TeXGyreTermesX(0)/m/n/9 Return is consistent with the large stage gap: S2
+0 nominal
+
+warning: latex_FCS2.txt:439: Underfull \hbox (badness 10000) in paragraph at lines 439--439
+Underfull \hbox (badness 10000) in paragraph at lines 439--439
+|[]\TU/TeXGyreTermesX(0)/b/n/11 INTERPRETATION AND NEXT METHOD
+
+warning: latex_FCS2.txt:498: Underfull \hbox (badness 1112) in paragraph at lines 490--498
+Underfull \hbox (badness 1112) in paragraph at lines 490--498
+\TU/TeXGyreTermesX(0)/m/n/9 The teacher–IL–PPO comparison localizes the major l
+arge-crowd
+[4] (latex_FCS2.bblwarning: latex_FCS2.bbl:1: Requested font "[TeXGyreTermesX-Bold.otf]/OT:script=latn;language=dflt;-ss05;+tnum;+lnum;mapping=tex-text;" at 5.5pt
+
+warning: latex_FCS2.bbl:44: Underfull \hbox (badness 1609) in paragraph at lines 39--44
+Underfull \hbox (badness 1609) in paragraph at lines 39--44
+[]\TU/TeXGyreTermesX(0)/m/n/9 Changan Chen, Yuejiang Liu, Sven Kreiss, and Alex
+andre
+
+warning: latex_FCS2.bbl:62: Underfull \hbox (badness 1178) in paragraph at lines 58--62
+Underfull \hbox (badness 1178) in paragraph at lines 58--62
+[]\TU/TeXGyreTermesX(0)/m/n/9 Jur van den Berg, Stephen J. Guy, Ming Lin, and D
+inesh
+
+warning: latex_FCS2.bbl:69: Underfull \hbox (badness 5161) in paragraph at lines 64--69
+Underfull \hbox (badness 5161) in paragraph at lines 64--69
+[]\TU/TeXGyreTermesX(0)/m/n/9 Rishabh Agarwal, Max Schwarzer, Pablo Samuel Cast
+ro,
+) [5] (latex_FCS2.aux)
+
+LaTeX Font Warning: Some font shapes were not available, defaults substituted.
+
+ )
+(see the transcript file for additional information)
+Output written on latex_FCS2.xdv (5 pages, 286300 bytes).
+Transcript written on latex_FCS2.log.
+warning: warnings were issued by the TeX engine; use --print and/or --keep-logs for details.
+note: Writing `/home/abc/workspace/bayes_set_continuous/CrowdNav/repair_results/stage_audit_20260917/latex_check/latex_FCS2.aux` (6.94 KiB)

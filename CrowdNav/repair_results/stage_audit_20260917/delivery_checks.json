@@ -1,0 +1,28 @@
+{
+  "all_frozen_code_hashes_match": true,
+  "all_checkpoint_hashes_match": true,
+  "extra_dependency_sha256": {
+    "crowd_nav/gdbn.py": "e91737df0df097ea966400f0ff97f891cbde61c7ea4bf8b519b2614bc3a54e63",
+    "crowd_sim/envs/policy/orca.py": "3d4eab21a556a8767f0fcfc962b444652385c21d29b2ea22a38b711d6df50967",
+    "crowd_sim/envs/utils/robot.py": "5b63e6747864fbd08550660ddfcdea31386ad8e002f4ace7a3027002d2bb38a2",
+    "crowd_sim/envs/utils/human.py": "ed51807d9511a677026360029c4528c6305e010a1f83be55b9da17c7ab01832b"
+  },
+  "paired_layouts_across_all_profiles": 200,
+  "episodes": 4400,
+  "shards": 880,
+  "manuscript_table_matches_summary": true,
+  "citations": 10,
+  "fcs1_unchanged": true,
+  "no_pdf_generated": true,
+  "episode_archive_sha256": "a47aa3bdef26250651f09c753ca2563edc58a5e2d763f35dc6533a1115ac2c84",
+  "archive_matches_all_shards": true,
+  "authoritative_manuscript_matches_git_mirror": true,
+  "manuscript_sha256": {
+    "latex_FCS2.txt": "3ceb3697b9bc920c9d4f03db427a9a9bed72cffb3a50d9a63cabb3ca3d23cc0a",
+    "refs_FCS2.bib": "17a199261ac60a6e4eef8eaf83906dbcc25d35c87ac2d0c40f3f6dae4d186d23"
+  },
+  "latex_aux_only_exit_code": 0,
+  "latex_final_pass_unresolved_citations_or_references": 0,
+  "latex_overfull_boxes": 0,
+  "latex_reported_pages": 5
+}

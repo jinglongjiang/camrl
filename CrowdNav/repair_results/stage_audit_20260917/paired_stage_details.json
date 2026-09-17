@@ -1,0 +1,138 @@
+[
+  {
+    "scene": "baseline_circle",
+    "profile": "nominal",
+    "teacher_only_success": 3,
+    "il_only_success": 0,
+    "both_success": 47,
+    "il_collision_steps_le4": 0,
+    "il_collision_time_quantiles": [
+      7.75,
+      7.75,
+      7.75,
+      8.0,
+      8.25
+    ],
+    "teacher_mean_speed": 0.8843451206031357,
+    "il_mean_speed": 0.8545403277845951
+  },
+  {
+    "scene": "baseline_circle",
+    "profile": "heldout_nonstationary",
+    "teacher_only_success": 10,
+    "il_only_success": 2,
+    "both_success": 38,
+    "il_collision_steps_le4": 0,
+    "il_collision_time_quantiles": [
+      3.5,
+      4.5625,
+      5.375,
+      5.6875,
+      10.25
+    ],
+    "teacher_mean_speed": 0.8747862808998346,
+    "il_mean_speed": 0.8233485797939168
+  },
+  {
+    "scene": "dense_circle",
+    "profile": "nominal",
+    "teacher_only_success": 8,
+    "il_only_success": 3,
+    "both_success": 39,
+    "il_collision_steps_le4": 0,
+    "il_collision_time_quantiles": [
+      4.0,
+      5.0,
+      6.0,
+      10.25,
+      17.5
+    ],
+    "teacher_mean_speed": 0.820461294435177,
+    "il_mean_speed": 0.8009232457259222
+  },
+  {
+    "scene": "dense_circle",
+    "profile": "heldout_nonstationary",
+    "teacher_only_success": 24,
+    "il_only_success": 1,
+    "both_success": 21,
+    "il_collision_steps_le4": 0,
+    "il_collision_time_quantiles": [
+      3.5,
+      5.0,
+      6.0,
+      9.0,
+      20.25
+    ],
+    "teacher_mean_speed": 0.7869823256141913,
+    "il_mean_speed": 0.7211482286608107
+  },
+  {
+    "scene": "baseline_square",
+    "profile": "nominal",
+    "teacher_only_success": 23,
+    "il_only_success": 0,
+    "both_success": 21,
+    "il_collision_steps_le4": 2,
+    "il_collision_time_quantiles": [
+      0.75,
+      2.25,
+      3.75,
+      5.5,
+      8.5
+    ],
+    "teacher_mean_speed": 0.7856568299508585,
+    "il_mean_speed": 0.6811763226820381
+  },
+  {
+    "scene": "baseline_square",
+    "profile": "heldout_nonstationary",
+    "teacher_only_success": 28,
+    "il_only_success": 1,
+    "both_success": 17,
+    "il_collision_steps_le4": 2,
+    "il_collision_time_quantiles": [
+      0.75,
+      2.5,
+      4.375,
+      7.125,
+      10.5
+    ],
+    "teacher_mean_speed": 0.7702168915739382,
+    "il_mean_speed": 0.6860844205557051
+  },
+  {
+    "scene": "dense_square",
+    "profile": "nominal",
+    "teacher_only_success": 43,
+    "il_only_success": 0,
+    "both_success": 2,
+    "il_collision_steps_le4": 2,
+    "il_collision_time_quantiles": [
+      0.5,
+      2.25,
+      3.25,
+      4.25,
+      17.75
+    ],
+    "teacher_mean_speed": 0.7563167928417811,
+    "il_mean_speed": 0.6692792423712959
+  },
+  {
+    "scene": "dense_square",
+    "profile": "heldout_nonstationary",
+    "teacher_only_success": 37,
+    "il_only_success": 0,
+    "both_success": 3,
+    "il_collision_steps_le4": 2,
+    "il_collision_time_quantiles": [
+      0.5,
+      2.0,
+      3.25,
+      5.375,
+      8.75
+    ],
+    "teacher_mean_speed": 0.7315908502251709,
+    "il_mean_speed": 0.6938753232385325
+  }
+]

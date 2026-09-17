@@ -1,0 +1,80 @@
+{
+  "permutation_max_error": 0.0,
+  "masked_padding_max_error": 0.0,
+  "initial_policy_belief_channel_max_error": 0.0,
+  "training_receipts": [
+    {
+      "seed": 2407,
+      "arm": "no_belief",
+      "steps": 20480,
+      "adam_steps": 240,
+      "common_initial_mean_max_error": 0.0,
+      "source_sha256": "f1188379822d94dbd1e44ef096fa7aa84529ebc9343bb2c248c1c88f56a2a4cc"
+    },
+    {
+      "seed": 2407,
+      "arm": "map",
+      "steps": 20480,
+      "adam_steps": 240,
+      "common_initial_mean_max_error": 0.0,
+      "source_sha256": "f1188379822d94dbd1e44ef096fa7aa84529ebc9343bb2c248c1c88f56a2a4cc"
+    },
+    {
+      "seed": 2407,
+      "arm": "full",
+      "steps": 20480,
+      "adam_steps": 240,
+      "common_initial_mean_max_error": 0.0,
+      "source_sha256": "f1188379822d94dbd1e44ef096fa7aa84529ebc9343bb2c248c1c88f56a2a4cc"
+    },
+    {
+      "seed": 4807,
+      "arm": "no_belief",
+      "steps": 20480,
+      "adam_steps": 240,
+      "common_initial_mean_max_error": 0.0,
+      "source_sha256": "f1188379822d94dbd1e44ef096fa7aa84529ebc9343bb2c248c1c88f56a2a4cc"
+    },
+    {
+      "seed": 4807,
+      "arm": "map",
+      "steps": 20480,
+      "adam_steps": 240,
+      "common_initial_mean_max_error": 0.0,
+      "source_sha256": "f1188379822d94dbd1e44ef096fa7aa84529ebc9343bb2c248c1c88f56a2a4cc"
+    },
+    {
+      "seed": 4807,
+      "arm": "full",
+      "steps": 20480,
+      "adam_steps": 240,
+      "common_initial_mean_max_error": 0.0,
+      "source_sha256": "f1188379822d94dbd1e44ef096fa7aa84529ebc9343bb2c248c1c88f56a2a4cc"
+    },
+    {
+      "seed": 7207,
+      "arm": "no_belief",
+      "steps": 20480,
+      "adam_steps": 240,
+      "common_initial_mean_max_error": 0.0,
+      "source_sha256": "f1188379822d94dbd1e44ef096fa7aa84529ebc9343bb2c248c1c88f56a2a4cc"
+    },
+    {
+      "seed": 7207,
+      "arm": "map",
+      "steps": 20480,
+      "adam_steps": 240,
+      "common_initial_mean_max_error": 0.0,
+      "source_sha256": "f1188379822d94dbd1e44ef096fa7aa84529ebc9343bb2c248c1c88f56a2a4cc"
+    },
+    {
+      "seed": 7207,
+      "arm": "full",
+      "steps": 20480,
+      "adam_steps": 240,
+      "common_initial_mean_max_error": 0.0,
+      "source_sha256": "f1188379822d94dbd1e44ef096fa7aa84529ebc9343bb2c248c1c88f56a2a4cc"
+    }
+  ],
+  "scope": "Qualification initial policies zero belief columns; older source initial.zip has unused nonzero columns, masked by its No-Belief environment."
+}
