@@ -31,8 +31,11 @@ class DaggerGaussianPolicy(MultiInputActorCriticPolicy):
 
 
 class SetEncoder(BaseFeaturesExtractor):
-    def __init__(self, observation_space, features_dim=96):
+    def __init__(self, observation_space, features_dim=96, risk_guided=False):
         super().__init__(observation_space, features_dim)
+        self.risk_guided = risk_guided
+        if risk_guided:
+            self.risk_gain = nn.Parameter(torch.zeros(()))
         self.human = nn.Sequential(nn.Linear(9, 64), nn.ReLU(), nn.Linear(64, 64), nn.ReLU())
         self.robot = nn.Sequential(nn.Linear(observation_space['robot'].shape[0], 32), nn.ReLU())
         self.query = nn.Linear(32, 64)
@@ -44,6 +47,8 @@ class SetEncoder(BaseFeaturesExtractor):
         count = mask.sum(1, keepdim=True)
         robot = self.robot(observations['robot'])
         logits = (encoded * self.query(robot)[:, None]).sum(-1) / 8.
+        if self.risk_guided:
+            logits = logits + self.risk_gain * torch.log(.01 + observations['risk'])
         weights = logits.masked_fill(~mask, -1e9).softmax(-1) * mask
         weights = weights / weights.sum(-1, keepdim=True).clamp_min(1e-8)
         average = (encoded * weights[..., None]).sum(1)
