@@ -488,8 +488,8 @@ class LocalRiskActor:
                 denominator = nu-1 if self.arm=='bayes_local' else nu-3
                 z = -clearance/np.sqrt(np.maximum(projected/denominator,1e-12))
                 probability = stdtr(nu-1,z) if self.arm=='bayes_local' else ndtr(z)
-                # Marginal half-space upper bound, NOT a trajectory collision probability.
-                current = probability.max(axis=1)
+                # Upper bound on expected conflict duration, not a union probability.
+                current = .25*probability.sum(axis=1)
             scores = np.maximum(scores,current)
             indices = np.argsort(-scores,kind='stable')[:5]
             action = self.actor.predict(self.subset(obs,indices))
@@ -507,7 +507,7 @@ def local_worker(task):
     index = TESTS.index(scene)
     for i in range(first,first+count):
         wrapper = LocalRiskActor(actor,env,arm,config)
-        records.append(episode(env,wrapper,270000000+index*10000+i,710000+index*1000+i,profile))
+        records.append(episode(env,wrapper,280000000+index*10000+i,720000+index*1000+i,profile))
     env.close()
     result = dict(scene=scene,profile=profile,arm=arm,seed=seed,records=records,
                   checkpoint_sha256=hashlib.sha256(checkpoint.read_bytes()).hexdigest())
@@ -523,7 +523,8 @@ def local_run(out, workers, count):
     calibration = local_calibration()
     protocol = dict(arms=LOCAL_ARMS,seeds=SEEDS,scenes=TESTS,profiles=['nominal','heldout_nonstationary'],
         count_per_cell=count,total_episodes=5*3*6*2*count,calibration=calibration,
-        case_start=710000,neighbors=5,passes=2,horizon_seconds=2,
+        case_start=720000,neighbors=5,passes=2,horizon_seconds=2,
+        score='dt times sum of eight marginal half-space collision bounds; expected conflict duration bound',
         intervention='Frozen five-human IL/PPO actor; deployment-only local-set interface, not joint belief PPO training',
         primary='Bayes minus CV and adaptive Gaussian on OOD success; paired seed/layout bootstrap, multiplicity adjusted',
         source_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
