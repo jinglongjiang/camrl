@@ -163,7 +163,7 @@ def rollout(env, actor, opt, collect=False):
         else:
             action=actor(obs)
         if collect:
-            label=env.unwrapped.expert_action()
+            label=action.copy() if actor is None else env.unwrapped.expert_action()
             rows.append((copy.deepcopy(obs),env.unwrapped.all_risks.copy(),label.copy()))
         obs,_,done,_,info=env.step(action)
         if done:

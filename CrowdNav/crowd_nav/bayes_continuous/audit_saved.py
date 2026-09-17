@@ -1317,6 +1317,121 @@ def ppo_qualification_analysis(root):
     return result
 
 
+def risk_generalization_audit(root):
+    """Analyze the frozen risk-attention experiment without model selection."""
+    from collections import Counter
+    protocol=json.loads((root/'protocol.json').read_text())
+    verdict=json.loads((root/'verdict.json').read_text())
+    arms=protocol['arms']; seeds=protocol['seeds']; scenes=protocol['test_scenes']
+    result=dict(status=verdict['status'],protocol=protocol,stages={},data={},checks={})
+    for stage in ('bc','dagger','ppo'):
+        receipts=[]
+        for seed in seeds:
+            for arm in arms:
+                path=root/f'{seed}_{arm}/{stage}.json'
+                if path.exists():
+                    receipt=json.loads(path.read_text())
+                    compact={k:v for k,v in receipt.items() if k!='development'}
+                    compact['development']={p:{
+                        'success':v['success'],'collision':v['collision'],
+                        'timeout':sum(r['outcome']=='timeout' for r in v['records']),
+                        'n':len(v['records'])} for p,v in receipt['development'].items()}
+                    receipts.append(compact)
+        if receipts: result['stages'][stage]=receipts
+    hashes={}
+    for name in ('demos','dagger'):
+        path=root/(name+'.pt')
+        if not path.exists(): continue
+        data=torch.load(path,map_location='cpu',weights_only=False)
+        records=data['records']
+        assert all(r['humans']==5 for r in records)
+        hashes[name]={r['layout_sha256'] for r in records}
+        result['data'][name]=dict(episodes=len(records),transitions=len(data['actions']),
+            unique_layouts=len(hashes[name]),outcomes=dict(Counter(r['outcome'] for r in records)),
+            conditions=dict(Counter(r['shape']+'/'+r['profile'] for r in records)),
+            sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+    if len(hashes)==2: assert not (hashes['demos'] & hashes['dagger'])
+    dev_hashes=set()
+    for path in root.glob('*_*/bc.json'):
+        for entry in json.loads(path.read_text())['development'].values():
+            dev_hashes.update(r['layout_sha256'] for r in entry['records'])
+    assert not dev_hashes.intersection(set().union(*hashes.values()))
+    result['checks']['five_human_training_only']=True
+    result['checks']['train_development_layout_disjoint']=True
+    source_root=Path(__file__).resolve().parents[2]
+    result['checks']['source_hash_matches']={name:hashlib.sha256(
+        (Path(__file__).parent/name).read_bytes()).hexdigest()==value
+        for name,value in protocol['code_sha256'].items()}
+    assert all(result['checks']['source_hash_matches'].values())
+    result['checks']['initial_checkpoint_unchanged']=hashlib.sha256((source_root/
+        'repair_results/dagger_ppo_nominal_20260915/initial.zip').read_bytes()).hexdigest()==protocol['source_sha256']
+    assert result['checks']['initial_checkpoint_unchanged']
+    if verdict['status']=='EVALUATION_COMPLETE':
+        profiles=protocol['test_profiles'];n=protocol['test_layouts_per_cell']
+        outcomes=np.full((len(arms),len(seeds),len(scenes),len(profiles),n),-1,int)
+        returns=np.full(outcomes.shape,np.nan)
+        pairing={}; test_hashes=set()
+        for path in sorted((root/'evaluation').glob('*.json')):
+            shard=json.loads(path.read_text())
+            a=arms.index(shard['arm']);s=seeds.index(shard['seed'])
+            j=scenes.index(shard['scene']);p=profiles.index(shard['profile'])
+            first=int(path.stem.rsplit('_',1)[1])
+            for i,r in enumerate(shard['records'],first):
+                key=(j,p,i); h=r['layout_sha256']
+                if key in pairing: assert pairing[key]==h
+                pairing[key]=h;test_hashes.add(h)
+                assert outcomes[a,s,j,p,i]==-1
+                outcomes[a,s,j,p,i]={'success':1,'collision':0,'timeout':2}[r['outcome']]
+                returns[a,s,j,p,i]=r['reward']
+        assert (outcomes>=0).all() and np.isfinite(returns).all()
+        assert not test_hashes.intersection(dev_hashes|set().union(*hashes.values()))
+        assert all(r['adam_steps']==[240] for r in result['stages']['ppo'])
+        result['checks']['test_layout_disjoint_and_paired']=True
+        result['checks']['ppo_adam_updates_per_run']=240
+        result['evaluation_episodes']=int(outcomes.size)
+        result['cells']=[]
+        for a,arm in enumerate(arms):
+            for j,scene in enumerate(scenes):
+                for p,profile in enumerate(profiles):
+                    cell=outcomes[a,:,j,p]
+                    result['cells'].append(dict(arm=arm,scene=scene,profile=profile,n=int(cell.size),
+                        success=int((cell==1).sum()),collision=int((cell==0).sum()),
+                        timeout=int((cell==2).sum()),mean_return=float(returns[a,:,j,p].mean()),
+                        success_by_seed=[int((row==1).sum()) for row in cell]))
+        success=(outcomes==1).astype(float)
+        rng=np.random.default_rng(20260917); b=arms.index('bayes');comparisons={}
+        # Layout is resampled within scene, shared across both profiles and all seeds.
+        for a,arm in enumerate(arms):
+            if a==b:continue
+            difference=success[b,:,1:]-success[a,:,1:]
+            boot=[]
+            for _ in range(10000):
+                si=rng.integers(0,len(seeds),len(seeds))
+                cells=[difference[si,j][:,:,rng.integers(0,n,n)].mean()
+                       for j in range(len(scenes)-1)]
+                boot.append(np.mean(cells)*100)
+            comparisons[arm]=dict(ood_success_gain_pp=float(difference.mean()*100),
+                ci98333_pp=np.quantile(boot,[.05/6,1-.05/6]).tolist(),
+                gain_by_seed_pp=(difference.mean(axis=(1,2,3))*100).tolist())
+        result['comparisons']=comparisons
+        loss=float((success[arms.index('base'),:,0,0]-success[b,:,0,0]).mean()*100)
+        result['nominal_five_human_loss_vs_base_pp']=loss
+        result['benefit_gate_passed']=bool(loss<=2+1e-9 and all(
+            c['ood_success_gain_pp']>=3-1e-9 and c['ci98333_pp'][0]>0 for c in comparisons.values()))
+        result['twenty_human_nominal_sr']={scene:float(success[b,:,scenes.index(scene),0].mean()*100)
+            for scene in ('dense_square','large_square')}
+        result['strong_generalization_passed']=all(v>=80 for v in result['twenty_human_nominal_sr'].values())
+    else:
+        assert not (root/'evaluation').exists()
+        result['checks']['no_high_density_test_after_failed_gate']=True
+        result['benefit_gate_passed']=None
+        result['strong_generalization_passed']=None
+        result['interpretation']='Inconclusive about Bayesian generalization: five-human training qualification failed.'
+    (root/'analysis.json').write_text(json.dumps(result,indent=2))
+    print(json.dumps({k:v for k,v in result.items() if k not in ('protocol','stages','cells')},indent=2))
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--results', type=Path, required=True)
@@ -1331,7 +1446,11 @@ def main():
     parser.add_argument('--reciprocity-resume', action='store_true')
     parser.add_argument('--type-oracle', action='store_true')
     parser.add_argument('--failure-evidence', action='store_true')
+    parser.add_argument('--risk-generalization', action='store_true')
     args = parser.parse_args()
+    if args.risk_generalization:
+        risk_generalization_audit(args.results)
+        return
     if args.information_ridge:
         information_ridge_audit(args.results)
         return

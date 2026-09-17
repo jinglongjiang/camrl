@@ -564,6 +564,69 @@ class GaussianTransferTests(unittest.TestCase):
         with self.assertRaises(ValueError): BeliefPPOEnv(PARAMS,'full','heldout_nonstationary')
 
 
+class RiskGeneralizationContracts(unittest.TestCase):
+    def test_teacher_queried_once_and_executed_label_matches(self):
+        from types import SimpleNamespace
+        from crowd_nav.bayes_continuous.risk_generalization import rollout
+        class FakeEnv:
+            def __init__(self):
+                self.unwrapped=self;self.calls=0;self.all_risks=np.zeros((4,20))
+                self.layout_hash='test'
+                self.world=SimpleNamespace(env=SimpleNamespace(humans=[None]*5,test_sim='circle_crossing'))
+            def reset(self,options): return {'robot':np.zeros(10)},{}
+            def expert_action(self):
+                self.calls+=1
+                return np.array([.5,self.calls*.1])
+            def step(self,action):
+                self.executed=action.copy()
+                return {},0.,True,False,{'episode_result':{'outcome':'success'}}
+        env=FakeEnv()
+        _,rows=rollout(env,None,{'profile':'nominal'},collect=True)
+        self.assertEqual(env.calls,1)
+        np.testing.assert_array_equal(rows[0][2],env.executed)
+
+    def test_shared_start_and_active_risk_mask(self):
+        from crowd_nav.bayes_continuous.risk_generalization import env_for, make_model, options, physical_mean
+        torch.set_num_threads(1)
+        env=env_for('bayes')
+        obs,_=env.reset(options=options(0,260100000,670000))
+        model=make_model(env,2407)
+        batch={k:torch.as_tensor(v[None]) for k,v in obs.items()}
+        altered={k:v.clone() for k,v in batch.items()}
+        altered['risk']=torch.linspace(0,1,20)[None]
+        with torch.no_grad():
+            np.testing.assert_array_equal(physical_mean(model.policy,batch),physical_mean(model.policy,altered))
+            model.policy.pi_features_extractor.risk_gain.fill_(1.)
+            encoder=model.policy.pi_features_extractor
+            permutation=torch.randperm(20)
+            permuted={k:v.clone() for k,v in batch.items()}
+            for k in ['humans','mask','risk']:permuted[k]=permuted[k][:,permutation]
+            torch.testing.assert_close(encoder(batch),encoder(permuted),atol=1e-6,rtol=1e-6)
+            padded={k:v.clone() for k,v in batch.items()}
+            padded['humans'][:,5:]=1000
+            padded['risk'][:,5:]=1
+            torch.testing.assert_close(encoder(batch),encoder(padded),atol=0,rtol=0)
+        self.assertEqual(len(env.unwrapped.world.env.humans),5)
+        self.assertTrue(np.isfinite(env.unwrapped.all_risks).all())
+        env.close()
+
+    def test_counts_and_deterministic_risk_history(self):
+        from crowd_nav.bayes_continuous.risk_generalization import env_for, options
+        for scene,count in [('baseline_circle',5),('dense_circle',10),('large_circle',12),('dense_square',20)]:
+            env=env_for('bayes',False,scene)
+            opts=dict(layout_seed=260100001,test_case=670001,profile='nominal')
+            a,_=env.reset(options=opts)
+            self.assertEqual(int(a['mask'].sum()),count)
+            env.step(np.array([.5,.1],np.float32))
+            risk=env.unwrapped.all_risks.copy()
+            b,_=env.reset(options=opts)
+            for k in a:np.testing.assert_array_equal(a[k],b[k])
+            env.step(np.array([.5,.1],np.float32))
+            np.testing.assert_array_equal(risk,env.unwrapped.all_risks)
+            self.assertTrue(np.all(risk>=0) and np.all(risk<=1))
+            env.close()
+
+
 if __name__ == '__main__':
     torch.set_num_threads(1)
     unittest.main()
