@@ -341,7 +341,7 @@ def policy_gradient_training(args,config,model,env,rng,results,persist):
             print('PG_UPDATE',steps,result,flush=True)
             pending = []
         if steps >= next_evaluation or last:
-            validation = evaluate(model,config,args.arm,args.eval_episodes,20000)
+            validation = evaluate(model,config,args.arm,args.eval_episodes,args.validation_start)
             results['validation'].append(dict(episode=index,step=steps,**validation))
             save_checkpoint(args.out/'last.pt',model,config,args,'rl')
             if rank(validation) > best_rank:
@@ -393,6 +393,8 @@ def training(args,config):
                 state['conflict_gain'] = torch.zeros((),device=args.device)
             if args.composition in ('moments','ordered'):
                 state.update({k:v for k,v in model.state_dict().items() if k.startswith('combination.')})
+            if args.composition == 'attention':
+                state.update({k:v for k,v in model.state_dict().items() if k.startswith('attention.')})
             if args.composition in RISK_COMPOSITIONS and not risk_transfer:
                 state['risk_gain'] = model.risk_gain.detach().clone()
             model.load_state_dict(state,strict=True)
@@ -490,7 +492,7 @@ def training(args,config):
                 with torch.no_grad():
                     prediction = model(batch_observations([row['obs'] for row in sample],args.device)).argmax(1).cpu().numpy()
                 accuracy = float(np.mean(prediction == [row['action'] for row in sample]))
-            validation = evaluate(model,config,args.arm,args.eval_episodes,20000)
+            validation = evaluate(model,config,args.arm,args.eval_episodes,args.validation_start)
             results['il_curve'].append(dict(update=update,training_action_accuracy=accuracy,**validation))
             eligible = not (args.select_trained_il and update == 0)
             if eligible and (best_rank is None or rank(validation) > best_rank):
@@ -553,7 +555,7 @@ def training(args,config):
                        if args.rl_steps is not None
                        else (index%args.eval_every == 0 or index == args.rl_episodes))
         if should_eval:
-            validation = evaluate(model,config,args.arm,args.eval_episodes,20000)
+            validation = evaluate(model,config,args.arm,args.eval_episodes,args.validation_start)
             results['validation'].append(dict(episode=index,step=steps,**validation))
             save_checkpoint(args.out/'last.pt',model,config,args,'rl')
             if rank(validation) > best_rank:
@@ -604,12 +606,16 @@ def smoke(config,device):
                 state['conflict_gain'] = torch.zeros((),device=device)
             if composition in ('moments','ordered'):
                 state.update({k:v for k,v in variant.state_dict().items() if k.startswith('combination.')})
+            if composition == 'attention':
+                state.update({k:v for k,v in variant.state_dict().items() if k.startswith('attention.')})
             if composition in RISK_COMPOSITIONS:
                 state['risk_gain']=variant.risk_gain.detach().clone()
             variant.load_state_dict(state,strict=True)
             values = variant(batch)
             assert torch.isfinite(values).all()
             torch.testing.assert_close(values,variant(permuted),rtol=1e-5,atol=1e-6)
+            for i,obs in enumerate(observations):
+                torch.testing.assert_close(values[i],variant(batch_observations([obs],device))[0],rtol=1e-5,atol=1e-6)
             if composition == 'conflict':
                 torch.testing.assert_close(q,values,rtol=0.,atol=0.)
                 variant.conflict_gain.fill_(.5)
@@ -841,6 +847,7 @@ def main():
     parser.add_argument('--humans',type=int,default=5)
     parser.add_argument('--scene',choices=('circle_crossing','square_crossing'),default='circle_crossing')
     parser.add_argument('--case-start',type=int,default=100000)
+    parser.add_argument('--validation-start',type=int,default=20000)
     parser.add_argument('--matrix',action='store_true',help='Frozen evaluation: 5/10/12/20, circle and square')
     parser.add_argument('--demo-episodes',type=int,default=200)
     parser.add_argument('--il-updates',type=int,default=3000)

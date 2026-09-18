@@ -1,5 +1,30 @@
 # CrowdNav
 
+## Matched attention-composition control (2026-09-18, registered)
+
+To test the missing architectural control, train `mixture` and `attention`
+from scratch on the same500 five-human teacher episodes, with prior and FULL
+observations, seeds2407/4807/7207. Both retain the same base and local-cost MLPs.
+Attention adds a12->64->1 scoring head (897 parameters) and normalizes over
+the same locally supported humans. It is a controlled attention aggregator,
+NOT a reproduction or benchmark claim about the published SARL algorithm.
+The additional parameter budget favors the attention baseline slightly.
+
+Use4000 IL updates, batch64, LR1e-4, margin objective, evaluate each1000 on NEW
+five-human development cases21000--21099. Select the IL checkpoint on that set;
+require90% success before RL. Use20000 self-critical REINFORCE candidate steps,
+LR3e-5, temperature.05, KL.002, evaluation each2000, and rollback below90%.
+Reference-rollout steps and actual accepted updates are reported separately.
+No event-risk labels, hard-example resampling, density curriculum or additional
+demonstration loss enters this control. All initial base/local weights match
+for paired architectures at the same seed, not necessarily their initial scores.
+
+Seal all12 models before test cases9900000--9900049, at5/10/12/20 humans and
+circle/square geometries. Do not choose an architecture or observation arm on
+these results. Primary contrasts are mixture versus attention within each arm,
+and FULL versus prior within each architecture. Report failures, not only the
+models passing the IL gate. Remote: `/root/local_attention_20260918/`.
+
 ## Event-supervision ordering follow-up (2026-09-18, frozen before tests)
 
 Five-human development exposes an additional failure of post-event imitation:

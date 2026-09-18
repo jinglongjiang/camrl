@@ -10,7 +10,7 @@ from torch import nn
 
 SCHEMA = 'local-predictive-q-v3'
 ARMS = ('current', 'prior', 'map', 'history', 'full')
-COMPOSITIONS = ('mixture', 'sum', 'max', 'conflict', 'moments', 'ordered',
+COMPOSITIONS = ('mixture', 'attention', 'sum', 'max', 'conflict', 'moments', 'ordered',
                 'survival', 'risk_max', 'risk_sum')
 RISK_COMPOSITIONS = ('survival', 'risk_max', 'risk_sum')
 
@@ -155,6 +155,8 @@ class LocalValueNetwork(nn.Module):
         self.local = nn.Sequential(nn.Linear(12,width),nn.ReLU(),
                                    nn.Linear(width,width),nn.ReLU(),nn.Linear(width,1))
         self.mix = nn.Parameter(torch.zeros(2))
+        if composition == 'attention':
+            self.attention = nn.Sequential(nn.Linear(12,64),nn.ReLU(),nn.Linear(64,1))
         if composition == 'conflict':
             self.conflict_gain = nn.Parameter(torch.zeros(()))
         if composition in RISK_COMPOSITIONS:
@@ -236,6 +238,13 @@ class LocalValueNetwork(nn.Module):
         relevance = ((6.-distance)/4.).clamp(0.,1.)
         cost = (penalty*obs['weights'][:,None,None]).sum(-1)*relevance[...,0]
         cost = cost*mask[:,None]
+        if self.composition == 'attention':
+            descriptor = (features*obs['weights'][:,None,None,:,None]).sum(-2)
+            logits = self.attention(descriptor).squeeze(-1)
+            active = mask[:,None] & (distance[...,0] < 6.)
+            weights = logits.masked_fill(~active,torch.finfo(logits.dtype).min).softmax(-1)
+            weights = weights*active
+            return base-(weights*cost).sum(-1)
         if self.composition == 'sum':
             return base-cost.sum(-1)
         if self.composition == 'max':
