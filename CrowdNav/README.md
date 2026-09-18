@@ -1,5 +1,28 @@
 # CrowdNav
 
+## Local-regret result (2026-09-18, completed)
+
+Six trained runs,12 checkpoint records, two exact IL/selected reuses and4000
+actual evaluation episodes on9900000--9900049. Success/collision/timeout out
+of300 per count:
+
+| Regret composition | 5 humans | 10 humans | 12 humans | 20 humans |
+| --- | --- | --- | --- | --- |
+| Prior, IL | 269/29/2 | 231/61/8 | 217/77/6 | 197/93/10 |
+| Prior, selected | 277/19/4 | 247/40/13 | 242/49/9 | 220/54/26 |
+| FULL, IL | 249/50/1 | 199/95/6 | 168/117/15 | 126/153/21 |
+| FULL, selected | 249/50/1 | 200/93/7 | 172/114/14 | 131/143/26 |
+
+Prior20-human success73.33% versus the original mixture72.00% is NOT a reliable
+improvement: per-seed differences+6/+6/-8pp, paired seed/case bootstrap95%
+interval[-10.00,13.33]pp (same10000-draw procedure as the matched study).
+FULL is worse:43.67% versus61.67%, difference-18.00pp, interval[-36.00,0.00].
+FULL seeds4807/7207 failed IL qualification; FULL2407 rolled back during RL.
+The offset-invariance property holds, but is insufficient to improve this
+navigation benchmark. Do not present it as a successful new algorithm.
+Artifacts: `matched_regret_runs/` and `frozen_regret_evaluation.json` under
+`/home/abc/temp/local_event_results_20260918/`.
+
 ## Expectation after local composition (registered 2026-09-18)
 
 `joint` changes one nonlinear ordering in the original mixture. With each
