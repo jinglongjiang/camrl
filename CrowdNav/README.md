@@ -23,6 +23,21 @@ Neither observation arm nor combination rule is selected on high-count tests.
 Remote directory: `/root/local_event_order_20260918/`. This configuration-only
 follow-up uses the existing entry point; no source module is added.
 
+Before opening the9800000 test set, also register the standard early-stopping
+selection rule that includes the zero-update IL checkpoint. For each seed/arm,
+compare the follow-up's initial five-human validation against the original
+experiment's selected trained IL validation, lexicographically by success,
+negative collisions, then total reward. Prefer zero updates on exact ties.
+Use the frozen RL result descended from that selected IL checkpoint. Selection
+does NOT compare high-count results or select between branches using RL test
+performance. The two separately executed branches have different subsequent
+RNG histories; this is a development-selected pipeline, not bitwise equivalence
+to a single resumed training run. Report both branch failures and all duplicate
+training costs. Evaluate any additionally selected trained-IL descendants on
+the same9800000 layouts; reuse zero-update branch evaluations when selected.
+This registration responds to five-human evidence only: history seed4807 starts
+at89/100 but improves to95/100 with imitation, unlike prior/full seed7207.
+
 ## Temporal-composition learning study (2026-09-18, completed negative)
 
 **Frozen result: neither new head improves over the original IL reference.**
