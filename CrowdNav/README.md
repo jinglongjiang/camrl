@@ -1,5 +1,31 @@
 # CrowdNav
 
+## Gauge-invariant local-regret composition (registered 2026-09-18)
+
+The new `regret` operator uses the SAME19588-parameter network as `mixture`.
+For expected local costs c_i(a), define m_i=min_a c_i(a), d_i(a)=c_i(a)-m_i.
+With the same learned positive weights, compose
+`w_max * (max_i d_i(a) + max_i m_i) + w_sum * sum_i c_i(a)`.
+The action-independent baseline retains state-value capacity for the IL return
+loss and possible TD training. The sum contribution is unchanged; with one
+human the whole operator equals the original one. Adding an arbitrary constant
+to any person's costs changes all action scores by the same scalar, so it cannot
+change the selected action. Original max-sum does not have that invariance.
+Bayesian averaging is performed BEFORE calculating each person's minimum;
+this is expected local regret, not clairvoyant per-hypothesis action selection.
+
+This property is a mathematical guarantee about the operator, NOT a guarantee
+of better navigation or Bayesian advantage. A five-human offset diagnostic
+previously changed only2/200 original actions, so its practical importance is
+unknown. Train regret prior/FULL for three seeds with the EXACT corrected
+matched-control recipe (500 demos,12000 softmax IL updates,20000 policy-gradient
+steps, five-human development21000--21099). Same initial base/local weights and
+same parameter count as mixture. Compare on the prespecified9900000 layouts;
+do not use those results for operator/checkpoint selection. The architecture
+is registered before any9900000 test is opened. Existing9700000/9800000 event
+experiments are separate negative exploratory studies, not its confirmation set.
+Remote: `/root/local_regret_matched_20260918/`. No new source module is added.
+
 ## Matched attention-composition control (2026-09-18, registered)
 
 To test the missing architectural control, train `mixture` and `attention`

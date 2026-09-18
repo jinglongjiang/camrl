@@ -630,6 +630,14 @@ def smoke(config,device):
                 for i,obs in enumerate(observations):
                     torch.testing.assert_close(changed[i],variant(batch_observations([obs],device))[0],rtol=1e-5,atol=1e-6)
         costs = torch.tensor([[[2.,3.]]],device=device)
+        local = torch.rand(7,80,20,device=device)
+        offsets = torch.rand(7,1,20,device=device)*5.
+        weights = torch.tensor([.4,.6],device=device)
+        ordinary = model.regret_cost(local,weights)
+        shifted = model.regret_cost(local+offsets,weights)
+        torch.testing.assert_close(ordinary-ordinary[:,:1],shifted-shifted[:,:1],rtol=1e-5,atol=1e-5)
+        assert torch.equal(ordinary.argmin(1),shifted.argmin(1))
+        torch.testing.assert_close(model.regret_cost(local[:,:,:1],weights),local[:,:,0])
         times = torch.zeros_like(costs)
         opposite = torch.tensor([[[[1.,0.],[-1.,0.]]]],device=device)
         torch.testing.assert_close(model.conflict_cost(costs,times,opposite),costs[...,:1].squeeze(-1))

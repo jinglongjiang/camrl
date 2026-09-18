@@ -10,7 +10,7 @@ from torch import nn
 
 SCHEMA = 'local-predictive-q-v3'
 ARMS = ('current', 'prior', 'map', 'history', 'full')
-COMPOSITIONS = ('mixture', 'attention', 'sum', 'max', 'conflict', 'moments', 'ordered',
+COMPOSITIONS = ('mixture', 'regret', 'attention', 'sum', 'max', 'conflict', 'moments', 'ordered',
                 'survival', 'risk_max', 'risk_sum')
 RISK_COMPOSITIONS = ('survival', 'risk_max', 'risk_sum')
 
@@ -188,6 +188,17 @@ class LocalValueNetwork(nn.Module):
         return values.flatten(-2)/2.
 
     @staticmethod
+    def regret_cost(cost, mixture):
+        """Separate each person's action-independent floor from local regret.
+
+        Per-person additive offsets then affect only a state-value baseline,
+        not action preferences. The sum term and single-person case are unchanged.
+        """
+        floor = cost.min(dim=1,keepdim=True).values
+        worst = (cost-floor).max(-1).values+floor.max(-1).values
+        return mixture[0]*worst+mixture[1]*cost.sum(-1)
+
+    @staticmethod
     def conflict_cost(cost, timing, direction):
         """Overlapping, opposing local constraints; not a collision probability."""
         if cost.shape[-1] < 2:
@@ -250,6 +261,8 @@ class LocalValueNetwork(nn.Module):
         if self.composition == 'max':
             return base-cost.max(-1).values
         mixture = self.mix.softmax(0)
+        if self.composition == 'regret':
+            return base-self.regret_cost(cost,mixture)
         value = base-mixture[0]*cost.max(-1).values-mixture[1]*cost.sum(-1)
         if self.composition == 'conflict':
             timing = (closest_t*obs['weights'][:,None,None]).sum(-1)
