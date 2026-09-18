@@ -642,6 +642,24 @@ def smoke(config,device):
         torch.testing.assert_close(ordinary-ordinary[:,:1],shifted-shifted[:,:1],rtol=1e-5,atol=1e-5)
         assert torch.equal(ordinary.argmin(1),shifted.argmin(1))
         torch.testing.assert_close(model.regret_cost(local[:,:,:1],weights),local[:,:,0])
+        discrete = torch.rand(3,7,2,5,device=device)
+        probabilities = discrete.new_tensor([.05,.15,.2,.25,.35])
+        exact = (torch.maximum(discrete[...,0,:,None],discrete[...,1,None,:])
+                 *probabilities[:,None]*probabilities[None,:]).sum((-1,-2))
+        composed = model.independent_expected_max(discrete,probabilities)
+        torch.testing.assert_close(composed,exact,rtol=1e-5,atol=1e-6)
+        mean_first = (discrete*probabilities).sum(-1).max(-1).values
+        assert (composed >= mean_first-1e-6).all()
+        torch.testing.assert_close(model.independent_expected_max(discrete[...,:1,:],probabilities),
+                                   (discrete[...,0,:]*probabilities).sum(-1))
+        deterministic = discrete[...,:1].expand_as(discrete)
+        torch.testing.assert_close(model.independent_expected_max(deterministic,probabilities),
+                                   deterministic[...,0].max(-1).values)
+        with torch.enable_grad():
+            differentiable = discrete.detach().clone().requires_grad_(True)
+            model.independent_expected_max(differentiable,probabilities).sum().backward()
+            assert torch.isfinite(differentiable.grad).all()
+            torch.testing.assert_close(differentiable.grad.sum((-1,-2)),torch.ones_like(exact))
         times = torch.zeros_like(costs)
         opposite = torch.tensor([[[[1.,0.],[-1.,0.]]]],device=device)
         torch.testing.assert_close(model.conflict_cost(costs,times,opposite),costs[...,:1].squeeze(-1))

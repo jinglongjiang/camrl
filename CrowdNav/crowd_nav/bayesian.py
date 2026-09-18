@@ -10,7 +10,7 @@ from torch import nn
 
 SCHEMA = 'local-predictive-q-v3'
 ARMS = ('current', 'prior', 'map', 'history', 'full')
-COMPOSITIONS = ('mixture', 'regret', 'attention', 'sum', 'max', 'conflict', 'moments', 'ordered',
+COMPOSITIONS = ('mixture', 'joint', 'regret', 'attention', 'sum', 'max', 'conflict', 'moments', 'ordered',
                 'survival', 'risk_max', 'risk_sum')
 RISK_COMPOSITIONS = ('survival', 'risk_max', 'risk_sum')
 
@@ -188,6 +188,22 @@ class LocalValueNetwork(nn.Module):
         return values.flatten(-2)/2.
 
     @staticmethod
+    def independent_expected_max(cost, probabilities):
+        """Exact E[max] for finite independent per-person cost distributions.
+
+        Sort their support union and multiply individual CDFs. This integrates
+        the discrete prediction model, not the true correlated crowd dynamics.
+        """
+        people, points = cost.shape[-2:]
+        values, order = cost.flatten(-2).sort(-1)
+        masses = probabilities.expand_as(cost).flatten(-2).gather(-1,order)
+        owners = torch.nn.functional.one_hot(order//points,people).to(cost.dtype)
+        individual_cdf = (owners*masses[...,None]).cumsum(-2).clamp(0.,1.)
+        joint_cdf = individual_cdf.prod(-1)
+        jumps = joint_cdf-torch.nn.functional.pad(joint_cdf[...,:-1],(1,0))
+        return (values*jumps).sum(-1)
+
+    @staticmethod
     def regret_cost(cost, mixture):
         """Separate each person's action-independent floor from local regret.
 
@@ -261,6 +277,10 @@ class LocalValueNetwork(nn.Module):
         if self.composition == 'max':
             return base-cost.max(-1).values
         mixture = self.mix.softmax(0)
+        if self.composition == 'joint':
+            support = penalty*relevance*mask[:,None,:,None]
+            worst = self.independent_expected_max(support,obs['weights'][:,None,None])
+            return base-mixture[0]*worst-mixture[1]*cost.sum(-1)
         if self.composition == 'regret':
             return base-self.regret_cost(cost,mixture)
         value = base-mixture[0]*cost.max(-1).values-mixture[1]*cost.sum(-1)

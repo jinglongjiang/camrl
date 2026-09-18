@@ -1,5 +1,47 @@
 # CrowdNav
 
+## Expectation after local composition (registered 2026-09-18)
+
+`joint` changes one nonlinear ordering in the original mixture. With each
+person's discrete predictive local cost C_i(a), the old worst-person term is
+max_i E[C_i(a)]; the new term is E[max_i C_i(a)]. The sum term is unchanged.
+The new implementation exactly integrates the existing five-point per-person
+distributions UNDER CONDITIONAL INDEPENDENCE, using the product of individual
+CDFs on their sorted support union. It adds no parameters, trainable head,
+private observations, safety override or simulator lookahead. It is not an
+exact integration of the underlying Student-t law, not a calibrated joint
+collision probability, and not proof of independence in a real crowd.
+
+The ordering distinction is real: E[max] >= max E. CPU self-tests compare it
+with exhaustive25-branch enumeration for two people, check finite gradients,
+deterministic and one-person equivalence, permutation and padding invariance.
+An improved formula is not by itself evidence of improved control or novelty.
+This is a targeted follow-up to the composition result, not a new hidden-variable
+search. Fixed-prior and FULL inputs are both required: a gain from joint
+composition alone must not be credited to Bayesian recursion.
+
+Train six joint models, prior/FULL and seeds2407/4807/7207, with the same500
+five-human demonstrations,12000 softmax IL updates at3e-4, batch64, and IL
+selection every2000 on21000--21099. Then restart the training process from the
+selected IL checkpoint for20000 Double-DQN environment steps at1e-4, batch64,
+target1000, epsilon.05->.01, validation every1000 on the same five-human set.
+Train all arms regardless of the90% IL qualification flag; report failures
+and retain the best five-human checkpoint including the IL start. This process
+restart matches the existing mixture-DDQN control's RL initialization procedure.
+No BC loss or expert replay is used during RL. Every completed RL run must
+have19937 TD updates. The total parameter count remains19588.
+
+Freeze all six before opening NEW cases10000000--10000049 at5/10/12/20 humans,
+circle/square. Evaluate joint-DDQN prior/FULL, existing matched mixture-DDQN
+prior/FULL, and matched mixture-prior policy-gradient reference on those same
+cases (15 selected models,6000 episodes). The last reference has a different
+optimizer/update budget and is not an equal-compute causal contrast. Primary
+contrasts: joint versus mixture within each DDQN input arm, and FULL versus
+prior within joint. Report all three seeds, collisions and timeouts; no winner
+selection or tuning on these high-count results. Existing9900000 results are
+exploratory evidence motivating this follow-up, not its independent test set.
+Remote: `/root/local_joint_matched_20260918/`. No new source module is added.
+
 ## Matched composition result (2026-09-18, completed)
 
 **Positive architectural evidence, NOT a positive Bayesian result.** All12
