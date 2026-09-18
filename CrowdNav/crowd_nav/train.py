@@ -383,14 +383,15 @@ def training(args,config):
             raise ValueError('Training initialization requires identical saved configuration')
         saved_composition = checkpoint.get('composition','mixture')
         if saved_composition != args.composition:
-            if not args.initialize_composition or saved_composition != 'mixture':
+            risk_transfer = saved_composition in RISK_COMPOSITIONS and args.composition in RISK_COMPOSITIONS
+            if not args.initialize_composition or (saved_composition != 'mixture' and not risk_transfer):
                 raise ValueError('Composition change requires explicit mixture initialization')
             state = dict(checkpoint['state'])
             if args.composition == 'conflict':
                 state['conflict_gain'] = torch.zeros((),device=args.device)
             if args.composition in ('moments','ordered'):
                 state.update({k:v for k,v in model.state_dict().items() if k.startswith('combination.')})
-            if args.composition in RISK_COMPOSITIONS:
+            if args.composition in RISK_COMPOSITIONS and not risk_transfer:
                 state['risk_gain'] = model.risk_gain.detach().clone()
             model.load_state_dict(state,strict=True)
         else:
@@ -441,6 +442,7 @@ def training(args,config):
             raise RuntimeError('Missing fixed-horizon risk supervision')
         results['risk_validation']=risk_fit(model,risk_data,validation,args)
         model.risk_supervised=True
+        save_checkpoint(args.out/'risk.pt',model,config,args,'risk_pretrain')
         results['risk_training_states']=len(risk_data)
         print('RISK_VALIDATION',results['risk_validation'],flush=True)
     if args.composition in RISK_COMPOSITIONS:
