@@ -1,5 +1,62 @@
 # CrowdNav
 
+## Matched composition result (2026-09-18, completed)
+
+**Positive architectural evidence, NOT a positive Bayesian result.** All12
+matched-control runs and24 checkpoint records are complete. Seven selected
+checkpoints equal their IL tensors exactly and reuse those evaluations;
+17 distinct policy evaluations required6800 actual episodes. Five-human-only
+training and checkpoint selection, three seeds, fixed9900000--9900049 cases,
+two geometries. Each entry is success/collision/timeout out of300 executions.
+
+| Composition / input / checkpoint | 5 humans | 10 humans | 12 humans | 20 humans |
+| --- | --- | --- | --- | --- |
+| Max-sum mixture / prior / IL | 274/26/0 | 249/45/6 | 228/65/7 | 209/67/24 |
+| Attention / prior / IL | 262/32/6 | 204/89/7 | 175/121/4 | 121/168/11 |
+| Max-sum mixture / FULL / IL | 259/41/0 | 217/83/0 | 195/99/6 | 181/79/40 |
+| Attention / FULL / IL | 258/40/2 | 215/80/5 | 160/134/6 | 98/184/18 |
+| Max-sum mixture / prior / selected | 281/18/1 | 267/22/11 | 248/37/15 | 216/45/39 |
+| Attention / prior / selected | 265/30/5 | 207/85/8 | 178/115/7 | 132/154/14 |
+| Max-sum mixture / FULL / selected | 261/38/1 | 227/68/5 | 214/77/9 | 185/65/50 |
+| Attention / FULL / selected | 258/40/2 | 215/80/5 | 160/134/6 | 98/184/18 |
+
+For the selected prior-input policies,20-human success is72% versus44%.
+Per-seed values are65/66/85% versus47/17/68%; mixture wins all three seeds.
+Circle results are80.00% versus44.67%, square64.00% versus43.33%.
+The mixture-attention gap grows from5.33pp at five humans to28.00pp at20.
+An exploratory paired bootstrap resamples the three training seeds AND the50
+case IDs, preserving both scenes and all counts within each sampled case.
+10000 draws, RNG20260918: the20-human gap has95% percentile interval
+[10.67,48.00]pp; the increase in the gap has interval[6.00,41.00]pp.
+These are unadjusted exploratory intervals with only three training seeds,
+not a definitive multi-comparison significance claim. The IL-only contrast
+also favors mixture:69.67% versus40.33% at20, before any RL gate differences.
+
+For FULL, selected20-human mixture-attention difference is29.00pp,
+interval[11.67,47.00]; at five humans the difference is1.00pp. However, FULL
+does NOT outperform prior within mixture:61.67% versus72.00%, difference
+-10.33pp, interval[-25.00,8.00]. Do not attribute the architectural improvement
+to Bayesian filtering. The current evidence supports pursuing local composition
+under this protocol, not asserting that Bayesian recursion helps generalization.
+
+Qualification and compute limitations: all three attention-FULL runs and
+mixture-FULL seeds4807/7207 failed the90% IL gate and did not enter RL.
+Attention-prior seeds2407/4807 rolled back after1041/1039 candidate steps;
+mixture-prior2407 rolled back after7014. The other four eligible runs completed
+20000 steps. The complete study accepted424 policy-gradient updates, not12
+times20000 optimizer updates. Including IL-only rows prevents claiming that
+the architecture comparison is explained solely by these unequal RL lengths.
+Identical recipes and budgets do not mean identical learned local networks:
+composition changes their gradients. This tests end-to-end composition choices,
+not a frozen-local-network execution-only intervention. Attention has897 extra
+parameters and is a controlled aggregator, not a reproduced SARL baseline.
+Max-sum itself is not claimed as a new algorithm or sufficient paper novelty.
+
+Raw paired episode records:
+`/home/abc/temp/local_event_results_20260918/frozen_attention_evaluation.json`;
+all12 frozen checkpoints and training records:
+`/home/abc/temp/local_event_results_20260918/matched_attention_runs/`.
+
 ## Completed event-ordering follow-up (2026-09-18)
 
 The ordering follow-up and its separately registered five-human selection rule
