@@ -10,10 +10,10 @@ the same locally supported humans. It is a controlled attention aggregator,
 NOT a reproduction or benchmark claim about the published SARL algorithm.
 The additional parameter budget favors the attention baseline slightly.
 
-Use4000 IL updates, batch64, LR1e-4, margin objective, evaluate each1000 on NEW
+Use12000 IL updates, batch64, LR3e-4, softmax objective, evaluate each2000 on NEW
 five-human development cases21000--21099. Select the IL checkpoint on that set;
 require90% success before RL. Use20000 self-critical REINFORCE candidate steps,
-LR3e-5, temperature.05, KL.002, evaluation each2000, and rollback below90%.
+LR3e-5, temperature.05, KL.002, evaluation each1000, and rollback below90%.
 Reference-rollout steps and actual accepted updates are reported separately.
 No event-risk labels, hard-example resampling, density curriculum or additional
 demonstration loss enters this control. All initial base/local weights match
@@ -23,7 +23,18 @@ Seal all12 models before test cases9900000--9900049, at5/10/12/20 humans and
 circle/square geometries. Do not choose an architecture or observation arm on
 these results. Primary contrasts are mixture versus attention within each arm,
 and FULL versus prior within each architecture. Report failures, not only the
-models passing the IL gate. Remote: `/root/local_attention_20260918/`.
+models passing the IL gate. Remote: `/root/local_attention_matched_20260918/`.
+
+Execution correction before any9900000 test: the first pilot incorrectly used
+the default margin objective, LR1e-4 and4000 IL updates instead of the validated
+v3 recipe above. On NEW five-human development, seed2407 best IL successes were
+91/82 for mixture prior/FULL and88/77 for attention prior/FULL. Three failed IL;
+the first mixture-prior RL evaluation regressed to89 and rolled back. These are
+undertrained pilot results, NOT evidence against an architecture or Bayes.
+The pilot was stopped before high-count evaluation; its artifacts and reason
+remain in `/root/local_attention_20260918/pilot_aborted.json`. Restart all arms
+from scratch with the same established v3 recipe; do not selectively rescue an
+arm. The two controls keep identical training budgets and development cases.
 
 ## Event-supervision ordering follow-up (2026-09-18, frozen before tests)
 
