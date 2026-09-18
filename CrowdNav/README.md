@@ -1,6 +1,31 @@
 # CrowdNav
 
-## Temporal-composition learning study (2026-09-18, in progress)
+## Temporal-composition learning study (2026-09-18, completed negative)
+
+**Frozen result: neither new head improves over the original IL reference.**
+3600 executions, three seeds, same 50 layouts per cell. Entries below are
+success/collision/timeout out of150. These results do not justify a positive
+claim about ordered features or Bayesian generalization.
+
+| Scene | Humans | Original IL | Moments + IL/RL | Ordered + IL/RL |
+| --- | ---: | --- | --- | --- |
+| Circle | 5 | 145/5/0 | 139/11/0 | 134/16/0 |
+| Circle | 10 | 129/14/7 | 104/36/10 | 101/44/5 |
+| Circle | 12 | 130/14/6 | 95/42/13 | 92/50/8 |
+| Circle | 20 | 111/31/8 | 86/47/17 | 92/49/9 |
+| Square | 5 | 137/13/0 | 145/5/0 | 136/14/0 |
+| Square | 10 | 117/29/4 | 123/25/2 | 126/23/1 |
+| Square | 12 | 115/32/3 | 117/31/2 | 103/44/3 |
+| Square | 20 | 78/59/13 | 77/68/5 | 66/80/4 |
+
+Unlike the earlier scalar correction, these heads changed behavior, including
+an unfavorable increase in high-density collisions. Stronger representation
+and hard-example IL were therefore NOT sufficient. The local offset stress
+test changed2/200 five-human actions under arbitrary per-person additive cost
+offsets; sum and min-centered composition changed0. This is only a structural
+sensitivity observation, not proof that offsets caused these navigation errors.
+Artifacts: `/home/abc/temp/local_ordered_20260918/`, including full checkpoints,
+`frozen_eval.json`, `frozen_eval.log`, and `offset_audit.json`.
 
 Source commit `2802f9d`. Hypothesis: preserving the three smallest per-person
 predicted clearances at four time offsets provides a more transferable action
@@ -40,8 +65,28 @@ Frozen protocol before opening the new test matrix:
 
 Remote run directory: `/root/local_ordered_20260918/`. No source files beyond
 the existing Bayesian core and training entry point were added. Robot visibility,
-human dynamics, action set and reward are unchanged. Results will replace this
-in-progress status after the frozen evaluation, including failures.
+human dynamics, action set and reward are unchanged. All six training runs
+finished before any of the above evaluations. This experiment is closed;
+its test layouts must not be reused for model selection.
+
+### Next bounded experiment: supervise the local event before composing it
+
+In progress, with a fresh run directory and later fresh test layouts. The local
+network is trained on an explicit two-second event: would a constant candidate
+robot velocity intersect a recorded human trajectory? Labels use exact swept
+segments from five-human teacher trajectories. Because robot visibility is
+FALSE, changing the hypothetical robot velocity does not alter human motion.
+Future observations are TRAINING TARGETS ONLY, never deployed inputs. The event
+is defined over the fixed horizon, not over goal-terminated episode returns.
+
+Local event BCE pretraining is followed by ordinary imitation and then pure
+policy-gradient RL. The local event model stays frozen during both later stages
+to avoid relabelling an arbitrary RL score as a collision probability. Controls
+are summed event probabilities, worst-person log-survival cost, and summed
+log-survival cost. The last is an independence approximation, not automatically
+Bayesian inference or a guaranteed joint collision probability. Five-human
+calibration is checked on separate teacher cases25000--25019. No positive result
+is asserted until held-out navigation supports it.
 
 ## Composition-only minimal experiment (2026-09-18)
 

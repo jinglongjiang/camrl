@@ -20,7 +20,7 @@ sys.path.insert(0,str(ROOT))
 import numpy as np
 import torch
 import torch.nn.functional as F
-from crowd_nav.bayesian import (SCHEMA, ARMS, COMPOSITIONS, MotionBelief as InteractionBelief,
+from crowd_nav.bayesian import (SCHEMA, ARMS, COMPOSITIONS, RISK_COMPOSITIONS, MotionBelief as InteractionBelief,
                                 LocalValueNetwork as BeliefQNetwork,
                                 action_table, batch_observations)
 from crowd_sim.envs.crowd_sim import CrowdSim
@@ -71,7 +71,7 @@ def expert(config, raw):
 
 
 def episode(env, model, config, case, arm, rng, epsilon=0., teacher=False,
-            max_steps=None, step_callback=None,temperature=0.):
+            max_steps=None, step_callback=None,temperature=0.,record_raw=False):
     raw,_ = env.reset(options={'test_case':int(case)})
     belief = InteractionBelief(config)
     obs,rotation = belief.observe(raw,0,1.,arm)
@@ -102,6 +102,8 @@ def episode(env, model, config, case, arm, rng, epsilon=0., teacher=False,
         nxt,next_rotation = belief.observe(next_raw,step+1,remaining,arm)
         done = terminated or truncated
         row = dict(obs=obs,action=action_index,reward=reward,next_obs=nxt,done=done)
+        if record_raw:
+            row.update(raw=raw.copy(),next_raw=next_raw.copy())
         transitions.append(row)
         if step_callback is not None:
             step_callback(row)
@@ -113,6 +115,59 @@ def episode(env, model, config, case, arm, rng, epsilon=0., teacher=False,
     return transitions,dict(case=case,humans=len(env.humans),outcome=outcome,
         steps=len(transitions),reward=reward_sum,elapsed_time=len(transitions)*env.time_step,
         min_clearance=clearance if np.isfinite(clearance) else None)
+
+
+def risk_examples(rows, actions, dt, horizon=2.):
+    """Training labels only: constant robot action against recorded human future.
+
+    Exact swept segments for this counterfactual, justified by invisible robot.
+    This is a fixed-horizon event, not an episode return or deployed lookahead.
+    """
+    steps = int(round(horizon/dt))
+    if steps < 1 or not np.isclose(steps*dt,horizon):
+        raise ValueError('Risk horizon must contain an integer number of steps')
+    examples = []
+    for index in range(len(rows)-steps+1):
+        raw = rows[index]['raw'];r=raw[:9];h=raw[9:].reshape(-1,5)
+        future = np.stack([h[:,:2]]+[rows[t]['next_raw'][9:].reshape(-1,5)[:,:2]
+                                    for t in range(index,index+steps)])
+        angle = np.arctan2(r[3]-r[1],r[2]-r[0]);c,s=np.cos(angle),np.sin(angle)
+        world = actions@np.array([[c,s],[-s,c]])
+        times = np.arange(steps+1)*dt
+        relative = future[None]-r[None,None,None,:2]-world[:,None,None,:]*times[None,:,None,None]
+        segment = np.diff(relative,axis=1);start=relative[:,:-1]
+        fraction = (-(start*segment).sum(-1)/np.maximum((segment**2).sum(-1),1e-12)).clip(0.,1.)
+        clearance = np.linalg.norm(start+fraction[...,None]*segment,axis=-1)-r[6]-h[None,None,:,4]
+        rel = h[None,:,:2]-r[None,None,:2];v=h[None,:,2:4]-world[:,None,:]
+        t=(-(rel*v).sum(-1)/np.maximum((v*v).sum(-1),1e-12)).clip(0.,horizon)
+        cv = np.linalg.norm(rel+t[...,None]*v,axis=-1)-r[6]-h[None,:,4]
+        examples.append(dict(obs=rows[index]['obs'],risk_target=(clearance.min(1)<0).astype(np.float32),cv_target=(cv<0).astype(np.float32)))
+    return examples
+
+
+def risk_fit(model, train, validation, args):
+    optimizer = torch.optim.Adam(model.local.parameters(),lr=args.il_lr)
+    rng = np.random.default_rng(args.seed+101)
+    for update in range(args.risk_updates):
+        sample=[train[i] for i in rng.integers(len(train),size=args.batch_size)]
+        predicted=model(batch_observations([r['obs'] for r in sample],args.device),return_risk=True)
+        target=torch.as_tensor(np.stack([r['risk_target'] for r in sample]),device=args.device)
+        loss=F.binary_cross_entropy(predicted.clamp(1e-6,1.-1e-6),target)
+        optimizer.zero_grad();loss.backward();torch.nn.utils.clip_grad_norm_(model.local.parameters(),1.);optimizer.step()
+        if (update+1)%500==0:
+            print('RISK_LOSS',update+1,float(loss),flush=True)
+    metrics=dict(count=0,brier=0.,nll=0.,cv_brier=0.,positives=0.,prediction_sum=0.)
+    with torch.no_grad():
+        for start in range(0,len(validation),args.batch_size):
+            sample=validation[start:start+args.batch_size]
+            p=model(batch_observations([r['obs'] for r in sample],args.device),return_risk=True).cpu().numpy()
+            y=np.stack([r['risk_target'] for r in sample]);cv=np.stack([r['cv_target'] for r in sample]);clipped=p.clip(1e-6,1.-1e-6)
+            metrics['count']+=y.size;metrics['brier']+=float(((p-y)**2).sum());metrics['cv_brier']+=float(((cv-y)**2).sum())
+            metrics['nll']+=float((-y*np.log(clipped)-(1-y)*np.log1p(-clipped)).sum())
+            metrics['positives']+=float(y.sum());metrics['prediction_sum']+=float(p.sum())
+    for key in ('brier','cv_brier','nll','positives','prediction_sum'):
+        metrics[key]/=max(1,metrics['count'])
+    return metrics
 
 
 def q_update(model,target,optimizer,rows,gamma):
@@ -174,6 +229,7 @@ def evaluate(model,config,arm,count,start,humans=5,phase='val',scene='circle_cro
 def save_checkpoint(path,model,config,args,stage):
     payload = dict(schema=SCHEMA,stage=stage,arm=args.arm,seed=args.seed,train_num_humans=5,
         composition=model.composition,
+        risk_supervised=getattr(model,'risk_supervised',False),
         rl_algorithm=args.rl_algorithm,
         state=model.state_dict(),config={s:dict(config[s]) for s in config.sections()},
         source_sha256={str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()
@@ -318,6 +374,7 @@ def training(args,config):
     model = BeliefQNetwork(action_table(config),composition=args.composition).to(args.device)
     if args.checkpoint:
         checkpoint = torch.load(args.checkpoint,map_location=args.device)
+        model.risk_supervised=checkpoint.get('risk_supervised',False)
         if checkpoint['schema'] != SCHEMA or checkpoint['arm'] != args.arm:
             raise ValueError('Initialization checkpoint schema/arm mismatch')
         saved = configparser.ConfigParser()
@@ -333,10 +390,14 @@ def training(args,config):
                 state['conflict_gain'] = torch.zeros((),device=args.device)
             if args.composition in ('moments','ordered'):
                 state.update({k:v for k,v in model.state_dict().items() if k.startswith('combination.')})
+            if args.composition in RISK_COMPOSITIONS:
+                state['risk_gain'] = model.risk_gain.detach().clone()
             model.load_state_dict(state,strict=True)
         else:
             model.load_state_dict(checkpoint['state'],strict=True)
-    if args.freeze_local_il:
+    if args.composition in RISK_COMPOSITIONS and args.risk_updates == 0 and not getattr(model,'risk_supervised',False):
+        raise ValueError('Risk composition requires event supervision or a supervised risk checkpoint')
+    if args.freeze_local_il and args.composition not in RISK_COMPOSITIONS:
         if not hasattr(model,'combination') or not args.checkpoint:
             raise ValueError('Frozen-local IL requires a combination head and an IL checkpoint')
         for p in model.parameters():
@@ -347,10 +408,12 @@ def training(args,config):
     env = environment(config)
     rng = np.random.default_rng(args.seed)
     replay = deque(maxlen=args.buffer_size)
-    demos,collection = [],[]
+    demos,collection,risk_data = [],[],[]
     demo_count = 0 if args.checkpoint and args.il_updates == 0 and args.rl_algorithm == 'reinforce' else args.demo_episodes
     for i in range(demo_count):
-        rows,record = episode(env,model,config,10000+i,args.arm,rng,teacher=True)
+        rows,record = episode(env,model,config,10000+i,args.arm,rng,teacher=True,record_raw=args.risk_updates>0)
+        if args.risk_updates > 0:
+            risk_data.extend(risk_examples(rows,model.actions.cpu().numpy(),env.time_step))
         collection.append(record)
         replay.extend(rows)
         if record['outcome']=='reach_goal':
@@ -369,6 +432,22 @@ def training(args,config):
         il_optimizer_updates=0,rl_optimizer_updates=0,rl_environment_steps=0,
         teacher_success=sum(r['outcome']=='reach_goal' for r in collection),
         demo_transitions=len(demos))
+    if args.risk_updates > 0:
+        validation=[]
+        for case in range(25000,25020):
+            rows,_=episode(env,model,config,case,args.arm,rng,teacher=True,record_raw=True)
+            validation.extend(risk_examples(rows,model.actions.cpu().numpy(),env.time_step))
+        if not risk_data or not validation:
+            raise RuntimeError('Missing fixed-horizon risk supervision')
+        results['risk_validation']=risk_fit(model,risk_data,validation,args)
+        model.risk_supervised=True
+        results['risk_training_states']=len(risk_data)
+        print('RISK_VALIDATION',results['risk_validation'],flush=True)
+    if args.composition in RISK_COMPOSITIONS:
+        # Preserve the supervised event semantics during both IL and RL.
+        for p in model.local.parameters():
+            p.requires_grad_(False)
+        optimizer=torch.optim.Adam([p for p in model.parameters() if p.requires_grad],lr=args.il_lr)
     hard = []
     if args.il_hard_fraction > 0:
         if not args.checkpoint:
@@ -421,6 +500,9 @@ def training(args,config):
     model.load_state_dict(torch.load(args.out/'il.pt',map_location=args.device)['state'])
     for p in model.parameters():
         p.requires_grad_(True)
+    if args.composition in RISK_COMPOSITIONS:
+        for p in model.local.parameters():
+            p.requires_grad_(False)
     if baseline['success']/args.eval_episodes < args.il_gate:
         results['status'] = 'IL_GATE_FAILED'
         persist()
@@ -518,6 +600,8 @@ def smoke(config,device):
                 state['conflict_gain'] = torch.zeros((),device=device)
             if composition in ('moments','ordered'):
                 state.update({k:v for k,v in variant.state_dict().items() if k.startswith('combination.')})
+            if composition in RISK_COMPOSITIONS:
+                state['risk_gain']=variant.risk_gain.detach().clone()
             variant.load_state_dict(state,strict=True)
             values = variant(batch)
             assert torch.isfinite(values).all()
@@ -758,6 +842,7 @@ def main():
     parser.add_argument('--il-lr',type=float,default=1e-4)
     parser.add_argument('--freeze-local-il',action='store_true')
     parser.add_argument('--il-hard-fraction',type=float,default=0.)
+    parser.add_argument('--risk-updates',type=int,default=0)
     parser.add_argument('--select-trained-il',action='store_true',
                         help='Select among trained IL checkpoints; initial policy is a separately reported reference')
     parser.add_argument('--il-objective',choices=('margin','softmax'),default='softmax')
@@ -800,6 +885,8 @@ def main():
         parser.error('Invalid hard-example fraction')
     if args.select_trained_il and args.il_updates < 1:
         parser.error('Selecting trained IL requires positive IL updates')
+    if args.risk_updates < 0 or (args.risk_updates > 0 and args.composition not in RISK_COMPOSITIONS):
+        parser.error('Risk supervision requires a risk composition and nonnegative update count')
     if min(args.demo_episodes,args.il_updates,args.rl_episodes) < 0 or (args.rl_steps is not None and args.rl_steps < 0):
         parser.error('Negative training budget')
     if not 0 <= args.rollback_below <= 1 or not 0 <= args.epsilon_final <= args.epsilon_initial <= 1:

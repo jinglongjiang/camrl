@@ -10,7 +10,9 @@ from torch import nn
 
 SCHEMA = 'local-predictive-q-v3'
 ARMS = ('current', 'prior', 'map', 'history', 'full')
-COMPOSITIONS = ('mixture', 'sum', 'max', 'conflict', 'moments', 'ordered')
+COMPOSITIONS = ('mixture', 'sum', 'max', 'conflict', 'moments', 'ordered',
+                'survival', 'risk_max', 'risk_sum')
+RISK_COMPOSITIONS = ('survival', 'risk_max', 'risk_sum')
 
 
 def action_table(config):
@@ -155,6 +157,8 @@ class LocalValueNetwork(nn.Module):
         self.mix = nn.Parameter(torch.zeros(2))
         if composition == 'conflict':
             self.conflict_gain = nn.Parameter(torch.zeros(()))
+        if composition in RISK_COMPOSITIONS:
+            self.risk_gain = nn.Parameter(torch.tensor(math.log(math.expm1(1.))))
         if composition in ('moments','ordered'):
             self.combination = nn.Sequential(nn.Linear(18,64),nn.ReLU(),
                                              nn.Linear(64,32),nn.ReLU(),nn.Linear(32,1))
@@ -191,7 +195,7 @@ class LocalValueNetwork(nn.Module):
         overlap = torch.exp(-(timing[...,i]-timing[...,j]).abs())
         return (torch.minimum(cost[...,i],cost[...,j])*opposition*overlap).max(-1).values
 
-    def forward(self, obs):
+    def forward(self, obs, return_risk=False):
         h, r = obs['humans'], obs['robot']
         mask = obs['mask'].bool()
         actions = self.actions[None].expand(len(r),-1,-1)
@@ -212,7 +216,22 @@ class LocalValueNetwork(nn.Module):
             actions[:,:,None,None].expand(*shape,2),
             r[:,None,None,None,5].expand(shape)[...,None],
             h[:,None,:,None,2:4].expand(*shape,2)),-1)
-        penalty = torch.nn.functional.softplus(self.local(features).squeeze(-1))
+        logits = self.local(features).squeeze(-1)
+        if self.composition in RISK_COMPOSITIONS:
+            probability = (logits.sigmoid()*obs['weights'][:,None,None]).sum(-1)
+            probability = probability*mask[:,None]*(distance[...,0] < 6.)
+            if return_risk:
+                return probability
+            if self.composition == 'survival':
+                risk = -torch.log1p(-probability.clamp_max(1.-1e-6)).sum(-1)
+            elif self.composition == 'risk_max':
+                risk = -torch.log1p(-probability.max(-1).values.clamp_max(1.-1e-6))
+            else:
+                risk = probability.sum(-1)
+            return base-torch.nn.functional.softplus(self.risk_gain)*risk
+        if return_risk:
+            raise ValueError('Risk probabilities require a separately supervised risk model')
+        penalty = torch.nn.functional.softplus(logits)
         # Local support is based only on current public geometry, same for all arms.
         relevance = ((6.-distance)/4.).clamp(0.,1.)
         cost = (penalty*obs['weights'][:,None,None]).sum(-1)*relevance[...,0]
