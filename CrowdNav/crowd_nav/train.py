@@ -509,7 +509,11 @@ def training(args,config):
     if args.composition in RISK_COMPOSITIONS:
         for p in model.local.parameters():
             p.requires_grad_(False)
-    if baseline['success']/args.eval_episodes < args.il_gate:
+    results['il_qualified'] = baseline['success']/args.eval_episodes >= args.il_gate
+    rl_requested = args.rl_steps > 0 if args.rl_steps is not None else args.rl_episodes > 0
+    results['qualification_override'] = bool(args.allow_unqualified_il and rl_requested
+                                             and not results['il_qualified'])
+    if not results['il_qualified'] and not results['qualification_override']:
         results['status'] = 'IL_GATE_FAILED'
         persist()
         print('IL_GATE_FAILED: no RL',flush=True)
@@ -880,6 +884,8 @@ def main():
     parser.add_argument('--eval-episodes',type=int,default=100)
     parser.add_argument('--eval-every',type=int,default=100)
     parser.add_argument('--il-gate',type=float,default=.9)
+    parser.add_argument('--allow-unqualified-il',action='store_true',
+                        help='Run the declared RL budget below the IL gate; record the failed qualification explicitly')
     parser.add_argument('--lr',type=float,default=1e-4)
     parser.add_argument('--gamma',type=float,default=.99)
     parser.add_argument('--batch-size',type=int,default=128)

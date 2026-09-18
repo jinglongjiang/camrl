@@ -69,7 +69,11 @@ target copy each1000 steps, epsilon.05->.01, replay50000, validation every1000
 on21000--21099. No demonstration transitions or imitation loss are added in
 this RL stage. Unlike the conservative policy-gradient run, do not early-stop
 DDQN on a temporary development drop; retain the best five-human checkpoint,
-including the IL start. The initial90% IL gate still applies. About19937 TD
+including the IL start. Train even if the initial IL success is below90%, using
+`--allow-unqualified-il`; record `il_qualified=false` and the explicit override
+rather than calling that initialization qualified. This was amended BEFORE any
+DDQN run or9900000 evaluation: two nominally adequate IL policies near89% were
+otherwise blocked from learning at all. All DDQN arms use the same rule. About19937 TD
 updates are possible per qualified run. Report actual updates, candidate steps
 and policy-gradient reference-rollout steps, not a misleading equal-compute
 claim. This isolates another RL route without introducing a new controller
