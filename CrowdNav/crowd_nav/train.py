@@ -331,10 +331,19 @@ def training(args,config):
             state = dict(checkpoint['state'])
             if args.composition == 'conflict':
                 state['conflict_gain'] = torch.zeros((),device=args.device)
+            if args.composition in ('moments','ordered'):
+                state.update({k:v for k,v in model.state_dict().items() if k.startswith('combination.')})
             model.load_state_dict(state,strict=True)
         else:
             model.load_state_dict(checkpoint['state'],strict=True)
-    optimizer = torch.optim.Adam(model.parameters(),lr=args.il_lr)
+    if args.freeze_local_il:
+        if not hasattr(model,'combination') or not args.checkpoint:
+            raise ValueError('Frozen-local IL requires a combination head and an IL checkpoint')
+        for p in model.parameters():
+            p.requires_grad_(False)
+        for p in model.combination.parameters():
+            p.requires_grad_(True)
+    optimizer = torch.optim.Adam([p for p in model.parameters() if p.requires_grad],lr=args.il_lr)
     env = environment(config)
     rng = np.random.default_rng(args.seed)
     replay = deque(maxlen=args.buffer_size)
@@ -360,6 +369,17 @@ def training(args,config):
         il_optimizer_updates=0,rl_optimizer_updates=0,rl_environment_steps=0,
         teacher_success=sum(r['outcome']=='reach_goal' for r in collection),
         demo_transitions=len(demos))
+    hard = []
+    if args.il_hard_fraction > 0:
+        if not args.checkpoint:
+            raise ValueError('Hard-example sampling requires a fixed initial IL model')
+        with torch.no_grad():
+            for start in range(0,len(demos),args.batch_size):
+                chunk = demos[start:start+args.batch_size]
+                prediction = model(batch_observations([row['obs'] for row in chunk],args.device)).argmax(1).cpu().numpy()
+                hard.extend(start+i for i,(p,row) in enumerate(zip(prediction,chunk)) if p != row['action'])
+    results['hard_demo_count'] = len(hard)
+    results['hard_demo_indices_sha256'] = hashlib.sha256(np.asarray(hard,dtype=np.int64).tobytes()).hexdigest()
     def persist():
         temporary = args.out/'results.tmp'
         temporary.write_text(json.dumps(results,indent=2))
@@ -371,12 +391,16 @@ def training(args,config):
     # All checkpoint selection uses the same five-human development layouts.
     for update in range(args.il_updates+1):
         if update:
-            batch = [demos[i] for i in rng.integers(len(demos),size=args.batch_size)]
+            count = int(args.batch_size*args.il_hard_fraction) if hard else 0
+            indices = list(rng.integers(len(demos),size=args.batch_size-count))
+            if count:
+                indices += [hard[i] for i in rng.integers(len(hard),size=count)]
+            batch = [demos[i] for i in indices]
             loss = il_update(model,optimizer,batch,objective=args.il_objective)
             results['il_optimizer_updates'] = update
             if update%100 == 0:
                 print('IL_LOSS',update,loss,flush=True)
-        if (update and update%args.il_eval_every == 0) or update == args.il_updates:
+        if (update and update%args.il_eval_every == 0) or update == args.il_updates or (args.checkpoint and update == 0):
             accuracy = None
             if demos:
                 sample = [demos[i] for i in rng.integers(len(demos),size=args.batch_size)]
@@ -385,7 +409,8 @@ def training(args,config):
                 accuracy = float(np.mean(prediction == [row['action'] for row in sample]))
             validation = evaluate(model,config,args.arm,args.eval_episodes,20000)
             results['il_curve'].append(dict(update=update,training_action_accuracy=accuracy,**validation))
-            if best_rank is None or rank(validation) > best_rank:
+            eligible = not (args.select_trained_il and update == 0)
+            if eligible and (best_rank is None or rank(validation) > best_rank):
                 best_rank = rank(validation)
                 results['il_validation'] = validation
                 results['selected_il_update'] = update
@@ -394,6 +419,8 @@ def training(args,config):
             print('IL_VALIDATION',update,validation['success'],validation['collision'],'ACCURACY',accuracy,flush=True)
     baseline = results['il_validation']
     model.load_state_dict(torch.load(args.out/'il.pt',map_location=args.device)['state'])
+    for p in model.parameters():
+        p.requires_grad_(True)
     if baseline['success']/args.eval_episodes < args.il_gate:
         results['status'] = 'IL_GATE_FAILED'
         persist()
@@ -489,6 +516,8 @@ def smoke(config,device):
             state = dict(model.state_dict())
             if composition == 'conflict':
                 state['conflict_gain'] = torch.zeros((),device=device)
+            if composition in ('moments','ordered'):
+                state.update({k:v for k,v in variant.state_dict().items() if k.startswith('combination.')})
             variant.load_state_dict(state,strict=True)
             values = variant(batch)
             assert torch.isfinite(values).all()
@@ -499,6 +528,13 @@ def smoke(config,device):
                 changed = variant(batch)
                 torch.testing.assert_close(changed,variant(permuted),rtol=1e-5,atol=1e-6)
                 torch.testing.assert_close(changed[:2],q[:2],rtol=0.,atol=0.)
+            if composition in ('moments','ordered'):
+                torch.testing.assert_close(q,values,rtol=0.,atol=0.)
+                variant.combination[-1].weight.fill_(.01)
+                changed = variant(batch)
+                torch.testing.assert_close(changed,variant(permuted),rtol=1e-5,atol=1e-6)
+                for i,obs in enumerate(observations):
+                    torch.testing.assert_close(changed[i],variant(batch_observations([obs],device))[0],rtol=1e-5,atol=1e-6)
         costs = torch.tensor([[[2.,3.]]],device=device)
         times = torch.zeros_like(costs)
         opposite = torch.tensor([[[[1.,0.],[-1.,0.]]]],device=device)
@@ -720,6 +756,10 @@ def main():
     parser.add_argument('--il-updates',type=int,default=3000)
     parser.add_argument('--il-eval-every',type=int,default=1000)
     parser.add_argument('--il-lr',type=float,default=1e-4)
+    parser.add_argument('--freeze-local-il',action='store_true')
+    parser.add_argument('--il-hard-fraction',type=float,default=0.)
+    parser.add_argument('--select-trained-il',action='store_true',
+                        help='Select among trained IL checkpoints; initial policy is a separately reported reference')
     parser.add_argument('--il-objective',choices=('margin','softmax'),default='softmax')
     parser.add_argument('--rl-episodes',type=int,default=2000)
     parser.add_argument('--rl-steps',type=int)
@@ -756,6 +796,10 @@ def main():
         parser.error('Batch, target and evaluation intervals must be positive')
     if not 0 <= args.il_gate <= 1 or not 0 <= args.gamma <= 1:
         parser.error('Invalid gate/gamma')
+    if not 0 <= args.il_hard_fraction <= 1:
+        parser.error('Invalid hard-example fraction')
+    if args.select_trained_il and args.il_updates < 1:
+        parser.error('Selecting trained IL requires positive IL updates')
     if min(args.demo_episodes,args.il_updates,args.rl_episodes) < 0 or (args.rl_steps is not None and args.rl_steps < 0):
         parser.error('Negative training budget')
     if not 0 <= args.rollback_below <= 1 or not 0 <= args.epsilon_final <= args.epsilon_initial <= 1:

@@ -10,7 +10,7 @@ from torch import nn
 
 SCHEMA = 'local-predictive-q-v3'
 ARMS = ('current', 'prior', 'map', 'history', 'full')
-COMPOSITIONS = ('mixture', 'sum', 'max', 'conflict')
+COMPOSITIONS = ('mixture', 'sum', 'max', 'conflict', 'moments', 'ordered')
 
 
 def action_table(config):
@@ -155,6 +155,31 @@ class LocalValueNetwork(nn.Module):
         self.mix = nn.Parameter(torch.zeros(2))
         if composition == 'conflict':
             self.conflict_gain = nn.Parameter(torch.zeros(()))
+        if composition in ('moments','ordered'):
+            self.combination = nn.Sequential(nn.Linear(18,64),nn.ReLU(),
+                                             nn.Linear(64,32),nn.ReLU(),nn.Linear(32,1))
+            nn.init.zeros_(self.combination[-1].weight)
+            nn.init.zeros_(self.combination[-1].bias)
+
+    @staticmethod
+    def temporal_summary(clearance, active, composition):
+        """Four time slices with three geometric statistics each, not probabilities.
+
+        Input is B,A,T,N. Padding and people outside local support are excluded.
+        Empty/missing order slots have the same neutral clearance of four metres.
+        """
+        valid = active[:,None,None,:].expand_as(clearance)
+        bounded = clearance.clamp(-.6,4.)
+        ranked = torch.where(valid,bounded,torch.full_like(bounded,4.)).sort(-1).values
+        if composition == 'ordered':
+            values = torch.nn.functional.pad(ranked,(0,max(0,3-ranked.shape[-1])),value=4.)[...,:3]
+        else:
+            count = valid.sum(-1).clamp_min(1)
+            mean = (bounded*valid).sum(-1)/count
+            variance = ((bounded-mean[...,None]).square()*valid).sum(-1)/count
+            mean = torch.where(valid.any(-1),mean,torch.full_like(mean,4.))
+            values = torch.stack((ranked[...,0],mean,variance.clamp_min(0.).sqrt()),-1)
+        return values.flatten(-2)/2.
 
     @staticmethod
     def conflict_cost(cost, timing, direction):
@@ -203,4 +228,15 @@ class LocalValueNetwork(nn.Module):
             direction = torch.nn.functional.normalize(h[...,:2],dim=-1)[:,None].expand(-1,len(self.actions),-1,-1)
             # The zero-start bounded coefficient preserves the IL policy exactly.
             value = value-self.conflict_gain.tanh()*self.conflict_cost(cost,timing,direction)
+        if self.composition in ('moments','ordered'):
+            horizons = relative_v.new_tensor([.25,.5,1.,2.])
+            future = position[...,None,:]+relative_v[...,None,:]*horizons[None,None,None,None,:,None]
+            clearance = future.norm(dim=-1)-radius[...,None]
+            expected = (clearance*obs['weights'][:,None,None,:,None]).sum(-2).transpose(-1,-2)
+            active = mask & (h[...,:2].norm(dim=-1)*10. < 6.)
+            summary = self.temporal_summary(expected,active,self.composition)
+            context = torch.cat((summary,cost.max(-1).values[...,None],cost.sum(-1)[...,None],
+                                 actions,ego[...,[0,5]]),-1)
+            correction = self.combination(context).squeeze(-1)
+            value = value+correction*active.any(-1)[:,None]
         return value
