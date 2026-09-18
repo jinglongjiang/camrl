@@ -36,6 +36,21 @@ remain in `/root/local_attention_20260918/pilot_aborted.json`. Restart all arms
 from scratch with the same established v3 recipe; do not selectively rescue an
 arm. The two controls keep identical training budgets and development cases.
 
+Additional RL-algorithm control, also registered before9900000 evaluations:
+fork the EXACT selected mixture IL weights into discrete Double DQN for prior
+and FULL, all three seeds. Use20000 environment steps, Adam1e-4, batch64,
+target copy each1000 steps, epsilon.05->.01, replay50000, validation every1000
+on21000--21099. No demonstration transitions or imitation loss are added in
+this RL stage. Unlike the conservative policy-gradient run, do not early-stop
+DDQN on a temporary development drop; retain the best five-human checkpoint,
+including the IL start. The initial90% IL gate still applies. About19937 TD
+updates are possible per qualified run. Report actual updates, candidate steps
+and policy-gradient reference-rollout steps, not a misleading equal-compute
+claim. This isolates another RL route without introducing a new controller
+module or a density-training curriculum. Remote:
+`/root/local_ddqn_matched_20260918/`. Evaluate both selected and last DDQN
+checkpoints on9900000 layouts; only the development-selected policy is primary.
+
 ## Event-supervision ordering follow-up (2026-09-18, frozen before tests)
 
 Five-human development exposes an additional failure of post-event imitation:
