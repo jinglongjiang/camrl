@@ -134,7 +134,7 @@ its test layouts must not be reused for model selection.
 
 ### Next bounded experiment: supervise the local event before composing it
 
-In progress, with a fresh run directory and later fresh test layouts. The local
+**Completed negative: 8000 frozen evaluations on9700000--9700049.** The local
 network is trained on an explicit two-second event: would a constant candidate
 robot velocity intersect a recorded human trajectory? Labels use exact swept
 segments from five-human teacher trajectories. Because robot visibility is
@@ -149,7 +149,28 @@ are summed event probabilities, worst-person log-survival cost, and summed
 log-survival cost. The last is an independence approximation, not automatically
 Bayesian inference or a guaranteed joint collision probability. Five-human
 calibration is checked on separate teacher cases25000--25019. No positive result
-is asserted until held-out navigation supports it.
+is supported by this experiment.
+
+Success/collision/timeout pooled across circle/square, three seeds, out of300:
+
+| Model | 5 humans | 10 humans | 12 humans | 20 humans |
+| --- | --- | --- | --- | --- |
+| Original IL | 278/22/0 | 250/46/4 | 241/52/7 | 193/81/26 |
+| Original IL+RL reference | 291/9/0 | 276/20/4 | 265/27/8 | 219/51/30 |
+| Event survival, prior | 283/9/8 | 227/17/56 | 204/32/64 | 153/63/84 |
+| Event survival, FULL | 286/4/10 | 225/27/48 | 195/56/49 | 135/92/73 |
+| Event survival, posterior-mean point | 263/27/10 | 183/75/42 | 155/106/39 | 81/161/58 |
+| Event survival, short history | 252/32/16 | 167/65/68 | 134/88/78 | 84/133/83 |
+
+Seed7207 prior/FULL/history failed the IL gate and are evaluated as IL-only,
+not passed off as completed RL comparisons. Original IL+RL used a20000-step
+RL budget versus this experiment's10000; it is an engineering reference, not
+an equal-budget attribution contrast. Single-seed2407 operator controls at20
+humans (out of100): max44/44/12, sum51/39/10, survival61/29/10. Calibration
+improvement did not translate into navigation improvement. Frozen local weights
+were verified bit-identical between event pretraining and every descendant.
+Artifacts: `/home/abc/temp/local_event_results_20260918/`, including the full
+`frozen_event_evaluation.json` and `frozen_manifest.json` under the belief run.
 
 The first supervised predictor (seed2407) has five-human validation Brier
 0.004869 and mean predicted event probability0.021651 versus event frequency
