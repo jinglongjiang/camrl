@@ -1,5 +1,48 @@
 # CrowdNav
 
+## Temporal-composition learning study (2026-09-18, in progress)
+
+Source commit `2802f9d`. Hypothesis: preserving the three smallest per-person
+predicted clearances at four time offsets provides a more transferable action
+descriptor than compressing each time slice to minimum/mean/standard deviation.
+This is a composition hypothesis, NOT an asserted Bayesian advantage or novelty.
+
+Both `moments` and `ordered` have 22917 parameters, the same zero-initialized
+18 -> 64 -> 32 -> 1 residual combination head, and identical initial scores
+from each seed's existing `prior` IL model. The original per-person costs still
+include ALL locally supported humans. Only the new descriptor uses three order
+statistics. Horizons are .25/.5/1/2 seconds; clearances are prediction-weighted
+means per person, capped to [-.6,4] metres. These are geometric features, NOT
+calibrated collision probabilities or an independence-product risk model.
+
+Frozen protocol before opening the new test matrix:
+
+- Seeds 2407/4807/7207; 500 existing five-human teacher episodes per run.
+- Local/base networks frozen during 4000 combination-head IL updates, LR3e-4,
+  batch64, evaluate each1000 on five-human cases20000--20099.
+- Half of each IL minibatch samples initial-model action disagreements with
+  teacher demonstrations, half samples all demonstrations. Hard indices are
+  fixed before learning and hashed. No student rollouts are teacher-labelled:
+  this is offline hard-example imitation, NOT DAgger.
+- Initial policy is a separate reference; select among TRAINED IL checkpoints.
+  Require >=90/100 development success to enter RL. This intentionally allows
+  lower five-human performance than the original reference; that cost must be
+  reported, not concealed by claiming identical final IL competence.
+- Unfreeze for self-critical RL, no imitation loss, cap10000 candidate steps
+  per run, LR3e-5, KL limit.002, temperature.05. Reference steps counted separately.
+- Finish all six runs and seal model selection before testing cases
+  9600000--9600049 at5/10/12/20 humans in circle/square. Original IL references
+  are evaluated on the same layouts; no high-density model selection.
+- Primary controlled contrast: ordered versus moments, separately for each
+  geometry/count. Original IL is an engineering reference with no extra head
+  training budget, not an equal-budget architecture baseline. A pooled-attention
+  baseline and a validated Bayesian benefit remain separate requirements.
+
+Remote run directory: `/root/local_ordered_20260918/`. No source files beyond
+the existing Bayesian core and training entry point were added. Robot visibility,
+human dynamics, action set and reward are unchanged. Results will replace this
+in-progress status after the frozen evaluation, including failures.
+
 ## Composition-only minimal experiment (2026-09-18)
 
 **Result: composition interventions change closed-loop behavior, but the new
