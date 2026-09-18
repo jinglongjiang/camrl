@@ -10,6 +10,7 @@ from torch import nn
 
 SCHEMA = 'local-predictive-q-v3'
 ARMS = ('current', 'prior', 'map', 'history', 'full')
+COMPOSITIONS = ('mixture', 'sum', 'max', 'conflict')
 
 
 def action_table(config):
@@ -142,13 +143,28 @@ class LocalValueNetwork(nn.Module):
     and accumulated exposure. This is an inductive bias, not a safety bound
     or a claim of exact value factorization.
     """
-    def __init__(self, actions, width=128):
+    def __init__(self, actions, width=128, composition='mixture'):
         super().__init__()
+        if composition not in COMPOSITIONS:
+            raise ValueError('Unknown composition')
+        self.composition = composition
         self.register_buffer('actions', torch.as_tensor(actions,dtype=torch.float32))
         self.base = nn.Sequential(nn.Linear(8,width),nn.ReLU(),nn.Linear(width,1))
         self.local = nn.Sequential(nn.Linear(12,width),nn.ReLU(),
                                    nn.Linear(width,width),nn.ReLU(),nn.Linear(width,1))
         self.mix = nn.Parameter(torch.zeros(2))
+        if composition == 'conflict':
+            self.conflict_gain = nn.Parameter(torch.zeros(()))
+
+    @staticmethod
+    def conflict_cost(cost, timing, direction):
+        """Overlapping, opposing local constraints; not a collision probability."""
+        if cost.shape[-1] < 2:
+            return cost.sum(-1)*0.
+        i,j = torch.triu_indices(cost.shape[-1],cost.shape[-1],1,device=cost.device)
+        opposition = ((1.-(direction[...,i,:]*direction[...,j,:]).sum(-1))/2.).clamp(0.,1.)
+        overlap = torch.exp(-(timing[...,i]-timing[...,j]).abs())
+        return (torch.minimum(cost[...,i],cost[...,j])*opposition*overlap).max(-1).values
 
     def forward(self, obs):
         h, r = obs['humans'], obs['robot']
@@ -176,5 +192,15 @@ class LocalValueNetwork(nn.Module):
         relevance = ((6.-distance)/4.).clamp(0.,1.)
         cost = (penalty*obs['weights'][:,None,None]).sum(-1)*relevance[...,0]
         cost = cost*mask[:,None]
+        if self.composition == 'sum':
+            return base-cost.sum(-1)
+        if self.composition == 'max':
+            return base-cost.max(-1).values
         mixture = self.mix.softmax(0)
-        return base-mixture[0]*cost.max(-1).values-mixture[1]*cost.sum(-1)
+        value = base-mixture[0]*cost.max(-1).values-mixture[1]*cost.sum(-1)
+        if self.composition == 'conflict':
+            timing = (closest_t*obs['weights'][:,None,None]).sum(-1)
+            direction = torch.nn.functional.normalize(h[...,:2],dim=-1)[:,None].expand(-1,len(self.actions),-1,-1)
+            # The zero-start bounded coefficient preserves the IL policy exactly.
+            value = value-self.conflict_gain.tanh()*self.conflict_cost(cost,timing,direction)
+        return value

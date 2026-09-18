@@ -20,7 +20,7 @@ sys.path.insert(0,str(ROOT))
 import numpy as np
 import torch
 import torch.nn.functional as F
-from crowd_nav.bayesian import (SCHEMA, ARMS, MotionBelief as InteractionBelief,
+from crowd_nav.bayesian import (SCHEMA, ARMS, COMPOSITIONS, MotionBelief as InteractionBelief,
                                 LocalValueNetwork as BeliefQNetwork,
                                 action_table, batch_observations)
 from crowd_sim.envs.crowd_sim import CrowdSim
@@ -173,6 +173,7 @@ def evaluate(model,config,arm,count,start,humans=5,phase='val',scene='circle_cro
 
 def save_checkpoint(path,model,config,args,stage):
     payload = dict(schema=SCHEMA,stage=stage,arm=args.arm,seed=args.seed,train_num_humans=5,
+        composition=model.composition,
         rl_algorithm=args.rl_algorithm,
         state=model.state_dict(),config={s:dict(config[s]) for s in config.sections()},
         source_sha256={str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()
@@ -314,7 +315,7 @@ def training(args,config):
     if args.out.exists() and any(args.out.iterdir()):
         raise ValueError('Refusing to overwrite a nonempty run directory')
     args.out.mkdir(parents=True,exist_ok=True)
-    model = BeliefQNetwork(action_table(config)).to(args.device)
+    model = BeliefQNetwork(action_table(config),composition=args.composition).to(args.device)
     if args.checkpoint:
         checkpoint = torch.load(args.checkpoint,map_location=args.device)
         if checkpoint['schema'] != SCHEMA or checkpoint['arm'] != args.arm:
@@ -323,7 +324,16 @@ def training(args,config):
         saved.read_dict(checkpoint['config'])
         if {s:dict(config[s]) for s in config.sections()} != checkpoint['config']:
             raise ValueError('Training initialization requires identical saved configuration')
-        model.load_state_dict(checkpoint['state'],strict=True)
+        saved_composition = checkpoint.get('composition','mixture')
+        if saved_composition != args.composition:
+            if not args.initialize_composition or saved_composition != 'mixture':
+                raise ValueError('Composition change requires explicit mixture initialization')
+            state = dict(checkpoint['state'])
+            if args.composition == 'conflict':
+                state['conflict_gain'] = torch.zeros((),device=args.device)
+            model.load_state_dict(state,strict=True)
+        else:
+            model.load_state_dict(checkpoint['state'],strict=True)
     optimizer = torch.optim.Adam(model.parameters(),lr=args.il_lr)
     env = environment(config)
     rng = np.random.default_rng(args.seed)
@@ -474,6 +484,28 @@ def smoke(config,device):
         torch.testing.assert_close(q,model(permuted),rtol=1e-5,atol=1e-6)
         for i,obs in enumerate(observations):
             torch.testing.assert_close(q[i],model(batch_observations([obs],device))[0],rtol=1e-5,atol=1e-6)
+        for composition in COMPOSITIONS:
+            variant = BeliefQNetwork(action_table(config),composition=composition).to(device)
+            state = dict(model.state_dict())
+            if composition == 'conflict':
+                state['conflict_gain'] = torch.zeros((),device=device)
+            variant.load_state_dict(state,strict=True)
+            values = variant(batch)
+            assert torch.isfinite(values).all()
+            torch.testing.assert_close(values,variant(permuted),rtol=1e-5,atol=1e-6)
+            if composition == 'conflict':
+                torch.testing.assert_close(q,values,rtol=0.,atol=0.)
+                variant.conflict_gain.fill_(.5)
+                changed = variant(batch)
+                torch.testing.assert_close(changed,variant(permuted),rtol=1e-5,atol=1e-6)
+                torch.testing.assert_close(changed[:2],q[:2],rtol=0.,atol=0.)
+        costs = torch.tensor([[[2.,3.]]],device=device)
+        times = torch.zeros_like(costs)
+        opposite = torch.tensor([[[[1.,0.],[-1.,0.]]]],device=device)
+        torch.testing.assert_close(model.conflict_cost(costs,times,opposite),costs[...,:1].squeeze(-1))
+        assert model.conflict_cost(costs,times,opposite.abs()).item() == 0.
+        times[...,1] = 2.
+        assert model.conflict_cost(costs,times,opposite).item() < 2.
     env = environment(config)
     rows,record = episode(env,model,config,17,'full',np.random.default_rng(17),teacher=True,max_steps=8)
     for row in rows:
@@ -587,7 +619,10 @@ def study(args,config):
         raise ValueError('Study requires a new --out directory')
     args.out.mkdir(parents=True,exist_ok=True)
     if args.checkpoint:
-        raise ValueError('Study initializes all arms from the same random seed, not a privileged arm')
+        initial = torch.load(args.checkpoint,map_location='cpu')
+        if (not args.initialize_composition or args.study_arms != [initial['arm']]
+                or args.study_seeds != [initial['seed']] or initial['stage'] != 'il'):
+            raise ValueError('Checkpoint study requires one matching arm/seed and an IL checkpoint')
     start = time.monotonic()
     source_files = [Path(__file__).resolve(),ROOT/'crowd_nav/bayesian.py',
                     ROOT/'crowd_sim/envs/crowd_sim.py',ROOT/'crowd_sim/envs/policy/orca.py',args.config.resolve()]
@@ -595,6 +630,8 @@ def study(args,config):
         for path in source_files:
             archive.add(path,arcname=str(path.relative_to(ROOT)))
     report = dict(schema=SCHEMA,status='TRAINING',arms=args.study_arms,seeds=args.study_seeds,
+        compositions=args.study_compositions,
+        initialization_sha256=hashlib.sha256(args.checkpoint.read_bytes()).hexdigest() if args.checkpoint else None,
         train_humans=5,train_scene='circle_crossing',development_cases=[20000,20000+args.eval_episodes-1],
         test_cases=[args.case_start,args.case_start+args.study_eval_episodes-1],
         config={s:dict(config[s]) for s in config.sections()},runs=[],evaluations=[],
@@ -606,22 +643,25 @@ def study(args,config):
         temporary.replace(args.out/'study.json')
     persist()
     for seed in args.study_seeds:
-        for arm in args.study_arms:
+        for arm,composition in [(a,c) for a in args.study_arms for c in args.study_compositions]:
             if shutil.disk_usage(args.out).free < 128*1024**2:
                 raise RuntimeError('Study stopped before disk exhaustion')
             run = copy.copy(args)
             run.seed,run.arm,run.mode = seed,arm,'train'
-            run.out = args.out/f'{arm}_{seed}'
+            run.composition = composition
+            suffix = '' if args.study_compositions == ['mixture'] else '_'+composition
+            run.out = args.out/f'{arm}_{seed}{suffix}'
             random.seed(seed)
             np.random.seed(seed)
             torch.manual_seed(seed)
-            print('STUDY_TRAIN',arm,seed,flush=True)
+            print('STUDY_TRAIN',arm,seed,composition,flush=True)
             training(run,config)
             result = json.loads((run.out/'results.json').read_text())
             checkpoint = run.out/'final.pt'
             if not checkpoint.exists():
                 checkpoint = run.out/'il.pt'
             report['runs'].append(dict(arm=arm,seed=seed,status=result['status'],
+                composition=composition,
                 il_success=result['il_validation']['success'],
                 il_collision=result['il_validation']['collision'],
                 selected_il_update=result['selected_il_update'],
@@ -638,17 +678,18 @@ def study(args,config):
     persist()
     for run in report['runs']:
         paths = [('selected',Path(run['checkpoint']))]
-        if run['arm']=='full' and run['selected_rl_step'] > 0:
+        if (run['arm']=='full' or args.checkpoint) and run['selected_rl_step'] > 0:
             paths.append(('il',Path(run['checkpoint']).parent/'il.pt'))
         for label,path in paths:
             payload = torch.load(path,map_location=args.device)
-            model = BeliefQNetwork(action_table(config)).to(args.device)
+            model = BeliefQNetwork(action_table(config),composition=payload.get('composition','mixture')).to(args.device)
             model.load_state_dict(payload['state'],strict=True)
             model.eval()
             for scene in ('circle_crossing','square_crossing'):
                 for n in (5,10,12,20):
                     result = evaluate(model,config,run['arm'],args.study_eval_episodes,args.case_start,n,'test',scene)
                     result.update(arm=run['arm'],seed=run['seed'],selection=label,
+                                  composition=run['composition'],
                                   stage=payload['stage'],training_status=run['status'])
                     report['evaluations'].append(result)
                     persist()
@@ -664,6 +705,9 @@ def main():
     parser.add_argument('--self-test',action='store_true')
     parser.add_argument('--mode',choices=('smoke','train','evaluate','study'),default='smoke')
     parser.add_argument('--arm',choices=ARMS,default='full')
+    parser.add_argument('--composition',choices=COMPOSITIONS,default='mixture')
+    parser.add_argument('--initialize-composition',action='store_true',
+                        help='Explicitly initialize a new composition from a mixture IL checkpoint')
     parser.add_argument('--seed',type=int,default=2407)
     parser.add_argument('--device',default='cpu')
     parser.add_argument('--out',type=Path)
@@ -697,6 +741,7 @@ def main():
     parser.add_argument('--target-steps',type=int,default=1000)
     parser.add_argument('--gpu-memory-fraction',type=float,default=.15)
     parser.add_argument('--study-arms',nargs='+',choices=ARMS,default=['full','prior','map','history'])
+    parser.add_argument('--study-compositions',nargs='+',choices=COMPOSITIONS,default=['mixture'])
     parser.add_argument('--study-seeds',nargs='+',type=int,default=[2407,4807,7207])
     parser.add_argument('--study-eval-episodes',type=int,default=50)
     args = parser.parse_args()
@@ -740,7 +785,7 @@ def main():
             raise ValueError('Checkpoint schema/arm mismatch')
         saved = configparser.ConfigParser()
         saved.read_dict(checkpoint['config'])
-        model = BeliefQNetwork(action_table(saved)).to(args.device)
+        model = BeliefQNetwork(action_table(saved),composition=checkpoint.get('composition','mixture')).to(args.device)
         model.load_state_dict(checkpoint['state'],strict=True)
         if args.matrix:
             records = []
