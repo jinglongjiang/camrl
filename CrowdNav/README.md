@@ -1,5 +1,132 @@
 # CrowdNav
 
+## Composition-only minimal experiment (2026-09-18)
+
+**Result: composition interventions change closed-loop behavior, but the new
+zero-start conflict correction has NOT demonstrated an improvement.** This is
+a one-seed engineering/minimal-learning experiment, not a positive method result
+and not evidence against every local-composition architecture.
+
+Only existing `bayesian.py` and `train.py` were changed (source commit
+`17f0a0c`). No additional source file, PDF, reward change, human-response model,
+Mamba, PPO or DAgger was introduced. Robot visibility remains FALSE. Prediction
+was fixed to the `prior` arm to isolate composition from Bayesian estimation.
+
+### Architecture change
+
+The shared local network and original learned max/sum combination are retained.
+The optional `conflict` composition adds ONE zero-initialized scalar parameter:
+
+```text
+F(a) = max over i<j [ min(c_i(a), c_j(a))
+                     * exp(-abs(t_i(a)-t_j(a)) / 1 second)
+                     * (1 - dot(u_i,u_j)) / 2 ]
+score(a) = original_score(a) - tanh(gain) * F(a)
+```
+
+Here c is the existing learned nonnegative local cost, t is the predictive-point
+average of closest-approach time (clipped to 0--2 seconds), and u is the current
+robot-to-human unit direction. It encodes a narrow hypothesis: opposing local
+constraints occurring at similar times may require a combination correction.
+It is NOT a calibrated collision probability, a general model of all joint
+conflicts, or a new Bayesian inference algorithm. All humans still contribute
+to the original score; the correction considers all pairs, O(N^2). Its sign is
+learned and its magnitude is bounded by the largest local cost. Single-person
+and empty crowds receive zero correction. Parameter count: 19588 -> 19589.
+
+`--composition mixture|sum|max|conflict` is supported, with composition stored
+in checkpoints. Old v3 checkpoints default to mixture; explicit
+`--initialize-composition` is required to warm-start a different composition.
+The two training conditions have exactly identical initial action scores.
+
+### Locked minimal training
+
+- Initialization: prior/2407 IL checkpoint from the preceding study, development
+  97 successes / 3 collisions out of 100. SAME weights for both conditions.
+- Five-human circle only; no additional IL updates; 5000 candidate RL steps
+  per condition, LR 3e-5, temperature .05, KL limit .002, batch size 64.
+- Reference rollouts: 5017 extra steps per condition; 23 effective RL updates
+  per condition. No imitation loss during RL.
+- Development SR at successive evaluations: 97, 96, 95, 96, 96 out of 100,
+  for BOTH conditions. Neither improved the selection criterion over IL.
+- Consequently BOTH selected checkpoints remain IL (selected RL step 0).
+  The frozen selected-policy comparison cannot be presented as trained
+  conflict-policy performance; it is the same restored behavior by construction.
+- Only after both training runs finished: 50 layouts, IDs 9500000--9500049,
+  each at 5/10/12/20 humans in circle/square. These differ from the preceding
+  study's test IDs. Remote study runtime: 683 seconds; 800 evaluations.
+
+Selected mixture and conflict scores are identical in every cell:
+
+| Scene | Humans | Success / collision / timeout, per condition |
+| --- | ---: | --- |
+| Circle | 5 | 48 / 2 / 0 |
+| Circle | 10 | 43 / 6 / 1 |
+| Circle | 12 | 40 / 9 / 1 |
+| Circle | 20 | 39 / 6 / 5 |
+| Square | 5 | 47 / 3 / 0 |
+| Square | 10 | 34 / 16 / 0 |
+| Square | 12 | 33 / 14 / 3 |
+| Square | 20 | 23 / 17 / 10 |
+
+Post-training sensitivity diagnosis used the LAST, actually trained weights,
+not the restored IL checkpoint. The learned tanh coefficient was 0.000141765.
+Across 200 five-human and 196 twenty-human teacher-rollout states, setting that
+coefficient back to zero changed ZERO greedy actions. Maximum action-score
+corrections were 0.000317 and 0.000359 respectively. The two last-trained models
+also selected identical actions in this sample. This limited sample does not
+prove global behavioral equivalence, but it explains why this minimal run
+provides no evidence of effective conflict handling. More environment steps
+alone are not established as a remedy.
+
+### Fixed-weight operator intervention
+
+Separately, the SAME original IL weights were evaluated with mixture/sum/max,
+without retraining or selecting an operator using test results. 1200 additional
+executions (including a repeated 400-episode mixture control); not independent
+replications and NOT independently trained baseline comparisons.
+
+| Scene | Humans | Mixture S/C/T | Sum S/C/T | Max S/C/T |
+| --- | ---: | --- | --- | --- |
+| Circle | 5 | 48/2/0 | 47/3/0 | 46/4/0 |
+| Circle | 10 | 43/6/1 | 41/6/3 | 27/23/0 |
+| Circle | 12 | 40/9/1 | 38/7/5 | 26/24/0 |
+| Circle | 20 | 39/6/5 | 26/6/18 | 24/26/0 |
+| Square | 5 | 47/3/0 | 36/12/2 | 45/5/0 |
+| Square | 10 | 34/16/0 | 31/14/5 | 40/8/2 |
+| Square | 12 | 33/14/3 | 25/23/2 | 37/11/2 |
+| Square | 20 | 23/17/10 | 16/19/15 | 29/20/1 |
+
+Interpretation is limited: operator changes also change score scale relative to
+the robot base value, and the weights were trained for mixture. Results show
+sensitivity to composition/calibration, NOT that max or sum cannot learn, NOT
+that the bottleneck is exclusively composition, and NOT a Bayesian advantage.
+An independently trained attention/pooled baseline remains missing. A useful
+next architecture must cause meaningful, validated action-ranking changes on
+five-human development conflicts before spending on a larger generalization
+study; the present scalar correction has not met that condition.
+
+### Artifacts and verification
+
+Local: `/home/abc/temp/local_composition_min_20260918/` contains full run
+checkpoints/results, `fixed_weight_probe.json`, `sensitivity.json`, source
+snapshot and log. Remote: `/root/local_composition_min_20260918/`.
+All selected checkpoint hashes and 800 selected-policy outcome counts were
+verified. CPU/CUDA smoke tests passed, including permutation/padding invariance,
+zero-start equality, single/empty-crowd neutrality, time-overlap/opposition
+identities and finite correction gradient. Server had approximately 699 MiB
+free before the run; no unnecessary deletion was performed. The unrelated ECG
+GPU process was not changed. Main experiment command:
+
+```bash
+python crowd_nav/train.py --mode study --device cuda \
+  --checkpoint /root/local_predictive_overnight_20260918/runs/study_v3/prior_2407/il.pt \
+  --initialize-composition --study-arms prior --study-seeds 2407 \
+  --study-compositions mixture conflict --il-updates 0 --rl-steps 5000 \
+  --eval-steps 1000 --lr 0.00003 --eval-episodes 100 --batch-size 64 \
+  --case-start 9500000 --study-eval-episodes 50 --out runs/composition_min
+```
+
 ## Completed overnight result (2026-09-18)
 
 **Verdict: the implementation and bounded IL/RL study completed, but this
