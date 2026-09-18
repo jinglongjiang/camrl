@@ -375,7 +375,9 @@ def training(args,config):
     if args.checkpoint:
         checkpoint = torch.load(args.checkpoint,map_location=args.device)
         model.risk_supervised=checkpoint.get('risk_supervised',False)
-        if checkpoint['schema'] != SCHEMA or checkpoint['arm'] != args.arm:
+        arm_transfer = (args.initialize_arm and checkpoint.get('risk_supervised',False)
+                        and checkpoint['stage']=='risk_pretrain' and args.composition in RISK_COMPOSITIONS)
+        if checkpoint['schema'] != SCHEMA or (checkpoint['arm'] != args.arm and not arm_transfer):
             raise ValueError('Initialization checkpoint schema/arm mismatch')
         saved = configparser.ConfigParser()
         saved.read_dict(checkpoint['config'])
@@ -830,6 +832,8 @@ def main():
     parser.add_argument('--composition',choices=COMPOSITIONS,default='mixture')
     parser.add_argument('--initialize-composition',action='store_true',
                         help='Explicitly initialize a new composition from a mixture IL checkpoint')
+    parser.add_argument('--initialize-arm',action='store_true',
+                        help='Explicitly share a supervised, frozen risk predictor across observation arms')
     parser.add_argument('--seed',type=int,default=2407)
     parser.add_argument('--device',default='cpu')
     parser.add_argument('--out',type=Path)
