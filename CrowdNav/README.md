@@ -1,5 +1,28 @@
 # CrowdNav
 
+## Event-supervision ordering follow-up (2026-09-18, frozen before tests)
+
+Five-human development exposes an additional failure of post-event imitation:
+seed7207 prior starts at94/100 after event pretraining, but the best of four
+subsequent BC checkpoints reaches88/100; FULL starts at96/100 and reaches89/100.
+The original experiment remains intact, including its failed IL gates. This
+finding does NOT use any high-count evaluation of the event models.
+
+Follow-up changes only training order: retain the original IL base, supervise
+the local event predictor, then directly run self-critical RL without another
+round of action-imitation updates. All four observation arms share each seed's
+identical event checkpoint. Seeds2407/4807/7207, five-human development and the
+10000-step RL cap remain unchanged. The event predictor remains frozen in RL.
+This is still IL initialization followed by RL, with additional supervised
+local-event training; it is not a claim that RL learned the event model.
+
+Seal all12 follow-up models before evaluating fresh layouts9800000--9800049
+at5/10/12/20 humans, circle and square. Evaluate the original IL and original
+IL+RL references on those same layouts. Report every seed and failed gate.
+Neither observation arm nor combination rule is selected on high-count tests.
+Remote directory: `/root/local_event_order_20260918/`. This configuration-only
+follow-up uses the existing entry point; no source module is added.
+
 ## Temporal-composition learning study (2026-09-18, completed negative)
 
 **Frozen result: neither new head improves over the original IL reference.**
