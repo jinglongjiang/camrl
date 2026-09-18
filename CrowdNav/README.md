@@ -1,5 +1,27 @@
 # CrowdNav
 
+## User-requested stop (2026-09-18)
+
+All our training/evaluation workers were stopped on user request. The unrelated
+ECG GPU process1067524 was left running. No further experiment is queued.
+The completed matched-composition and regret results below remain valid.
+The mixture-DDQN six training runs completed20000 steps/19937 updates each,
+but their evaluation was interrupted: its partial JSON is NOT a complete
+six-run comparison. Joint-composition training was interrupted before all six
+runs completed; no joint holdout result exists and no improvement is claimed.
+Incomplete runs retain their last periodically saved model checkpoints, IL
+checkpoints and training records. These are not full optimizer/replay/RNG
+snapshots and do not promise bitwise continuation. Stop manifests and saved
+artifacts are under `/home/abc/temp/local_event_results_20260918/`, in
+`local_joint_matched_20260918/` and `local_ddqn_matched_20260918/`.
+
+Current conclusion: under the matched protocol, max-sum local composition
+outperforms the controlled attention aggregator at20 humans (72% versus44%,
+three seeds). This is evidence for studying composition, not proof of new
+algorithmic novelty or a Bayesian advantage. FULL has not beaten the fixed
+uncertainty reference reliably. Do not turn the interrupted follow-up into
+either a positive or a negative final result.
+
 ## Local-regret result (2026-09-18, completed)
 
 Six trained runs,12 checkpoint records, two exact IL/selected reuses and4000
