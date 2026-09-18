@@ -88,6 +88,39 @@ Bayesian inference or a guaranteed joint collision probability. Five-human
 calibration is checked on separate teacher cases25000--25019. No positive result
 is asserted until held-out navigation supports it.
 
+The first supervised predictor (seed2407) has five-human validation Brier
+0.004869 and mean predicted event probability0.021651 versus event frequency
+0.020766. Deterministic CV event predictions have Brier0.004844. With the SAME
+frozen predictor and only the observation arm changed: FULL Brier0.004567,
+NLL0.016513; posterior-mean point Brier0.004341, NLL0.016962; four-increment
+history Brier0.004204, NLL0.015699. FULL is not the strongest predictor here.
+These332800 labels come from only20 episodes and are highly correlated; no
+independent-sample significance claim is made.
+
+Before opening any event-model density test, the navigation comparison is
+locked to: prior/FULL/point/history with shared survival composition for seeds
+2407/4807/7207; additionally risk-max/risk-sum for seed2407. Each seed's risk
+predictor is fitted ONCE on500 five-human teacher episodes with4000 BCE updates
+and shared, bit-identically, across that seed's observation/composition arms.
+Each actor then receives4000 IL updates (uniform demo sampling, LR3e-4) and up
+to10000 RL candidate steps (LR3e-5), with the same five-human selection/gates.
+The risk predictor stays frozen. New actor parameters are only the original
+robot-only base and a positive risk coefficient; the full network has19589
+parameters, although the majority are frozen after risk pretraining.
+
+Frozen test IDs:9700000--9700049;5/10/12/20 humans;circle/square. Original IL and
+the preceding prior IL+RL checkpoints are reference policies, not additional
+trainable candidates. No event-model checkpoint will be chosen using these
+test results. The additional BCE labels use future observations as training
+supervision, an advantage that must be disclosed in comparisons to plain BC.
+The counterfactual labels are exact only for the recorded exogenous-human
+trajectories and a held constant robot action; they do not establish that
+per-person dynamics are independent or invariant across crowd densities.
+
+Event runs: `/root/local_event_20260918/` (seed2407 prior and operator controls,
+source `ee6f070`) and `/root/local_event_belief_20260918/` (belief controls and
+remaining seeds, source `209472b`, differing only in explicit safe arm transfer).
+
 ## Composition-only minimal experiment (2026-09-18)
 
 **Result: composition interventions change closed-loop behavior, but the new
