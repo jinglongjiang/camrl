@@ -1,5 +1,42 @@
 # CrowdNav
 
+## Completed event-ordering follow-up (2026-09-18)
+
+The ordering follow-up and its separately registered five-human selection rule
+are both NEGATIVE. Entries are success/collision/timeout out of300 executions
+(three seeds,50 paired layouts per geometry, circle and square pooled). These
+are not300 independent layouts. All training and selection used five humans;
+test layouts9800000--9800049 were opened only after the models were frozen.
+
+| Frozen pipeline | 5 humans | 10 humans | 12 humans | 20 humans |
+| --- | --- | --- | --- | --- |
+| Original IL reference | 272/27/1 | 226/71/3 | 211/82/7 | 192/86/22 |
+| Original IL+RL reference | 279/20/1 | 259/37/4 | 244/47/9 | 213/60/27 |
+| Event predictor then RL, prior | 286/13/1 | 244/51/5 | 226/69/5 | 164/112/24 |
+| Event predictor then RL, FULL | 270/30/0 | 226/74/0 | 224/76/0 | 149/150/1 |
+| Event predictor then RL, MAP | 247/53/0 | 176/124/0 | 143/157/0 | 74/226/0 |
+| Event predictor then RL, history | 251/49/0 | 178/122/0 | 173/127/0 | 103/197/0 |
+| Five-human-selected event pipeline, prior | 286/13/1 | 244/51/5 | 226/69/5 | 164/112/24 |
+| Five-human-selected event pipeline, FULL | 273/25/2 | 229/60/11 | 213/75/12 | 156/122/22 |
+| Five-human-selected event pipeline, MAP | 254/37/9 | 158/104/38 | 132/110/58 | 85/159/56 |
+| Five-human-selected event pipeline, history | 249/28/23 | 154/83/63 | 118/97/85 | 65/131/104 |
+
+The last four rows choose whether to include additional post-event BC using
+ONLY five-human development performance before RL. They do not choose on these
+test results. The prior row reuses the direct-RL evaluations. Some other rows
+also reuse the corresponding direct-RL checkpoint evaluations; they are not
+independent replications. The follow-up executed7200 episodes, and selection
+required3200 additional episodes. Gate failures remain included: history4807,
+MAP7207 and history7207 did not enter RL in the direct-RL experiment. The
+selected history7207 pipeline also failed its IL qualification gate.
+
+The original RL reference has a20000-step cap versus10000 for the event
+pipelines, so this is an engineering reference, not equal-budget attribution.
+These results show that this event representation and training sequence did
+not deliver an improvement; they do not disprove all local decomposition or
+Bayesian models. Full records, selection rules, checkpoints and source hashes:
+`/home/abc/temp/local_event_results_20260918/local_event_order_20260918/`.
+
 ## Gauge-invariant local-regret composition (registered 2026-09-18)
 
 The new `regret` operator uses the SAME19588-parameter network as `mixture`.
