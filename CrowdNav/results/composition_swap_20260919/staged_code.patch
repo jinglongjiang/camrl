@@ -1,0 +1,67 @@
+# 本轮实验所用的代码改动(仅暂存副本与远端,camrl 仓库代码未改)
+# 生成方式:diff -u 仓库版本 暂存副本
+
+--- crowd_nav/bayesian.py	2026-09-18 15:45:53.383340367 +0900
++++ /tmp/claude-1000/-home-abc/f8a2c1a1-47f8-41fe-adc9-f2b70b538149/scratchpad/stage/CrowdNav/crowd_nav/bayesian.py	2026-09-19 01:28:23.831864483 +0900
+@@ -10,7 +10,7 @@
+ 
+ SCHEMA = 'local-predictive-q-v3'
+ ARMS = ('current', 'prior', 'map', 'history', 'full')
+-COMPOSITIONS = ('mixture', 'joint', 'regret', 'attention', 'sum', 'max', 'conflict', 'moments', 'ordered',
++COMPOSITIONS = ('mixture', 'joint', 'regret', 'attention', 'sum', 'max', 'mean', 'lse', 'conflict', 'moments', 'ordered',
+                 'survival', 'risk_max', 'risk_sum')
+ RISK_COMPOSITIONS = ('survival', 'risk_max', 'risk_sum')
+ 
+@@ -155,6 +155,9 @@
+         self.local = nn.Sequential(nn.Linear(12,width),nn.ReLU(),
+                                    nn.Linear(width,width),nn.ReLU(),nn.Linear(width,1))
+         self.mix = nn.Parameter(torch.zeros(2))
++        if composition == 'lse':
++            # log-sum-exp 温度:tau->0 退化为 max,tau 增大时加入随人数增长的累积项
++            self.log_tau = nn.Parameter(torch.zeros(()))
+         if composition == 'attention':
+             self.attention = nn.Sequential(nn.Linear(12,64),nn.ReLU(),nn.Linear(64,1))
+         if composition == 'conflict':
+@@ -274,6 +277,15 @@
+             return base-(weights*cost).sum(-1)
+         if self.composition == 'sum':
+             return base-cost.sum(-1)
++        if self.composition == 'mean':
++            # 与人数无关的平均暴露:sum 除以在场人数
++            count = mask.sum(-1).clamp_min(1).to(cost.dtype)[:,None]
++            return base-cost.sum(-1)/count
++        if self.composition == 'lse':
++            tau = torch.nn.functional.softplus(self.log_tau)+1e-3
++            filled = cost.masked_fill(~mask[:,None],float('-inf'))
++            soft = tau*torch.logsumexp(filled/tau,dim=-1)
++            return base-torch.where(mask.any(-1)[:,None],soft,torch.zeros_like(soft))
+         if self.composition == 'max':
+             return base-cost.max(-1).values
+         mixture = self.mix.softmax(0)
+--- crowd_nav/train.py	2026-09-18 15:45:53.387340447 +0900
++++ /tmp/claude-1000/-home-abc/f8a2c1a1-47f8-41fe-adc9-f2b70b538149/scratchpad/stage/CrowdNav/crowd_nav/train.py	2026-09-19 01:29:09.728798717 +0900
+@@ -41,8 +41,14 @@
+     return config
+ 
+ 
++import os as _os
++PROBE_HUMANS = int(_os.environ.get('PROBE_TRAIN_HUMANS','5'))
++
++
+ def environment(config, humans=5, phase='train', scene='circle_crossing'):
+-    if phase in ('train','val') and humans != 5:
++    if phase in ('train','val') and humans == 5 and PROBE_HUMANS != 5:
++        humans = PROBE_HUMANS   # 机制探针:偏离五人训练协议,仅用于读取混合权重
++    if phase in ('train','val') and humans != 5 and PROBE_HUMANS == 5:
+         raise ValueError('Training and model selection are strictly five-human')
+     config = copy.deepcopy(config)
+     config.set('sim','human_num',str(humans))
+@@ -614,6 +620,8 @@
+                 state.update({k:v for k,v in variant.state_dict().items() if k.startswith('attention.')})
+             if composition in RISK_COMPOSITIONS:
+                 state['risk_gain']=variant.risk_gain.detach().clone()
++            if composition == 'lse':
++                state['log_tau']=variant.log_tau.detach().clone()
+             variant.load_state_dict(state,strict=True)
+             values = variant(batch)
+             assert torch.isfinite(values).all()
